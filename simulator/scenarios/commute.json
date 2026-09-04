@@ -1,0 +1,27 @@
+{
+  "name": "commute",
+  "vehicle": "leaf_ze0",
+  "seed": 3,
+  "description": "A commute shape rather than a step: pull away, surface streets, a freeway cruise, two lift-off regen events (current goes POSITIVE — the house sign rule), a stop at lights, then home and parked. The A/C is on the whole way, so the climate load is in the current too. Driven by speed, accelerator and brake; the model produces the current. Written for looking at the power and speed charts. Runs at REAL TIME (1x), like every shipped scenario bar degradation_arc: compress it yourself with --speed, or with the cockpit's Time card, so the clock is always one you chose (docs/SIMULATOR.md, 'Compressing time'). The drive is about a quarter of an hour at 1x.",
+  "knobs": {"soc": 78, "ambient_c": 26, "pack_temp_c": 27, "cabin_temp_c": 31,
+            "evap_c": 28, "cell_spread_mv": 30,
+            "gear": "P", "handbrake": true, "locked": false, "start_state": "ready",
+            "hvac_on": true, "hvac_ac_on": true, "hvac_fan_speed": 3},
+  "timeline": [
+    {"t": 0,   "set": {"door_driver": true}},
+    {"t": 20,  "set": {"door_driver": false, "gear": "D", "handbrake": false}},
+    {"t": 30,  "set": {"speed_mph": 18, "accel_pedal_pct": 30}},
+    {"t": 90,  "set": {"speed_mph": 32, "accel_pedal_pct": 12}},
+    {"t": 150, "set": {"speed_mph": 20, "accel_pedal_pct": 0, "brake_pct": 15}},
+    {"t": 180, "set": {"speed_mph": 0, "brake_pct": 45}},
+    {"t": 240, "set": {"speed_mph": 45, "accel_pedal_pct": 40, "brake_pct": 0}},
+    {"t": 330, "set": {"speed_mph": 62, "accel_pedal_pct": 14}},
+    {"t": 600, "set": {"speed_mph": 55, "accel_pedal_pct": 0}},
+    {"t": 660, "set": {"speed_mph": 35, "accel_pedal_pct": 10}},
+    {"t": 780, "set": {"speed_mph": 12, "accel_pedal_pct": 0, "brake_pct": 25}},
+    {"t": 840, "set": {"speed_mph": 0, "gear": "P", "handbrake": true,
+                       "brake_pct": 0, "start_state": "off", "hvac_on": false,
+                       "hvac_ac_on": false, "hvac_fan_speed": 0, "door_driver": true}},
+    {"t": 870, "set": {"door_driver": false, "locked": true}}
+  ]
+}

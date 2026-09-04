@@ -1,0 +1,83 @@
+/* SPDX-FileCopyrightText: 2026 David D. Karnowski */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Ha-Kake page chrome shared by every page that hosts tiles: the palette,
+   the body reset, the card, the 12-column tile grid and the Tiles menu.
+   Moved verbatim out of index.html; tiles.css holds the tile internals. */
+:root {
+  --bg: #0a0e17;
+  --card: #111827;
+  --card2: #1a2234;
+  --border: #1e2a42;
+  --text: #e0e6f0;
+  --dim: #6b7a99;
+  --accent: #4fc3f7;
+  --green: #4caf50;
+  --yellow: #ffca28;
+  --orange: #ff9800;
+  --red: #ef5350;
+  --blue: #42a5f5;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── Tile grid ── */
+.tiles { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.tiles > .card { margin: 0; min-width: 0; }
+.tiles > .card[data-span="3"] { grid-column: span 3; }
+.tiles > .card[data-span="4"] { grid-column: span 4; }
+.tiles > .card[data-span="5"] { grid-column: span 5; }
+.tiles > .card[data-span="6"] { grid-column: span 6; }
+.tiles > .card[data-span="12"] { grid-column: span 12; }
+.tiles > .card.dragging { opacity: 0.35; outline: 2px dashed var(--accent); }
+.tiles > .card .card-title, .tiles > .card .history-header { cursor: grab; }
+.tile-age { font-size: 0.85em; color: var(--dim); text-transform: none; letter-spacing: 0; margin-left: 8px; font-weight: 400; }
+@media (max-width: 1100px) {
+  .tiles > .card[data-span="3"], .tiles > .card[data-span="4"], .tiles > .card[data-span="5"] { grid-column: span 6; }
+}
+@media (max-width: 720px) { .tiles > .card { grid-column: span 12 !important; } }
+
+/* ── Tiles menu ── */
+.tiles-menu { position: relative; }
+.tiles-btn {
+  background: var(--card2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; font-size: 0.8em; cursor: pointer;
+}
+.tiles-btn:hover { border-color: var(--accent); }
+.tiles-panel {
+  display: none; position: absolute; right: 0; top: 36px; z-index: 50; width: 300px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+}
+.tiles-panel.open { display: block; }
+
+.cr-close { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.tiles-panel h4 { font-size: 0.7em; color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 8px; }
+.tiles-panel .row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-radius: 6px; font-size: 0.85em; }
+.tiles-panel .row:hover { background: var(--card2); }
+.tiles-panel .row label { flex: 1; cursor: pointer; }
+.tiles-panel .row .items { font-size: 0.75em; color: var(--dim); }
+.tiles-panel .row button { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 4px; width: 22px; height: 22px; cursor: pointer; font-size: 0.8em; }
+.tiles-panel .row button:hover { color: var(--text); border-color: var(--accent); }
+.tiles-panel .foot { display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.75em; color: var(--dim); }
+.tiles-panel .foot a { color: var(--accent); cursor: pointer; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+}
+.card-title {
+  font-size: 0.7em;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 16px;
+  font-weight: 600;
+}

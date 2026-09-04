@@ -1,0 +1,32 @@
+  <div class="card" data-tile="climate" data-span="4">
+    <div class="card-title">Climate — HVAC amp <span class="tile-age" data-age-for="hvac10"></span> <span class="tentative" id="hvac-tent">(decode tentative)</span></div>
+    <div class="kv-label">Cabin</div>
+    <div class="hvac-big" id="hvac-cabin">--</div>
+    <div class="kv-grid">
+      <div class="kv"><div class="kv-label">Ambient</div><div class="kv-val" id="hvac-amb">--</div></div>
+      <div class="kv"><div class="kv-label">Evaporator</div><div class="kv-val" id="hvac-evap">--</div></div>
+      <div class="kv"><div class="kv-label">Sunload</div><div class="kv-val" id="hvac-sun">--</div></div>
+      <div class="kv"><div class="kv-label">Pack avg</div><div class="kv-val" id="hvac-pack">--</div></div>
+      <div class="kv"><div class="kv-label">Setpoint (≈)</div><div class="kv-val" id="hvac-set">--</div></div>
+      <div class="kv"><div class="kv-label">A/C · compressor</div><div class="kv-val" id="hvac-ac">--</div></div>
+      <div class="kv"><div class="kv-label">Heater demand</div><div class="kv-val" id="hvac-heat">--</div></div>
+      <div class="kv"><div class="kv-label">System</div><div class="kv-val" id="hvac-sys">--</div></div>
+    </div>
+    <div class="fan-wrap">
+      <svg viewBox="0 0 64 64" aria-label="fan">
+        <circle cx="32" cy="32" r="29" fill="var(--card2)" stroke="var(--border)" stroke-width="2"/>
+        <g id="fan-rotor" class="fan-rotor" fill="var(--accent)" opacity="0.9">
+          <path d="M32 32 C 30 22, 34 12, 42 10 C 46 16, 40 26, 32 32 Z"/>
+          <path d="M32 32 C 42 30, 52 34, 54 42 C 48 46, 38 40, 32 32 Z"/>
+          <path d="M32 32 C 34 42, 30 52, 22 54 C 18 48, 24 38, 32 32 Z"/>
+          <path d="M32 32 C 22 34, 12 30, 10 22 C 16 18, 26 24, 32 32 Z"/>
+          <circle cx="32" cy="32" r="4" fill="var(--text)"/>
+        </g>
+      </svg>
+      <div>
+        <div class="kv-label">Fan</div>
+        <div class="kv-val" id="hvac-fan">--</div>
+        <div class="fan-bars" id="fan-bars"><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i><i style="height:13px"></i><i style="height:16px"></i><i style="height:19px"></i><i style="height:22px"></i></div>
+      </div>
+    </div>
+  </div>

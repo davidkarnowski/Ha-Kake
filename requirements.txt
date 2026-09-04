@@ -1,0 +1,13 @@
+# Python >= 3.10 (tested on 3.12). Rebuild the venv with: python3.12 -m venv venv
+# Runtime
+bleak==1.1.1
+pyobjc-core==12.0
+pyobjc-framework-Cocoa==12.0
+pyobjc-framework-CoreBluetooth==12.0
+pyobjc-framework-libdispatch==12.0
+async-timeout==5.0.1
+typing_extensions==4.15.0
+pyserial==3.5
+Flask==3.1.2
+# Tests
+pytest

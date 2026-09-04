@@ -1,0 +1,17 @@
+{
+  "name": "drive",
+  "vehicle": "leaf_ze0",
+  "seed": 1,
+  "description": "Pull away, cruise at 45 mph, brake and stop. Pack current comes from the model: the accelerator sets the motor draw (road load plus a pedal term, ASSERTED until the driving capture calibrates it), lifting off and braking put regen back in, and the READY base draw is there throughout.",
+  "knobs": {"soc": 80, "ambient_c": 22, "pack_temp_c": 24, "cabin_temp_c": 22,
+            "gear": "P", "speed_mph": 0,
+            "locked": false, "handbrake": true, "start_state": "ready"},
+  "timeline": [
+    {"t": 0,   "set": {"gear": "D", "handbrake": false, "speed_mph": 0}},
+    {"t": 5,   "set": {"speed_mph": 20, "accel_pedal_pct": 25}},
+    {"t": 15,  "set": {"speed_mph": 45, "accel_pedal_pct": 35}},
+    {"t": 120, "set": {"accel_pedal_pct": 0, "brake_pct": 20, "speed_mph": 25}},
+    {"t": 130, "set": {"speed_mph": 0, "brake_pct": 60, "gear": "P", "handbrake": true}},
+    {"t": 135, "set": {"brake_pct": 0}}
+  ]
+}

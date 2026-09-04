@@ -1,0 +1,84 @@
+/* SPDX-FileCopyrightText: 2026 David D. Karnowski */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* The four styled tiles — vehicle & shifter, tires, body, climate — whose
+   markup lives in web/templates/tiles/ and whose renderers are tiles.js.
+   Moved verbatim out of index.html; needs the palette from hakake.css. */
+/* ── Vehicle / Tires / HVAC row ── */
+.gear-big {
+  font-size: 3.2em; font-weight: 700; line-height: 1; letter-spacing: -0.02em;
+  color: var(--accent);
+}
+.gear-big.eco { color: var(--green); }
+.shifter { width: 150px; flex: none; }
+.shifter .lbl { font: 700 22px -apple-system, 'Segoe UI', Roboto, sans-serif; fill: var(--dim); opacity: 0.45; }
+.shifter .lbl.on { fill: var(--accent); opacity: 1; filter: drop-shadow(0 0 6px var(--accent)); }
+.shifter .lbl.on.rev { fill: var(--orange); filter: drop-shadow(0 0 6px var(--orange)); }
+.shifter .pbtn { fill: var(--card2); stroke: var(--border); }
+.shifter .pbtn.on { fill: var(--accent); stroke: var(--accent); filter: drop-shadow(0 0 8px var(--accent)); }
+.shifter .ptxt { font: 700 14px -apple-system, sans-serif; fill: var(--dim); }
+.shifter .ptxt.on { fill: #0a0e17; }
+.shifter .eco { font: 700 11px -apple-system, sans-serif; fill: var(--dim); opacity: 0.4; letter-spacing: 0.1em; }
+.shifter .eco.on { fill: var(--green); opacity: 1; filter: drop-shadow(0 0 6px var(--green)); }
+.shifter .ghost { fill: var(--accent); opacity: 0; transition: opacity 0.3s; }
+.shifter .ghost.on { opacity: 0.35; }
+.gear-big.r { color: var(--orange); }
+.kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-top: 14px; }
+.kv { display: flex; flex-direction: column; }
+.kv-label { font-size: 0.68em; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.kv-val { font-size: 1.05em; font-weight: 600; margin-top: 2px; }
+.kv-val small { font-size: 0.7em; color: var(--dim); font-weight: 400; margin-left: 4px; }
+.tentative { font-size: 0.65em; color: var(--dim); font-style: italic; }
+.car-wrap { display: flex; justify-content: center; }
+.car-wrap svg { width: 100%; max-width: 240px; height: auto; }
+.tire-lbl { font: 600 13px -apple-system, 'Segoe UI', Roboto, sans-serif; fill: var(--text); }
+.tire-sub { font: 10px -apple-system, 'Segoe UI', Roboto, sans-serif; fill: var(--dim); }
+/* wheel profiles — a 2×2 block centred in the card and sized by the card.
+   The card is a flex column (title / wheels / note); the wheels block takes
+   the free height and is an inline-size container, so each wheel's SVG is a
+   fraction of the block's width (clamp(64px, 24cqw, 200px): ~93 px at the
+   default 4-column span, 64 px floor at 2 columns, 200 px cap) and the type
+   scales with it. Height binds through the grid rows (minmax(0, 1fr)) and
+   the SVG's min-height: 0 / flex-shrink: the drawing shrinks to the row and
+   stays a circle (viewBox 'meet'), the psi and name stay full size below it.
+   Nothing here depends on the card's height being known up front, so the
+   first-load auto-measure (tilestudio.js measureRows) still sees the
+   width-derived height. */
+.card[data-tile="tires"] { display: flex; flex-direction: column; }
+.card[data-tile="tires"] > .card-title, .card[data-tile="tires"] > .tire-sub { flex: none; }
+.wheels {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px; justify-items: stretch; align-items: stretch; align-content: center;
+  flex: 1 1 auto; min-height: 0; max-height: 560px; margin: auto 0; width: 100%; container-type: inline-size;
+}
+.wheel { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; min-width: 0; }
+.wheel svg {
+  width: 84px; width: clamp(64px, 24cqw, 200px); max-width: 100%; height: auto; aspect-ratio: 1 / 1;
+  min-height: 0; flex: 0 1 auto; display: block;
+}
+.wheel-psi { font: 700 1.1em -apple-system, sans-serif; font-size: clamp(0.8em, 5cqw, 1.3em); line-height: 1.2; white-space: nowrap; }
+.wheel-psi small { font-size: 0.6em; color: var(--dim); font-weight: 400; margin-left: 3px; }
+.wheel-name { font: 10px -apple-system, sans-serif; font-size: clamp(9px, 2.6cqw, 12px); color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.tire-tread { stroke: var(--card); stroke-width: 2; }
+/* body / doors */
+.door { transition: transform .35s cubic-bezier(.4,1.3,.5,1), fill .3s; }
+.door.open { fill: var(--orange) !important; }
+.lamp { transition: fill .25s, opacity .25s, filter .25s; }
+.lamp.blink { animation: lampblink .48s steps(1, end) infinite; }
+@keyframes lampblink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.12; } }
+.body-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; margin-top: 8px; font-size: 0.72em; color: var(--dim); }
+.body-legend b { color: var(--text); font-weight: 600; }
+.lock-shackle, .lock-body { transition: all .2s; }
+.hvac-big { font-size: 2.6em; font-weight: 700; line-height: 1; }
+.fan-wrap { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.fan-wrap svg { width: 64px; height: 64px; flex: none; }
+.fan-rotor { transform-origin: 32px 32px; animation: fanspin 2s linear infinite; animation-play-state: paused; }
+.fan-rotor.on { animation-play-state: running; }
+html.shot .fan-rotor, html.shot .lamp.blink { animation: none !important; }
+html.shot * { transition: none !important; }
+@keyframes fanspin { to { transform: rotate(360deg); } }
+.fan-bars { display: flex; gap: 3px; align-items: flex-end; height: 22px; }
+.fan-bars i { display: block; width: 7px; background: var(--border); border-radius: 2px; }
+.fan-bars i.on { background: var(--accent); }
+.hvac-big small { font-size: 0.4em; color: var(--dim); font-weight: 400; margin-left: 6px; }
+.raw-hex { font: 10px ui-monospace, Menlo, monospace; color: var(--dim); word-break: break-all; margin-top: 10px; line-height: 1.4; }

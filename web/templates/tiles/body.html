@@ -1,0 +1,60 @@
+  <!-- Body: doors / hatch / all exterior lights / per-door locks -->
+  <div class="card" data-tile="body" data-span="5">
+    <div class="card-title">Body <span class="tile-age" data-age-for="p60D"></span></div>
+    <div class="car-wrap">
+      <svg viewBox="0 0 200 340" id="body-svg">
+        <!-- shell -->
+        <path d="M60 42 Q100 22 140 42 L154 76 Q160 172 154 270 L140 302 Q100 318 60 302 L46 270 Q40 172 46 76 Z"
+              fill="var(--card2)" stroke="var(--border)" stroke-width="2"/>
+        <!-- glass -->
+        <path d="M68 86 Q100 74 132 86 L126 108 Q100 100 74 108 Z" fill="var(--border)" opacity="0.7"/>
+        <rect x="70" y="114" width="60" height="80" rx="10" fill="var(--bg)" opacity="0.5"/>
+        <path d="M72 206 Q100 200 128 206 L134 228 Q100 238 66 228 Z" fill="var(--border)" opacity="0.7"/>
+        <!-- wheels -->
+        <rect x="34" y="72" width="13" height="34" rx="5" fill="var(--dim)"/>
+        <rect x="153" y="72" width="13" height="34" rx="5" fill="var(--dim)"/>
+        <rect x="34" y="224" width="13" height="34" rx="5" fill="var(--dim)"/>
+        <rect x="153" y="224" width="13" height="34" rx="5" fill="var(--dim)"/>
+
+        <!-- ===== FRONT lamps (top) ===== -->
+        <path id="lamp-head-l" class="lamp" d="M60 44 Q76 36 90 42 L86 56 Q74 52 62 58 Z" fill="#8aa0b8" opacity="0.3"/>
+        <path id="lamp-head-r" class="lamp" d="M140 44 Q124 36 110 42 L114 56 Q126 52 138 58 Z" fill="#8aa0b8" opacity="0.3"/>
+        <circle id="lamp-fog-l" class="lamp" cx="66" cy="66" r="5" fill="#8aa0b8" opacity="0.25"/>
+        <circle id="lamp-fog-r" class="lamp" cx="134" cy="66" r="5" fill="#8aa0b8" opacity="0.25"/>
+        <circle id="lamp-park-l" class="lamp" cx="80" cy="46" r="3.5" fill="#8a7d5a" opacity="0.3"/>
+        <circle id="lamp-park-r" class="lamp" cx="120" cy="46" r="3.5" fill="#8a7d5a" opacity="0.3"/>
+        <path id="lamp-turn-fl" class="lamp turn" d="M56 50 Q64 46 70 50 L68 60 Q62 58 57 62 Z" fill="#8a7d5a" opacity="0.3"/>
+        <path id="lamp-turn-fr" class="lamp turn" d="M144 50 Q136 46 130 50 L132 60 Q138 58 143 62 Z" fill="#8a7d5a" opacity="0.3"/>
+
+        <!-- ===== SIDE repeaters (front fenders) ===== -->
+        <ellipse id="lamp-side-l" class="lamp turn" cx="45" cy="112" rx="4" ry="6" fill="#8a7d5a" opacity="0.3"/>
+        <ellipse id="lamp-side-r" class="lamp turn" cx="155" cy="112" rx="4" ry="6" fill="#8a7d5a" opacity="0.3"/>
+
+        <!-- ===== REAR lamps (bottom) ===== -->
+        <path id="lamp-brake-l" class="lamp" d="M60 300 Q74 306 86 302 L84 288 Q72 290 62 286 Z" fill="#6b2f34" opacity="0.5"/>
+        <path id="lamp-brake-r" class="lamp" d="M140 300 Q126 306 114 302 L116 288 Q128 290 138 286 Z" fill="#6b2f34" opacity="0.5"/>
+        <path id="lamp-turn-rl" class="lamp turn" d="M56 292 Q64 296 70 293 L69 284 Q62 285 57 282 Z" fill="#8a7d5a" opacity="0.3"/>
+        <path id="lamp-turn-rr" class="lamp turn" d="M144 292 Q136 296 130 293 L131 284 Q138 285 143 282 Z" fill="#8a7d5a" opacity="0.3"/>
+        <rect id="lamp-rev-l" class="lamp" x="84" y="294" width="12" height="7" rx="2" fill="#5a6472" opacity="0.3"/>
+        <rect id="lamp-rev-r" class="lamp" x="104" y="294" width="12" height="7" rx="2" fill="#5a6472" opacity="0.3"/>
+
+        <!-- ===== DOORS (hinged at the front edge) ===== -->
+        <rect id="door-dl" class="door" x="45" y="112" width="11" height="48" rx="3" fill="var(--border)"/>
+        <rect id="door-dr" class="door" x="144" y="112" width="11" height="48" rx="3" fill="var(--border)"/>
+        <rect id="door-rl" class="door" x="45" y="164" width="11" height="44" rx="3" fill="var(--border)"/>
+        <rect id="door-rr" class="door" x="144" y="164" width="11" height="44" rx="3" fill="var(--border)"/>
+        <rect id="door-hatch" class="door" x="72" y="296" width="56" height="12" rx="3" fill="var(--border)"/>
+
+        <!-- ===== per-door LOCKS ===== -->
+        <g id="lock-dl"></g><g id="lock-dr"></g><g id="lock-rl"></g><g id="lock-rr"></g>
+      </svg>
+    </div>
+    <div class="body-legend">
+      <span>Doors <b id="body-doors">--</b></span>
+      <span>Hatch <b id="body-hatch">--</b></span>
+      <span>Lights <b id="body-lights">--</b></span>
+      <span>Turn <b id="body-turn">--</b></span>
+      <span>Brake <b id="body-brake">--</b></span>
+      <span>Lock <b id="body-locktxt">--</b></span>
+    </div>
+  </div>

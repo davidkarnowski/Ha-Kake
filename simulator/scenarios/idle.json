@@ -1,0 +1,12 @@
+{
+  "name": "idle",
+  "vehicle": "leaf_ze0",
+  "seed": 1,
+  "description": "Parked and READY in a warm car park: the 2026-08-24 baseline pack (76.87 %, 23.16 Ah, 34 °C). The only draw is the READY base from the load table (~150 W, measured on a ZE0 with a kelvin shunt — the real capture read 1.5 A with the climate system running). Nothing moves except the clock.",
+  "knobs": {"soc": 76.87, "capacity_ah": 23.1568, "hx": 17.96, "pack_temp_c": 34,
+            "ambient_c": 33, "cabin_temp_c": 26, "evap_c": 26,
+            "cell_spread_mv": 30, "gear": "P",
+            "handbrake": true, "locked": false, "start_state": "ready",
+            "insulation_kohm": 885, "lv_volts": 12.68},
+  "timeline": []
+}

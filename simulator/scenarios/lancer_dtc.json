@@ -1,0 +1,8 @@
+{
+  "name": "lancer_dtc",
+  "vehicle": "lancer_2009",
+  "seed": 1,
+  "description": "This car's real fault set on 2026-08-28: MIL on, 12 stored engine codes (a multi-frame mode-03 answer), 2 pending, 1 CVT code.",
+  "knobs": {"mil_on": true, "dtc_stored": "real", "dtc_pending": "real", "dtc_trans": "real"},
+  "timeline": []
+}

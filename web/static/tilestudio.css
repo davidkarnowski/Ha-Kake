@@ -1,0 +1,76 @@
+/* SPDX-FileCopyrightText: 2026 David D. Karnowski */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* Tile Studio — generic signal tiles, per-tile menus, colour scales */
+.card { position: relative; }
+.tile-menu-btn {
+  position: absolute; top: 12px; right: 12px; z-index: 5;
+  width: 26px; height: 26px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--dim); font-size: 16px; line-height: 1; cursor: pointer;
+}
+.card:hover .tile-menu-btn { border-color: var(--border); background: var(--card2); }
+.tile-menu-btn:hover { color: var(--text); border-color: var(--accent); }
+/* The menu is appended to <body> and placed by tilestudio.js (placeMenu):
+   fixed, right-aligned under the tile's ⋯ button and clamped inside the
+   viewport, so a narrow or short tile can never clip it. Its width does not
+   depend on the card; when taller than the window it scrolls internally. */
+.tile-menu {
+  position: fixed; top: 0; left: 0; z-index: 1000; width: 280px; min-width: 260px;
+  max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55); font-size: 0.82em; color: var(--text); text-align: left;
+}
+.tile-menu h5 { font-size: 0.7em; color: var(--dim); text-transform: uppercase; letter-spacing: 0.12em; margin: 10px 0 6px; }
+.tile-menu h5:first-child { margin-top: 0; }
+.tile-menu .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tile-menu .row label { color: var(--dim); min-width: 52px; }
+.tile-menu select, .tile-menu input[type=text], .tile-menu input[type=number] {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; font-size: 0.95em;
+}
+.tile-menu input[type=number] { width: 70px; flex: none; }
+.tile-menu .seg button {
+  background: var(--card2); color: var(--dim); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 0.9em;
+}
+.tile-menu .seg button.on { color: var(--accent); border-color: var(--accent); }
+.tile-menu .swatch { display: inline-block; width: 100%; height: 8px; border-radius: 4px; margin-top: 6px; }
+.tile-menu .danger { color: var(--red); border-color: var(--red) !important; }
+.tile-menu .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.tile-menu .foot button {
+  background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: inherit;
+}
+.tile-menu .foot button:hover { color: var(--text); border-color: var(--accent); }
+.tile-menu .foot .primary { margin-left: auto; background: var(--accent); border-color: var(--accent); color: #0a0e17; font-weight: 600; padding: 4px 14px; }
+.tile-menu .foot .primary:hover { color: #0a0e17; filter: brightness(1.1); }
+
+/* generic tile body */
+.gtile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; gap: 6px; }
+.gtile svg { width: 100%; max-width: 260px; height: auto; overflow: visible; }
+.gtile .gt-num { font-size: 2.6em; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+.gtile .gt-num small { font-size: 0.4em; color: var(--dim); font-weight: 400; margin-left: 6px; }
+.gtile .gt-alt { color: var(--dim); font-size: 0.8em; }
+.gtile .gt-val { font-size: 1.5em; font-weight: 700; line-height: 1; }
+.gtile .gt-val small { font-size: 0.55em; color: var(--dim); font-weight: 400; margin-left: 4px; }
+.gtile .gt-track { width: 100%; height: 18px; background: var(--bg); border-radius: 9px; overflow: hidden; border: 1px solid var(--border); }
+.gtile .gt-fill { height: 100%; border-radius: 9px; transition: width 0.4s, background 0.4s; }
+.gtile .gt-text { font-size: 2.4em; font-weight: 700; letter-spacing: 0.04em; }
+.gtile .gt-lamp { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--border); background: var(--card2); transition: all 0.3s; }
+.gtile .gt-lamp.on { background: var(--green); border-color: var(--green); box-shadow: 0 0 18px var(--green); }
+.gtile .gt-sub { color: var(--dim); font-size: 0.75em; }
+.gtile .gt-thermo { display: flex; align-items: flex-end; gap: 12px; height: 140px; }
+.gtile .gt-thermo .tube { width: 26px; height: 130px; background: var(--bg); border: 1px solid var(--border); border-radius: 13px; overflow: hidden; display: flex; align-items: flex-end; }
+.gtile .gt-thermo .tube div { width: 100%; border-radius: 0 0 13px 13px; transition: height 0.4s, background 0.4s; }
+.gt-tick { stroke: var(--border); stroke-width: 2; }
+.gt-axis { font: 9px -apple-system, sans-serif; fill: var(--dim); }
+
+/* ── gridstack integration ── */
+.grid-stack { position: relative; }
+.grid-stack > .grid-stack-item > .grid-stack-item-content.card { overflow: auto; box-sizing: border-box; padding: 24px; }
+.grid-stack > .grid-stack-item > .card .card-title, .grid-stack > .grid-stack-item > .card .history-header { cursor: grab; user-select: none; }
+.grid-stack > .grid-stack-item.ui-draggable-dragging > .card { box-shadow: 0 18px 40px rgba(0,0,0,0.6); outline: 2px solid var(--accent); }
+.grid-stack > .grid-stack-item > .ui-resizable-se {
+  width: 18px; height: 18px; right: 6px; bottom: 6px; cursor: nwse-resize; opacity: 0.6; z-index: 6; transform: none;
+  background: linear-gradient(135deg, transparent 50%, var(--border) 50%, var(--border) 62%, transparent 62%, transparent 76%, var(--border) 76%, var(--border) 88%, transparent 88%) !important;
+}
+.grid-stack > .grid-stack-item:hover > .ui-resizable-se { opacity: 1; background: linear-gradient(135deg, transparent 50%, var(--accent) 50%, var(--accent) 62%, transparent 62%, transparent 76%, var(--accent) 76%, var(--accent) 88%, transparent 88%) !important; }
+.grid-stack-placeholder > .placeholder-content { border: 2px dashed var(--accent) !important; border-radius: 14px; background: rgba(79,195,247,0.06) !important; }
+.grid-stack.grid-stack-1 > .grid-stack-item > .ui-resizable-se { display: none; }

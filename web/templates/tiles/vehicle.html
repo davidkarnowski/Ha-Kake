@@ -1,0 +1,40 @@
+  <div class="card" data-tile="vehicle" data-span="4">
+    <div class="card-title">Vehicle <span class="tile-age" data-age-for="p5C5"></span></div>
+    <div style="display:flex; align-items:center; gap:18px">
+      <svg class="shifter" viewBox="0 0 150 200" id="shifter">
+        <!-- console plate -->
+        <rect x="4" y="4" width="142" height="192" rx="18" fill="var(--card2)" stroke="var(--border)" stroke-width="2"/>
+        <!-- slots: vertical R-N-D on the left, horizontal to the home position -->
+        <rect x="41" y="36" width="12" height="128" rx="6" fill="var(--bg)"/>
+        <rect x="41" y="94" width="66" height="12" rx="6" fill="var(--bg)"/>
+        <!-- position labels -->
+        <text id="sh-R" class="lbl" x="22" y="52" text-anchor="middle">R</text>
+        <text id="sh-N" class="lbl" x="22" y="108" text-anchor="middle">N</text>
+        <text id="sh-D" class="lbl" x="22" y="166" text-anchor="middle">D</text>
+        <text id="sh-eco" class="eco" x="47" y="186" text-anchor="middle">ECO</text>
+        <!-- ghost knob at the selected slot -->
+        <circle id="sh-ghost" class="ghost" cx="47" cy="100" r="14"/>
+        <!-- knob at home, with the P button on top -->
+        <circle cx="106" cy="100" r="26" fill="var(--border)"/>
+        <circle cx="106" cy="100" r="20" fill="var(--card)"/>
+        <circle id="sh-P" class="pbtn" cx="106" cy="100" r="12" stroke-width="2"/>
+        <text id="sh-Ptxt" class="ptxt" x="106" y="105" text-anchor="middle">P</text>
+      </svg>
+      <div>
+      <div class="gear-big" id="veh-gear" style="font-size:2.2em">--</div>
+        <div class="kv-label">State</div>
+        <div class="kv-val" id="veh-state">--</div>
+        <div class="kv-label" style="margin-top:6px">Speed</div>
+        <div class="kv-val" id="veh-speed">--</div>
+      </div>
+    </div>
+    <div class="kv-grid">
+      <div class="kv"><div class="kv-label">Odometer</div><div class="kv-val" id="veh-odo">--</div></div>
+      <div class="kv"><div class="kv-label">Range (dash)</div><div class="kv-val" id="veh-range">--</div></div>
+      <div class="kv"><div class="kv-label">SOH (dash byte)</div><div class="kv-val" id="veh-soh">--</div></div>
+      <div class="kv"><div class="kv-label">Parking brake</div><div class="kv-val" id="veh-brake">--</div></div>
+      <div class="kv"><div class="kv-label">Doors</div><div class="kv-val" id="veh-doors">--</div></div>
+      <div class="kv"><div class="kv-label">Headlights</div><div class="kv-val" id="veh-lights">--</div></div>
+      <div class="kv"><div class="kv-label">Turn signal</div><div class="kv-val" id="veh-turn">--</div></div>
+    </div>
+  </div>

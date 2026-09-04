@@ -1,0 +1,29 @@
+{
+  "name": "dc_fast",
+  "vehicle": "leaf_ze0",
+  "seed": 1,
+  "description": "CHAdeMO on a healthy pack: 44 kW held to about 60 %, a hard taper above it, and the pack heating fast enough that the thermal derate starts biting near the end. ASSERTED, not measured — nobody has put this car on a fast charger with a logger. Shape only. When the session ends the car is off, so only the load table's base_off drain remains. Runs at REAL TIME (1x), like every shipped scenario bar degradation_arc: compress it yourself with --speed, or with the cockpit's Time card, so the clock is always one you chose (docs/SIMULATOR.md, 'Compressing time'). The session is about 45 minutes at 1x; `--speed 60` puts it into 45 seconds.",
+  "knobs": {
+    "capacity_ah": 60.0,
+    "soc": 22,
+    "ambient_c": 26,
+    "pack_temp_c": 28,
+    "cabin_temp_c": 26,
+    "cell_spread_mv": 20,
+    "hx": 92,
+    "gear": "P",
+    "handbrake": true,
+    "locked": true,
+    "start_state": "off",
+    "charger": "dcfc",
+    "charging": true
+  },
+  "timeline": [
+    {
+      "t": 3600,
+      "set": {
+        "charging": false
+      }
+    }
+  ]
+}

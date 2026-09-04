@@ -1,0 +1,1481 @@
+{#- The active vehicle profile, from app.py's vehicle_ctx(). Defaulted so the
+    page still renders when it is missing — e.g. an app.py process that started
+    before this context existed reloading the template underneath itself. -#}
+{%- set veh = vehicle if vehicle is mapping else {} -%}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ha-Kake{% if veh.get("title") %} — {{ veh.get("title") }}{% endif %} telemetry</title>
+<link rel="stylesheet" href="/static/vendor/gridstack.min.css">
+<link rel="stylesheet" href="/static/tilestudio.css">
+<link rel="stylesheet" href="/static/hakake.css">
+<link rel="stylesheet" href="/static/tiles.css">
+<style>
+  .dash {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo svg { width: 32px; height: 32px; }
+  .logo h1 { font-size: 1.3em; font-weight: 600; }
+  .logo h1 span { color: var(--dim); font-weight: 400; font-size: 0.65em; display: block; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  #status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--dim);
+    display: inline-block;
+  }
+  #status-dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  #status-dot.waiting { background: var(--yellow); animation: pulse 1.5s infinite; }
+  #status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+  #status-text { font-size: 0.8em; color: var(--dim); }
+  /* --adapter sim: the record says simulated, the header says so and links to the cockpit */
+  .sim-badge {
+    display: none; background: var(--orange); color: #1a0e00; font-weight: 800; letter-spacing: 0.14em;
+    font-size: 0.7em; padding: 4px 10px; border-radius: 4px; text-decoration: none;
+  }
+  .sim-badge.on { display: inline-block; }
+  .sim-badge:hover { background: #ffb74d; }
+  .adapter-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.75em;
+    color: var(--dim);
+  }
+  .adapter-info svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .adapter-info .adapter-label { color: var(--text); font-weight: 600; }
+  .adapter-info .adapter-detail { color: var(--dim); }
+
+  /* ── SOC Gauge ── */
+  .soc-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .gauge-wrap {
+    position: relative;
+    width: 240px;
+    height: 240px;
+  }
+  .gauge-wrap svg { width: 100%; height: 100%; }
+  .gauge-bg { fill: none; stroke: var(--border); stroke-width: 14; }
+  .gauge-fill {
+    fill: none;
+    stroke: var(--green);
+    stroke-width: 14;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1.5s ease, stroke 1s ease;
+  }
+  .gauge-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .gauge-pct {
+    font-size: 3.6em;
+    font-weight: 800;
+    line-height: 1;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .gauge-unit {
+    font-size: 0.9em;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+
+  /* Trend arrow */
+  .trend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 0.9em;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 20px;
+    background: var(--card2);
+  }
+  .trend svg { width: 18px; height: 18px; }
+  .trend.charging { color: var(--green); }
+  .trend.discharging { color: var(--orange); }
+  .trend.stable { color: var(--dim); }
+
+  .pack-voltage {
+    margin-top: 12px;
+    font-size: 0.85em;
+    color: var(--dim);
+    text-align: center;
+  }
+  .pack-voltage strong {
+    color: var(--text);
+    font-size: 1.1em;
+  }
+
+  /* ── Power Card ── */
+  .power-card {
+    margin-bottom: 16px;
+  }
+  .power-row {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    align-items: center;
+  }
+  .power-gauge-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .power-gauge-wrap {
+    position: relative;
+    width: 240px;
+    height: 240px;
+  }
+  .power-gauge-wrap svg { width: 100%; height: 100%; }
+  .power-gauge-bg { fill: none; stroke: var(--border); stroke-width: 14; }
+  .power-gauge-fill {
+    fill: none;
+    stroke: var(--green);
+    stroke-width: 14;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease, stroke 0.5s ease;
+  }
+  .power-gauge-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .power-value {
+    font-size: 2.8em;
+    font-weight: 800;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1;
+  }
+  .power-unit {
+    font-size: 0.85em;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+  .power-state-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 10px;
+  }
+  .power-state-badge.draw { background: rgba(255,152,0,0.15); color: var(--orange); }
+  .power-state-badge.charge { background: rgba(79,195,247,0.15); color: var(--accent); }
+  .power-state-badge.regen { background: rgba(76,175,80,0.15); color: var(--green); }
+  .power-state-badge.idle { background: rgba(107,122,153,0.15); color: var(--dim); }
+  .power-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .power-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--card2);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .power-detail-label {
+    font-size: 0.7em;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .power-detail-value {
+    font-size: 1.3em;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* ── Power History Sparkline ── */
+  .power-spark-wrap {
+    width: 100%;
+    height: 80px;
+    position: relative;
+    padding-left: 50px;
+    margin-top: 12px;
+  }
+  .power-spark-wrap svg { width: 100%; height: 100%; overflow: visible; }
+  .pspark-zero { stroke: var(--dim); stroke-width: 0.5; stroke-dasharray: 4 4; }
+
+  /* ── Stats Card ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .stat-box {
+    background: var(--card2);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .stat-label {
+    font-size: 0.65em;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-size: 1.5em;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .stat-sub {
+    font-size: 0.7em;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+
+  /* ── Temps Card ── */
+  .temps-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .temp-gauge-wrap {
+    position: relative;
+    width: 160px;
+    height: 160px;
+    margin-bottom: 4px;
+  }
+  .temp-gauge-wrap svg { width: 100%; height: 100%; }
+  .temp-gauge-bg { fill: none; stroke: var(--border); stroke-width: 12; }
+  .temp-gauge-fill {
+    fill: none;
+    stroke: var(--green);
+    stroke-width: 12;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1.5s ease, stroke 1s ease;
+  }
+  .temp-gauge-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .temp-gauge-val {
+    font-size: 1.6em;
+    font-weight: 800;
+    line-height: 1;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .temp-gauge-sub {
+    font-size: 0.75em;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+  .temp-sensors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    width: 100%;
+  }
+  .temp-mini {
+    background: var(--card2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .temp-mini-name {
+    font-size: 0.6em;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+  }
+  .temp-mini-val {
+    font-size: 0.85em;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* ── Pulse Heartbeat Bar ── */
+  .pulse-bar {
+    height: 3px;
+    margin-bottom: 16px;
+    border-radius: 2px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0s;
+  }
+  .pulse-bar.flash {
+    opacity: 1;
+    transition: opacity 0s;
+  }
+  .pulse-bar.fading {
+    opacity: 0;
+    transition: opacity 3s ease-out;
+  }
+
+  /* ── SOC History Sparkline ── */
+  .history-card {
+    margin-bottom: 16px;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .time-range-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .time-range-btns button {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 0.7em;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .time-range-btns button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .time-range-btns button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 700;
+  }
+  .sparkline-wrap {
+    width: 100%;
+    height: 100px;
+    position: relative;
+    padding-left: 40px;
+  }
+  .sparkline-wrap svg { width: 100%; height: 100%; overflow: visible; }
+  .spark-grid { stroke: var(--border); stroke-width: 0.5; }
+  .spark-label {
+    fill: var(--dim);
+    font-size: 9px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    opacity: 0.5;
+  }
+  .spark-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .spark-area {
+    fill: url(#sparkGrad);
+    opacity: 0.3;
+  }
+  .spark-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7em;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+
+  /* ── Cell Tree ── */
+  .tree-card {
+    padding: 20px;
+  }
+  .tree-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .tree-stats {
+    display: flex;
+    gap: 20px;
+    font-size: 0.78em;
+  }
+  .tree-stats .ts-label { color: var(--dim); }
+  .tree-stats .ts-val { font-weight: 700; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .module-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+  }
+  .module {
+    background: var(--card2);
+    border-radius: 8px;
+    padding: 6px;
+    text-align: center;
+    cursor: default;
+    transition: transform 0.15s, box-shadow 0.15s;
+    border: 1px solid transparent;
+  }
+  .module:hover {
+    transform: scale(1.08);
+    z-index: 5;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    border-color: var(--accent);
+  }
+  .mod-id {
+    font-size: 0.55em;
+    color: var(--dim);
+    margin-bottom: 3px;
+  }
+  .mod-cells {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+  }
+  .mod-cell {
+    width: 100%;
+    padding: 4px 2px;
+    border-radius: 4px;
+    font-size: 0.65em;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    text-align: center;
+  }
+  .mod-avg {
+    font-size: 0.6em;
+    color: var(--dim);
+    margin-top: 3px;
+  }
+
+  .tree-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 0.72em;
+    color: var(--dim);
+  }
+  .legend-gradient {
+    width: 180px;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(to right, var(--red), var(--orange), var(--yellow), var(--green), var(--accent));
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 1100px) {
+    .module-grid { grid-template-columns: repeat(6, 1fr); }
+  }
+  @media (max-width: 700px) {
+    .module-grid { grid-template-columns: repeat(4, 1fr); }
+    .stats-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="dash">
+
+<header>
+  {#- Wordmark. The silhouette is the profile's (LOGO = "leaf" gives the leaf,
+      anything else the neutral dial); it fills from the bottom with whatever
+      level signal the profile actually has — SOC on an EV, fuel on the Lancer,
+      nothing at all on a car with neither, in which case the mark is static. #}
+  {%- set leaf_path = 'M16 3 C 23 8 26 18 16 29 C 6 18 9 8 16 3 Z' %}
+  {%- set dial_path = 'M16 4 A 12 12 0 1 0 16 28 A 12 12 0 1 0 16 4 Z' %}
+  {%- set logo_path = leaf_path if veh.get('logo') == 'leaf' else dial_path %}
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" aria-label="Ha-Kake">
+      <defs><clipPath id="logo-clip"><path d="{{ logo_path }}"/></clipPath></defs>
+      {%- if veh.get('level_key', 'soc') %}
+      <rect id="batt-fill" x="0" y="3" width="32" height="26" fill="var(--green)" opacity="0.35" clip-path="url(#logo-clip)"/>
+      {%- endif %}
+      <path d="{{ logo_path }}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      {%- if veh.get('logo') == 'leaf' %}
+      <path d="M16 7 L16 26 M16 13 L21 10 M16 18 L11 15 M16 22 L20 20" stroke="var(--accent)" stroke-width="1" opacity="0.55"/>
+      {%- else %}
+      <path d="M16 10 L16 16 L20 19" stroke="var(--accent)" stroke-width="1.5" opacity="0.55" stroke-linecap="round"/>
+      {%- endif %}
+    </svg>
+    <h1>Ha-Kake<span>{{ veh.get("title") ~ " · " if veh.get("title") }}read-only telemetry</span></h1>
+  </div>
+  <div class="header-right">
+    <a class="sim-badge" id="sim-badge" href="/sim" title="This run is a simulated car (--adapter sim). Open the cockpit to drive it.">SIMULATED</a>
+    <div class="adapter-info" id="adapter-info" style="display:none">
+      <svg id="adapter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+      <span class="adapter-label" id="adapter-label">--</span>
+      <span class="adapter-detail" id="adapter-detail">--</span>
+    </div>
+    <span id="status-dot" class="waiting"></span>
+    <span id="status-text">Waiting for reader...</span>
+    <div class="tiles-menu">
+      <button class="tiles-btn" id="tiles-btn" title="Choose and order tiles. Disabled tiles are not polled from the car.">Tiles ▾</button>
+      <div class="tiles-panel" id="tiles-panel">
+        <h4>Tiles — drag a card title to reorder</h4>
+        <div id="tiles-list"></div>
+        <h4 style="margin-top:12px">Saved layouts</h4>
+        <div class="row" style="gap:6px">
+          <select id="layout-sel" style="flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px"></select>
+          <button id="layout-load" title="load this layout" style="width:auto;padding:0 8px">load</button>
+          <button id="layout-del" title="delete this layout">✕</button>
+        </div>
+        <div class="row" style="gap:6px">
+          <input id="layout-name" type="text" placeholder="name this layout…" style="flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px">
+          <button id="layout-save" title="save the current arrangement" style="width:auto;padding:0 8px">save</button>
+        </div>
+        <div class="foot"><span id="tiles-poll">--</span><a id="tiles-reset" title="back to the default arrangement">reset to default</a></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Pulse Heartbeat Bar -->
+<div class="pulse-bar" id="pulse-bar"></div>
+
+<main class="tiles" id="tiles">
+  {# Built-in tiles: static markup belonging to whichever vehicle profile
+     declares them in its TILES list (today only vehicles/leaf_ze0.py — pack,
+     cells, Car-CAN body and HVAC are Leaf decodes). A profile that declares
+     none never has them in its tile config and tilestudio.js hides them; its
+     dashboard is built from user signal tiles, which work for any vehicle.
+     A server-side comment, so no other car's page mentions the Leaf. #}
+
+  <!-- SOC Gauge -->
+  <div class="card soc-card" data-tile="soc" data-span="4">
+    <div class="gauge-wrap">
+      <svg viewBox="0 0 200 200">
+        <circle class="gauge-bg" cx="100" cy="100" r="85"
+                stroke-dasharray="534" stroke-dashoffset="0"
+                transform="rotate(-90 100 100)"/>
+        <circle class="gauge-fill" id="gauge-arc" cx="100" cy="100" r="85"
+                stroke-dasharray="534" stroke-dashoffset="534"
+                transform="rotate(-90 100 100)"/>
+      </svg>
+      <div class="gauge-center">
+        <div class="gauge-pct" id="soc-num">--</div>
+        <div class="gauge-unit">% SOC</div>
+      </div>
+    </div>
+    <div class="trend stable" id="trend-badge">
+      <svg viewBox="0 0 24 24"><path id="trend-arrow" d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <span id="trend-text">Waiting...</span>
+    </div>
+    <div class="pack-voltage">Pack <strong id="pack-v">--</strong> V</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="card" data-tile="health" data-span="5">
+    <div class="card-title">Battery Health & State</div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">SOH — State of Health</div>
+        <div class="stat-value" id="soh-val">--</div>
+        <div class="stat-sub">% of original</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Capacity</div>
+        <div class="stat-value" id="cap-val">--</div>
+        <div class="stat-sub" id="cap-sub">of 66.0 Ah</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">HX</div>
+        <div class="stat-value" id="hx-val">--</div>
+        <div class="stat-sub">internal resistance</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">12V Battery</div>
+        <div class="stat-value" id="lv-val">--</div>
+        <div class="stat-sub">auxiliary</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Insulation</div>
+        <div class="stat-value" id="ins-val">--</div>
+        <div class="stat-sub">kOhm</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Readings</div>
+        <div class="stat-value" id="readings-val">0</div>
+        <div class="stat-sub" id="time-sub">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Temps -->
+  <div class="card" data-tile="temps" data-span="3">
+    <div class="card-title">Pack Temperature <span class="tile-age" data-age-for="lbc04"></span></div>
+    <div class="temps-col">
+      <div class="temp-gauge-wrap">
+        <svg viewBox="0 0 160 160">
+          <circle class="temp-gauge-bg" cx="80" cy="80" r="68"
+                  stroke-dasharray="427" stroke-dashoffset="0"
+                  transform="rotate(-90 80 80)"/>
+          <circle class="temp-gauge-fill" id="temp-gauge-arc" cx="80" cy="80" r="68"
+                  stroke-dasharray="427" stroke-dashoffset="427"
+                  transform="rotate(-90 80 80)"/>
+        </svg>
+        <div class="temp-gauge-center">
+          <div class="temp-gauge-val" id="t-avg-f">--</div>
+          <div class="temp-gauge-sub" id="t-avg-c">--</div>
+        </div>
+      </div>
+      <div class="temp-sensors">
+        <div class="temp-mini"><div class="temp-mini-name">Sensor 1</div><div class="temp-mini-val" id="t1">--</div></div>
+        <div class="temp-mini"><div class="temp-mini-name">Sensor 2</div><div class="temp-mini-val" id="t2">--</div></div>
+        <div class="temp-mini"><div class="temp-mini-name">Sensor 3</div><div class="temp-mini-val" id="t3">--</div></div>
+        <div class="temp-mini"><div class="temp-mini-name">Sensor 4</div><div class="temp-mini-val" id="t4">--</div></div>
+      </div>
+    </div>
+  </div>
+
+{% include "tiles/vehicle.html" %}
+
+{% include "tiles/tires.html" %}
+
+{% include "tiles/body.html" %}
+
+{% include "tiles/climate.html" %}
+
+<div class="card power-card" data-tile="power" data-span="12">
+  <div class="history-header">
+    <div class="card-title" style="margin-bottom:0">Power Monitor</div>
+    <div class="time-range-btns" id="power-range-btns">
+      <button data-minutes="1">1m</button>
+      <button data-minutes="5">5m</button>
+      <button data-minutes="15">15m</button>
+      <button data-minutes="30">30m</button>
+      <button data-minutes="60">1h</button>
+      <button data-minutes="360">6h</button>
+      <button data-minutes="720">12h</button>
+      <button data-minutes="1440" class="active">24h</button>
+      <button data-minutes="10080">7d</button>
+      <button data-minutes="43200">30d</button>
+      <button data-minutes="0">All</button>
+    </div>
+  </div>
+  <div class="power-row">
+    <div class="power-gauge-col">
+      <div class="power-gauge-wrap">
+        <svg viewBox="0 0 200 200">
+          <circle class="power-gauge-bg" cx="100" cy="100" r="85"
+                  stroke-dasharray="534" stroke-dashoffset="0"
+                  transform="rotate(-90 100 100)"/>
+          <circle class="power-gauge-fill" id="power-gauge-arc" cx="100" cy="100" r="85"
+                  stroke-dasharray="534" stroke-dashoffset="534"
+                  transform="rotate(-90 100 100)"/>
+        </svg>
+        <div class="power-gauge-center">
+          <div class="power-value" id="power-val">--</div>
+          <div class="power-unit" id="power-unit">kW</div>
+        </div>
+      </div>
+      <span class="power-state-badge idle" id="power-badge">IDLE</span>
+    </div>
+    <div class="power-details">
+      <div class="power-detail-row">
+        <span class="power-detail-label">Current</span>
+        <span class="power-detail-value" id="current-val">--<span style="font-size:0.6em; color:var(--dim); margin-left:4px">A</span></span>
+      </div>
+      <div class="power-detail-row">
+        <span class="power-detail-label">Pack Voltage</span>
+        <span class="power-detail-value" id="power-pack-v">--<span style="font-size:0.6em; color:var(--dim); margin-left:4px">V</span></span>
+      </div>
+      <div class="power-detail-row">
+        <span class="power-detail-label">Smoothing</span>
+        <span class="power-detail-value" style="font-size:0.85em; color:var(--dim)">5-sample EMA</span>
+      </div>
+      <div class="power-detail-row">
+        <span class="power-detail-label">Zero offset</span>
+        <span class="power-detail-value" style="font-size:0.85em; color:var(--dim)"><span id="cal-offset">0.000 A</span>
+          <a id="cal-zero" title="Take the current raw reading as zero. Do this with the car ON but not READY (contactors open)." style="color:var(--accent); cursor:pointer; margin-left:8px">zero now</a>
+          <a id="cal-clear" title="Remove the offset" style="color:var(--dim); cursor:pointer; margin-left:6px">clear</a></span>
+      </div>
+    </div>
+  </div>
+  <div class="power-spark-wrap">
+    <svg id="pspark-svg" viewBox="0 0 800 80" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="powerGradDraw" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="transparent"/>
+          <stop offset="100%" stop-color="var(--orange)"/>
+        </linearGradient>
+        <linearGradient id="powerGradCharge" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </linearGradient>
+      </defs>
+      <line class="pspark-zero" id="pspark-zero" x1="0" x2="800" y1="40" y2="40"/>
+      <clipPath id="clipAbove"><rect id="clipAboveRect" x="0" y="0" width="800" height="40"/></clipPath>
+      <clipPath id="clipBelow"><rect id="clipBelowRect" x="0" y="40" width="800" height="40"/></clipPath>
+      <path id="pspark-area-charge" d="" clip-path="url(#clipAbove)" style="fill:url(#powerGradCharge); opacity:0.25"/>
+      <path id="pspark-area-draw" d="" clip-path="url(#clipBelow)" style="fill:url(#powerGradDraw); opacity:0.25"/>
+      <g id="pspark-lines"></g>
+    </svg>
+  </div>
+  <div class="spark-labels">
+    <span id="pspark-oldest">--</span>
+    <span style="color:var(--dim); font-size:0.7em" id="pspark-legend">charge ▲ | ▼ draw</span>
+    <span id="pspark-newest">--</span>
+  </div>
+</div>
+
+<!-- SOC History -->
+<div class="card history-card" data-tile="history" data-span="12">
+  <div class="history-header">
+    <div class="card-title" style="margin-bottom:0">SOC History</div>
+    <div class="time-range-btns" id="time-range-btns">
+      <button data-minutes="1">1m</button>
+      <button data-minutes="5">5m</button>
+      <button data-minutes="15">15m</button>
+      <button data-minutes="30">30m</button>
+      <button data-minutes="60">1h</button>
+      <button data-minutes="360">6h</button>
+      <button data-minutes="720">12h</button>
+      <button data-minutes="1440" class="active">24h</button>
+      <button data-minutes="10080">7d</button>
+      <button data-minutes="43200">30d</button>
+      <button data-minutes="0">All</button>
+    </div>
+  </div>
+  <div class="sparkline-wrap">
+    <svg id="spark-svg" viewBox="0 0 800 100" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </linearGradient>
+      </defs>
+      <g id="spark-gridlines"></g>
+      <path class="spark-area" id="spark-area" d=""/>
+      <path class="spark-line" id="spark-line" d=""/>
+    </svg>
+  </div>
+  <div class="spark-labels">
+    <span id="spark-oldest">--</span>
+    <span id="spark-newest">--</span>
+  </div>
+</div>
+
+<!-- Capacity Degradation -->
+<div class="card history-card" data-tile="degradation" data-span="12">
+  <div class="history-header">
+    <div class="card-title" style="margin-bottom:0">Capacity Degradation — all time</div>
+    <span id="degr-summary" style="color:var(--dim); font-size:0.75em">--</span>
+  </div>
+  <div class="sparkline-wrap" style="height:140px">
+    <svg id="degr-svg" viewBox="0 0 800 140" preserveAspectRatio="none">
+      <g id="degr-grid"></g>
+      <path id="degr-fit" d="" style="stroke:var(--dim); stroke-width:1; stroke-dasharray:4 4; fill:none; vector-effect:non-scaling-stroke"/>
+      <path id="degr-proj" d="" style="stroke:var(--red); stroke-width:1; stroke-dasharray:2 4; fill:none; opacity:0.8; vector-effect:non-scaling-stroke"/>
+      <path id="degr-line" class="spark-line" d=""/>
+      <g id="degr-points"></g>
+    </svg>
+  </div>
+  <div class="spark-labels">
+    <span id="degr-oldest">--</span>
+    <span style="color:var(--dim); font-size:0.7em">● daily mean capacity &nbsp;╌ fit &nbsp;<span style="color:var(--red)">╌ projection</span></span>
+    <span id="degr-newest">--</span>
+  </div>
+</div>
+
+<!-- Cell Tree -->
+<div class="card tree-card" data-tile="cells" data-span="12">
+  <div class="tree-header">
+    <div class="card-title" style="margin-bottom:0">Cell Pairs — 48 Modules × 2 Cells <span class="tile-age" data-age-for="lbc02"></span></div>
+    <div class="tree-stats">
+      <span><span class="ts-label">Min </span><span class="ts-val" id="c-min">--</span></span>
+      <span><span class="ts-label">Max </span><span class="ts-val" id="c-max">--</span></span>
+      <span><span class="ts-label">Avg </span><span class="ts-val" id="c-avg">--</span></span>
+      <span><span class="ts-label">Spread </span><span class="ts-val" id="c-spread">--</span></span>
+    </div>
+  </div>
+  <div class="module-grid" id="module-grid"></div>
+  <div class="tree-legend">
+    <span>Low</span><div class="legend-gradient"></div><span>High</span>
+    <span style="margin-left:16px">Each box = 1 module (2 cell pairs)</span>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="/static/tiles.js"></script>
+<script>
+// Build module tree: 48 modules × 2 cells
+const modGrid = document.getElementById('module-grid');
+for (let m = 0; m < 48; m++) {
+  const c0 = m * 2, c1 = m * 2 + 1;
+  const div = document.createElement('div');
+  div.className = 'module';
+  div.id = `mod-${m}`;
+  div.innerHTML = `
+    <div class="mod-id">M${m+1}</div>
+    <div class="mod-cells">
+      <div class="mod-cell" id="cell-${c0}">${c0}</div>
+      <div class="mod-cell" id="cell-${c1}">${c1}</div>
+    </div>
+    <div class="mod-avg" id="mod-avg-${m}">--</div>`;
+  modGrid.appendChild(div);
+}
+
+const CIRC = 2 * Math.PI * 85; // gauge circumference
+const STALE_AFTER_SEC = 90;    // dot turns yellow if no new reading within this
+const LOGO_LEVEL = {{ veh.get('level_key', 'soc') | tojson }};  // state key the wordmark fills with, or null
+const IDLE_A = 0.6, IDLE_KW = 0.25;  // LBC current sensors wander about 0.5 A around zero; below this is idle
+
+// Power smoothing (EMA)
+let smoothedPower = null;
+let smoothedCurrent = null;
+const emaAlpha = 0.4; // 0.4 = moderate smoothing (~5 sample window)
+
+// SOC trend drives power state: 'charging', 'discharging', 'stable'
+let socTrend = 'stable';
+
+function powerGaugeColor(t, isCharging) {
+  // t is 0..1 where 0 = no power, 1 = max (10 kW)
+  if (t < 0.01) return 'var(--dim)';
+  if (isCharging) {
+    // Charging: cool blue/cyan scale (low=light blue, high=deep blue)
+    if (t < 0.15) return 'hsl(195, 70%, 60%)';
+    if (t < 0.30) return 'hsl(195, 75%, 55%)';
+    if (t < 0.45) return 'hsl(200, 80%, 50%)';
+    if (t < 0.60) return 'hsl(210, 80%, 50%)';
+    if (t < 0.75) return 'hsl(220, 80%, 50%)';
+    return 'hsl(230, 80%, 50%)';
+  }
+  // Discharging: warm scale green -> yellow -> orange -> red
+  if (t < 0.15) return 'hsl(120, 65%, 48%)';    // green
+  if (t < 0.30) return 'hsl(80, 75%, 48%)';     // yellow-green
+  if (t < 0.45) return 'hsl(50, 85%, 50%)';     // yellow
+  if (t < 0.60) return 'hsl(35, 85%, 50%)';     // orange-yellow
+  if (t < 0.75) return 'hsl(25, 85%, 50%)';     // orange
+  return 'hsl(0, 80%, 50%)';                     // red
+}
+
+function cellColor(mv, min, max) {
+  if (min === max) return 'var(--green)';
+  const t = (mv - min) / (max - min);
+  if (t > 0.8) return `hsl(195, 80%, ${50 + t*10}%)`;
+  if (t > 0.6) return `hsl(${120 + (t-0.6)*375}, 65%, 48%)`;
+  if (t > 0.35) return `hsl(${80 + (t-0.35)*160}, 75%, 50%)`;
+  if (t > 0.15) return `hsl(${30 + (t-0.15)*250}, 85%, 50%)`;
+  return `hsl(${t*200}, 80%, 48%)`;
+}
+
+const { tempColor, socColor } = Tiles;   // shared with the four tiles in tiles.js
+
+function updateDash(data) {
+  // Status
+  const dot = document.getElementById('status-dot');
+  const stxt = document.getElementById('status-text');
+  const s = data.status || 'waiting';
+  const lastOk = data.last_ok || data.timestamp;
+  const ageSec = lastOk ? (Date.now() - new Date(lastOk).getTime()) / 1000 : null;
+  const stale = s === 'ok' && ageSec != null && ageSec > STALE_AFTER_SEC;
+  dot.className = (s === 'ok' && !stale) ? 'ok'
+    : (['connecting', 'waiting', 'reconnecting', 'asleep'].includes(s) || stale) ? 'waiting' : 'error';
+  const ago = ageSec == null ? '' : ageSec < 90 ? `${Math.round(ageSec)}s ago`
+    : ageSec < 5400 ? `${Math.round(ageSec / 60)}m ago` : `${(ageSec / 3600).toFixed(1)}h ago`;
+  if (s === 'ok' && !stale) stxt.textContent = `Updated ${new Date(lastOk).toLocaleTimeString()}`;
+  else if (s === 'ok') stxt.textContent = `Stale — last reading ${ago}`;
+  else if (s === 'asleep') stxt.textContent = `Car asleep — last reading ${ago || 'n/a'}`;
+  else if (s === 'reconnecting') stxt.textContent = `Reconnecting… last reading ${ago || 'n/a'}`;
+  else stxt.textContent = data.message || s;
+
+  // Adapter info
+  const adapterInfo = document.getElementById('adapter-info');
+  if (data.adapter_type) {
+    adapterInfo.style.display = 'flex';
+    const icon = document.getElementById('adapter-icon');
+    if (data.adapter_type === 'usb') {
+      icon.innerHTML = '<rect x="4" y="2" width="16" height="18" rx="2"/><line x1="8" y1="20" x2="8" y2="24"/><line x1="16" y1="20" x2="16" y2="24"/><line x1="8" y1="6" x2="16" y2="6"/>';
+    } else {
+      icon.innerHTML = '<path d="M6 12a6 6 0 0 1 12 0"/><path d="M9 12a3 3 0 0 1 6 0"/><circle cx="12" cy="12" r="1"/><line x1="12" y1="13" x2="12" y2="20"/>';
+    }
+    document.getElementById('adapter-label').textContent = data.adapter_type.toUpperCase();
+    const port = data.adapter_port || '';
+    const shortPort = port.length > 24 ? '...' + port.slice(-20) : port;
+    document.getElementById('adapter-detail').textContent = shortPort;
+  }
+
+  if (!data.timestamp) return;  // keep showing the last good reading while reconnecting / asleep
+
+  // Wordmark fills from the bottom with the profile's level signal (SOC / fuel).
+  // LOGO_LEVEL is null when the vehicle has neither — then there is no fill rect.
+  const bf = document.getElementById('batt-fill');
+  if (bf && LOGO_LEVEL) {
+    const lv = data[LOGO_LEVEL];
+    const pct = Math.min(1, Math.max(0, (lv || 0) / 100));
+    const h = 26 * pct;
+    bf.setAttribute('height', h.toFixed(1));
+    bf.setAttribute('y', (29 - h).toFixed(1));
+    bf.setAttribute('fill', socColor(lv || 0));
+  }
+
+  // SOC gauge
+  const soc = data.soc;
+  if (soc != null) {
+    document.getElementById('soc-num').textContent = soc.toFixed(1);
+    const arc = document.getElementById('gauge-arc');
+    const offset = CIRC * (1 - soc / 100);
+    arc.setAttribute('stroke-dashoffset', offset);
+    arc.setAttribute('stroke', socColor(soc).replace('var(', '').replace(')', ''));
+    arc.style.stroke = socColor(soc);
+  }
+
+  // Pack voltage
+  if (data.pack_v != null) document.getElementById('pack-v').textContent = data.pack_v.toFixed(1);
+
+  // Stats
+  if (data.soh != null) {
+    const el = document.getElementById('soh-val');
+    el.textContent = data.soh.toFixed(1) + '%';
+    el.style.color = data.soh > 70 ? 'var(--green)' : data.soh > 50 ? 'var(--yellow)' : 'var(--red)';
+  }
+  if (data.capacity_ah != null) document.getElementById('cap-val').textContent = data.capacity_ah.toFixed(2) + ' Ah';
+  if (data.hx != null) document.getElementById('hx-val').textContent = data.hx.toFixed(1) + '%';
+  if (data.lv_volts != null) document.getElementById('lv-val').textContent = data.lv_volts.toFixed(2) + ' V';
+  if (data.insulation_kohm != null) document.getElementById('ins-val').textContent = data.insulation_kohm;
+  if (data.readings != null) document.getElementById('readings-val').textContent = data.readings;
+  if (data.timestamp) {
+    document.getElementById('time-sub').textContent = new Date(data.timestamp).toLocaleTimeString()
+      + (data.cycle_s != null ? ` · ${data.cycle_s.toFixed(1)}s cycle` : '');
+  }
+
+  // Temps (dual F/C) — gauge for average, mini for individual
+  if (data.temps) {
+    const avg = data.temps.reduce((a,b) => a+b, 0) / data.temps.length;
+    const avgF = (avg * 9/5 + 32).toFixed(1);
+
+    // Average gauge (0°C to 60°C range mapped to arc)
+    document.getElementById('t-avg-f').textContent = avgF + '°F';
+    document.getElementById('t-avg-f').style.color = tempColor(avg);
+    document.getElementById('t-avg-c').textContent = avg.toFixed(1) + '°C';
+    const TEMP_CIRC = 2 * Math.PI * 68;
+    const tempPct = Math.min(1, Math.max(0, avg / 60));
+    const tempArc = document.getElementById('temp-gauge-arc');
+    tempArc.setAttribute('stroke-dashoffset', TEMP_CIRC * (1 - tempPct));
+    tempArc.style.stroke = tempColor(avg);
+
+    // Individual sensors
+    data.temps.forEach((t, i) => {
+      const el = document.getElementById(`t${i+1}`);
+      if (el) {
+        const f = (t * 9/5 + 32).toFixed(0);
+        el.textContent = `${f}°F / ${t}°C`;
+        el.style.color = tempColor(t);
+      }
+    });
+  }
+
+  // Cells
+  if (data.cells && data.cells.length) {
+    const min = data.cell_min, max = data.cell_max;
+    document.getElementById('c-min').textContent = min + ' mV';
+    document.getElementById('c-max').textContent = max + ' mV';
+    document.getElementById('c-avg').textContent = data.cell_avg + ' mV';
+    document.getElementById('c-spread').textContent = data.cell_spread + ' mV';
+
+    data.cells.forEach((mv, i) => {
+      const el = document.getElementById(`cell-${i}`);
+      if (el) {
+        el.textContent = mv;
+        el.style.background = cellColor(mv, min, max);
+        el.style.color = '#fff';
+        el.title = `Cell ${i}: ${mv} mV (${(mv/1000).toFixed(3)} V)`;
+      }
+    });
+
+    // Module averages
+    for (let m = 0; m < 48; m++) {
+      const c0 = data.cells[m*2] || 0;
+      const c1 = data.cells[m*2+1] || 0;
+      const avg = ((c0 + c1) / 2).toFixed(0);
+      const el = document.getElementById(`mod-avg-${m}`);
+      if (el) el.textContent = avg + ' mV';
+      // Highlight module border if has min or max
+      const mod = document.getElementById(`mod-${m}`);
+      if (c0 === min || c1 === min) {
+        mod.style.borderColor = 'var(--red)';
+      } else if (c0 === max || c1 === max) {
+        mod.style.borderColor = 'var(--accent)';
+      } else {
+        mod.style.borderColor = 'transparent';
+      }
+    }
+  }
+
+  // ── per-tile freshness badges ──
+  document.querySelectorAll('[data-age-for]').forEach(el => {
+    const a = data.item_age ? data.item_age[el.dataset.ageFor] : null;
+    el.textContent = a == null ? '' : a < 60 ? `${Math.round(a)}s ago` : `${Math.round(a / 60)}m ago`;
+  });
+  if (data.items) document.getElementById('tiles-poll').textContent = `polling ${data.items.length} source${data.items.length === 1 ? '' : 's'}` + (data.cycle_s != null ? ` · ${data.cycle_s.toFixed(1)}s cycle` : '');
+
+  // ── Vehicle / Tires / Body / Climate tiles (web/static/tiles.js) ──
+  Tiles.renderVehicle(document, data);
+  Tiles.renderTires(document, data);
+  Tiles.renderBody(document, data);
+  Tiles.renderClimate(document, data);
+
+  // Power monitor gauge
+  if (data.power_kw != null) {
+    // Apply EMA smoothing
+    const rawPower = data.power_kw;
+    const rawCurrent = data.current_a || 0;
+    smoothedPower = smoothedPower === null ? rawPower : smoothedPower * (1 - emaAlpha) + rawPower * emaAlpha;
+    smoothedCurrent = smoothedCurrent === null ? rawCurrent : smoothedCurrent * (1 - emaAlpha) + rawCurrent * emaAlpha;
+
+    const pw = smoothedPower;
+    const cur = smoothedCurrent;
+    const absPw = Math.abs(pw);
+
+    // Format: below 1 kW show as watts
+    const powerValEl = document.getElementById('power-val');
+    const powerUnitEl = document.getElementById('power-unit');
+    if (absPw < 1.0) {
+      powerValEl.textContent = Math.round(absPw * 1000);
+      powerUnitEl.textContent = 'Watts';
+    } else {
+      powerValEl.textContent = absPw.toFixed(2);
+      powerUnitEl.textContent = 'kW';
+    }
+
+    // Direction is the BMS discharge flag; the sign of a sub-ampere reading is offset noise
+    const isCharging = data.discharging === false && pw > 0;
+    let powerState;
+    if (absPw < IDLE_KW || Math.abs(cur) < IDLE_A) {   // inside the sensors' zero-noise band
+      powerState = 'idle';
+    } else if (isCharging) {
+      powerState = 'charge';
+    } else {
+      powerState = 'draw';
+    }
+
+    // Gauge arc (0-10 kW scale)
+    const MAX_KW = 10.0;
+    const gaugeArc = document.getElementById('power-gauge-arc');
+    const gaugePct = Math.min(1, absPw / MAX_KW);
+    const gaugeOffset = CIRC * (1 - gaugePct);
+    gaugeArc.setAttribute('stroke-dashoffset', gaugeOffset);
+
+    // Color: blue scale for charging, warm scale for discharging
+    const gaugeColor = powerState === 'idle' ? 'var(--dim)' : powerGaugeColor(gaugePct, isCharging);
+    gaugeArc.style.stroke = gaugeColor;
+    powerValEl.style.color = gaugeColor;
+
+    // Current
+    const curEl = document.getElementById('current-val');
+    curEl.innerHTML = Math.abs(cur).toFixed(2) + '<span style="font-size:0.6em; color:var(--dim); margin-left:4px">A</span>';
+    curEl.style.color = gaugeColor;
+
+    if (data.current_offset_a != null) document.getElementById('cal-offset').textContent = `${data.current_offset_a.toFixed(3)} A` + (data.current_raw_a != null ? ` (raw ${data.current_raw_a.toFixed(2)} A)` : '');
+
+    // Pack voltage
+    if (data.pack_v != null) {
+      const pvEl = document.getElementById('power-pack-v');
+      pvEl.innerHTML = data.pack_v.toFixed(1) + '<span style="font-size:0.6em; color:var(--dim); margin-left:4px">V</span>';
+    }
+
+    // Badge — driven by SOC trend
+    const badge = document.getElementById('power-badge');
+    if (powerState === 'charge') {
+      badge.className = 'power-state-badge charge'; badge.textContent = 'CHARGING';
+    } else if (powerState === 'draw') {
+      badge.className = 'power-state-badge draw'; badge.textContent = 'DRAW';
+    } else {
+      badge.className = 'power-state-badge idle'; badge.textContent = 'IDLE';
+    }
+  }
+}
+
+// ── Time Range State ──
+let selectedRangeMinutes = 1440; // default 24h (SOC chart)
+let powerRangeMinutes = 1440;    // default 24h (Power chart)
+let fullHistory = [];
+function historyMinutesNeeded() {
+  // server window must cover the wider of the two chart ranges (0 = everything)
+  return (selectedRangeMinutes === 0 || powerRangeMinutes === 0) ? 0 : Math.max(selectedRangeMinutes, powerRangeMinutes, 1440);
+}
+
+// Wire up SOC time range buttons
+document.getElementById('time-range-btns').addEventListener('click', function(e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  document.querySelectorAll('#time-range-btns button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedRangeMinutes = parseInt(btn.dataset.minutes, 10);
+  renderSparkline();
+});
+
+// Wire up Power time range buttons
+document.getElementById('power-range-btns').addEventListener('click', function(e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  document.querySelectorAll('#power-range-btns button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  powerRangeMinutes = parseInt(btn.dataset.minutes, 10);
+  renderSparkline();
+});
+
+function filterHistoryByRange(history, minutes) {
+  if (!history || !history.length) return [];
+  if (!minutes) return history;  // 0 = all
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000);
+  return history.filter(h => h.t && new Date(h.t) >= cutoff);
+}
+
+function renderSparkline() {
+  drawSparkline(filterHistoryByRange(fullHistory, selectedRangeMinutes));
+  drawPowerSparkline(filterHistoryByRange(fullHistory, powerRangeMinutes));
+  updateTrend(fullHistory); // trend always uses full history (last 6 readings)
+}
+
+function updateSparkline(history) {
+  fullHistory = history || [];
+  renderSparkline();
+}
+
+function drawPowerSparkline(history) {
+  const linesGroup = document.getElementById('pspark-lines');
+  const areaChargeEl = document.getElementById('pspark-area-charge');
+  const areaDrawEl = document.getElementById('pspark-area-draw');
+  const zeroEl = document.getElementById('pspark-zero');
+
+  if (!history || history.length < 2) {
+    linesGroup.innerHTML = '';
+    areaChargeEl.setAttribute('d', '');
+    areaDrawEl.setAttribute('d', '');
+    document.getElementById('pspark-oldest').textContent = 'No power data';
+    document.getElementById('pspark-newest').textContent = '';
+    return;
+  }
+
+  // Filter entries that have power data (SOC optional — missing SOC = assume discharge)
+  const entries = history.filter(h => h.power_kw != null);
+  if (entries.length < 2) {
+    linesGroup.innerHTML = '';
+    areaChargeEl.setAttribute('d', '');
+    areaDrawEl.setAttribute('d', '');
+    return;
+  }
+
+  // power_kw is already signed by the BMS (negative = draw, positive = charge)
+  const signedRaw = entries.map(e => e.power_kw);
+
+  // Apply EMA smoothing to signed values
+  const vals = [];
+  let ema = signedRaw[0];
+  for (const v of signedRaw) {
+    ema = ema * (1 - emaAlpha) + v * emaAlpha;
+    vals.push(ema);
+  }
+
+  const W = 800, H = 80;
+  // Ensure zero is always visible with some padding on both sides
+  const dataMax = Math.max(Math.max(...vals), 0.5);
+  const dataMin = Math.min(Math.min(...vals), -0.5);
+  const range = dataMax - dataMin || 1;
+  const step = W / (vals.length - 1);
+
+  // Zero line position
+  const zeroY = H - ((0 - dataMin) / range) * H;
+  zeroEl.setAttribute('y1', zeroY.toFixed(1));
+  zeroEl.setAttribute('y2', zeroY.toFixed(1));
+
+  // Update clip rects to match zero line
+  document.getElementById('clipAboveRect').setAttribute('height', zeroY.toFixed(1));
+  document.getElementById('clipBelowRect').setAttribute('y', zeroY.toFixed(1));
+  document.getElementById('clipBelowRect').setAttribute('height', (H - zeroY).toFixed(1));
+
+  // Compute x,y points
+  const points = vals.map((v, i) => ({
+    x: i * step,
+    y: H - ((v - dataMin) / range) * H,
+    val: v
+  }));
+
+  // Build area path (shared geometry, clip paths split at zero)
+  let areaPath = '';
+  points.forEach((p, i) => {
+    areaPath += (i === 0 ? 'M' : 'L') + `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  });
+  areaPath += `L${points[points.length-1].x.toFixed(1)},${zeroY.toFixed(1)}L0,${zeroY.toFixed(1)}Z`;
+  areaChargeEl.setAttribute('d', areaPath);
+  areaDrawEl.setAttribute('d', areaPath);
+
+  // Build per-segment colored line segments
+  // Color each segment by the value at its midpoint: above zero = charge (blue), below = draw (orange)
+  const NS = 'http://www.w3.org/2000/svg';
+  const frags = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i], p1 = points[i + 1];
+    const midVal = (p0.val + p1.val) / 2;
+    const color = midVal > IDLE_KW ? 'var(--accent)' : midVal < -IDLE_KW ? 'var(--orange)' : 'var(--dim)';
+    frags.push(`<line x1="${p0.x.toFixed(1)}" y1="${p0.y.toFixed(1)}" x2="${p1.x.toFixed(1)}" y2="${p1.y.toFixed(1)}" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`);
+  }
+  linesGroup.innerHTML = frags.join('');
+
+  const oldest = entries[0];
+  const newest = entries[entries.length - 1];
+  const lastVal = vals[vals.length - 1];
+  if (oldest.t) document.getElementById('pspark-oldest').textContent = new Date(oldest.t).toLocaleTimeString();
+  if (newest.t) {
+    const npw = Math.abs(newest.power_kw);
+    const pwLabel = npw < 1.0 ? Math.round(npw * 1000) + ' W' : npw.toFixed(2) + ' kW';
+    const stateLabel = lastVal > IDLE_KW ? ' (charging)' : lastVal < -IDLE_KW ? ' (draw)' : ' (idle)';
+    document.getElementById('pspark-newest').textContent = pwLabel + stateLabel;
+  }
+}
+
+function drawSparkline(history) {
+  if (!history || history.length < 2) {
+    document.getElementById('spark-line').setAttribute('d', '');
+    document.getElementById('spark-area').setAttribute('d', '');
+    document.getElementById('spark-gridlines').innerHTML = '';
+    document.getElementById('spark-oldest').textContent = history && history.length === 1 ? 'Only 1 data point in range' : 'No data in range';
+    document.getElementById('spark-newest').textContent = '';
+    return;
+  }
+  const vals = history.map(h => h.soc).filter(v => v != null);
+  if (vals.length < 2) return;
+
+  const W = 800, H = 100;
+  const dataMin = Math.min(...vals);
+  const dataMax = Math.max(...vals);
+  const min = Math.floor(dataMin) - 1;
+  const max = Math.ceil(dataMax) + 1;
+  const range = max - min || 1;
+  const step = W / (vals.length - 1);
+
+  // Draw Y-axis gridlines and labels
+  const gridGroup = document.getElementById('spark-gridlines');
+  gridGroup.innerHTML = '';
+  const nLines = 4;
+  const tickStep = range / (nLines + 1);
+  for (let i = 1; i <= nLines; i++) {
+    const val = min + tickStep * i;
+    const niceVal = Math.round(val * 10) / 10;
+    const y = H - ((niceVal - min) / range) * H;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', 0);
+    line.setAttribute('x2', W);
+    line.setAttribute('y1', y.toFixed(1));
+    line.setAttribute('y2', y.toFixed(1));
+    line.setAttribute('class', 'spark-grid');
+    gridGroup.appendChild(line);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', -4);
+    text.setAttribute('y', (y + 3).toFixed(1));
+    text.setAttribute('text-anchor', 'end');
+    text.setAttribute('class', 'spark-label');
+    text.textContent = niceVal.toFixed(1) + '%';
+    gridGroup.appendChild(text);
+  }
+
+  let linePath = '';
+  let areaPath = '';
+  vals.forEach((v, i) => {
+    const x = i * step;
+    const y = H - ((v - min) / range) * H;
+    linePath += (i === 0 ? 'M' : 'L') + `${x.toFixed(1)},${y.toFixed(1)}`;
+    areaPath += (i === 0 ? 'M' : 'L') + `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  areaPath += `L${((vals.length-1)*step).toFixed(1)},${H}L0,${H}Z`;
+
+  document.getElementById('spark-line').setAttribute('d', linePath);
+  document.getElementById('spark-area').setAttribute('d', areaPath);
+
+  // Labels
+  const oldest = history[0];
+  const newest = history[history.length - 1];
+  if (oldest.t) document.getElementById('spark-oldest').textContent = new Date(oldest.t).toLocaleTimeString() + ` (${oldest.soc}%)`;
+  if (newest.t) document.getElementById('spark-newest').textContent = new Date(newest.t).toLocaleTimeString() + ` (${newest.soc}%)`;
+}
+
+function updateTrend(history) {
+  const recent = history.slice(-6);
+  if (recent.length < 2) return;
+
+  const socs = recent.map(h => h.soc).filter(v => v != null);
+  if (socs.length < 2) return;
+
+  const first = socs[0];
+  const last = socs[socs.length - 1];
+  const diff = last - first;
+
+  const badge = document.getElementById('trend-badge');
+  const arrow = document.getElementById('trend-arrow');
+  const text = document.getElementById('trend-text');
+
+  if (Math.abs(diff) < 0.05) {
+    socTrend = 'stable';
+    badge.className = 'trend stable';
+    arrow.setAttribute('d', 'M6 12h12');
+    text.textContent = 'Stable';
+  } else if (diff > 0) {
+    socTrend = 'charging';
+    badge.className = 'trend charging';
+    arrow.setAttribute('d', 'M12 4l0 16M6 10l6-6 6 6');
+    const rate = (diff / (recent.length - 1)).toFixed(2);
+    text.textContent = `Charging +${rate}%/reading`;
+  } else {
+    socTrend = 'discharging';
+    badge.className = 'trend discharging';
+    arrow.setAttribute('d', 'M12 4l0 16M6 14l6 6 6-6');
+    const rate = (Math.abs(diff) / (recent.length - 1)).toFixed(2);
+    text.textContent = `Discharging -${rate}%/reading`;
+  }
+}
+
+function firePulse() {
+  const bar = document.getElementById('pulse-bar');
+  bar.classList.remove('fading');
+  bar.classList.add('flash');
+  // Force reflow so the transition resets
+  void bar.offsetWidth;
+  bar.classList.remove('flash');
+  bar.classList.add('fading');
+}
+
+let lastTimestamp = null;
+async function poll() {
+  try {
+    const [statusResp, histResp] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/history?minutes=' + historyMinutesNeeded())
+    ]);
+    const data = await statusResp.json();
+    const history = await histResp.json();
+    // Compute SOC trend first so power gauge knows charge vs draw state
+    updateTrend(history || []);
+    updateDash(data);
+    document.getElementById('sim-badge').classList.toggle('on', !!data.simulated);
+    updateSparkline(history);
+    if (window.TileStudio) { TileStudio.update(data); TileStudio.history(history); }
+
+    // Fire pulse when new data arrives
+    if (data.timestamp && data.timestamp !== lastTimestamp) {
+      lastTimestamp = data.timestamp;
+      firePulse();
+    }
+  } catch (e) {
+    document.getElementById('status-dot').className = 'error';
+    document.getElementById('status-text').textContent = 'Dashboard offline';
+  }
+}
+
+const SHOT = new URLSearchParams(location.search).has('shot');
+if (SHOT) document.documentElement.classList.add('shot');
+poll();
+if (!SHOT) setInterval(poll, 1000);
+
+// ── Current zero calibration ──
+document.getElementById('cal-zero').addEventListener('click', async () => {
+  if (!confirm('Take the current raw reading as zero?\n\nBest done with the car ON but not READY (contactors open, true current 0 A).')) return;
+  const r = await fetch('/api/calibration', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zero_current: true }) });
+  const j = await r.json();
+  if (j.error) alert(j.error);
+});
+document.getElementById('cal-clear').addEventListener('click', async () => { await fetch('/api/calibration', { method: 'DELETE' }); });
+
+// ── Capacity degradation (daily means from /api/health) ──
+function drawDegradation(days) {
+  const pts = (days || []).filter(d => d.capacity_ah != null);
+  const line = document.getElementById('degr-line'), fit = document.getElementById('degr-fit'),
+        proj = document.getElementById('degr-proj'), grid = document.getElementById('degr-grid'),
+        ptsG = document.getElementById('degr-points'), summary = document.getElementById('degr-summary');
+  if (!pts.length) { summary.textContent = 'No capacity readings yet'; return; }
+  const W = 800, H = 140, DAY = 86400000;
+  const xs = pts.map(d => new Date(d.day + 'T12:00:00Z').getTime());
+  const ys = pts.map(d => d.capacity_ah);
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  let slope = null, intercept = null;   // Ah per ms
+  if (pts.length >= 2 && x1 > x0) {
+    const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+    slope = num / den; intercept = my - slope * mx;
+  }
+  const spanMs = Math.max(x1 - x0, 30 * DAY);
+  const xStart = x0 - spanMs * 0.03, xEnd = x1 + spanMs * 0.3;
+  const projY = slope != null ? intercept + slope * xEnd : null;
+  const yAll = ys.concat(projY != null ? [projY] : []);
+  const yMin = Math.floor(Math.min(...yAll) - 0.5), yMax = Math.ceil(Math.max(...yAll) + 0.5);
+  const X = t => (t - xStart) / (xEnd - xStart) * W;
+  const Y = v => H - (v - yMin) / (yMax - yMin) * H;
+  const NS = 'http://www.w3.org/2000/svg';
+  grid.innerHTML = '';
+  const stepAh = (yMax - yMin) > 8 ? 2 : 1;
+  for (let v = yMin; v <= yMax; v += stepAh) {
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', 0); l.setAttribute('x2', W); l.setAttribute('y1', Y(v).toFixed(1)); l.setAttribute('y2', Y(v).toFixed(1));
+    l.setAttribute('class', 'spark-grid'); grid.appendChild(l);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', -4); t.setAttribute('y', (Y(v) + 3).toFixed(1)); t.setAttribute('text-anchor', 'end');
+    t.setAttribute('class', 'spark-label'); t.textContent = v.toFixed(0) + ' Ah'; grid.appendChild(t);
+  }
+  line.setAttribute('d', pts.map((d, i) => (i ? 'L' : 'M') + X(xs[i]).toFixed(1) + ',' + Y(ys[i]).toFixed(1)).join(''));
+  ptsG.innerHTML = pts.map((d, i) => {
+    const temp = d.temp_avg_c != null ? `, ${d.temp_avg_c.toFixed(0)}°C / ${d.temp_avg_f.toFixed(0)}°F` : '';
+    return `<circle cx="${X(xs[i]).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="3.5" fill="var(--accent)" vector-effect="non-scaling-stroke"><title>${d.day}: ${d.capacity_ah.toFixed(2)} Ah (${d.soh.toFixed(1)}% SOH)${temp}, ${d.n} readings</title></circle>`;
+  }).join('');
+  const last = pts[pts.length - 1];
+  if (slope != null) {
+    const yA = intercept + slope * x0, yB = intercept + slope * x1;
+    fit.setAttribute('d', `M${X(x0).toFixed(1)},${Y(yA).toFixed(1)}L${X(x1).toFixed(1)},${Y(yB).toFixed(1)}`);
+    proj.setAttribute('d', `M${X(x1).toFixed(1)},${Y(yB).toFixed(1)}L${X(xEnd).toFixed(1)},${Y(projY).toFixed(1)}`);
+    const perMonth = slope * DAY * 30.44, perYear = slope * DAY * 365.25;
+    let txt = `${last.capacity_ah.toFixed(2)} Ah (${last.soh.toFixed(1)}% SOH) · ${perMonth >= 0 ? '+' : ''}${perMonth.toFixed(2)} Ah/mo · ${(perYear / 66 * 100).toFixed(1)} SOH-pts/yr`;
+    const target = 20.0;
+    if (slope < 0 && last.capacity_ah > target) {
+      const when = new Date(x1 + (last.capacity_ah - target) / (-slope));
+      txt += ` · ${target} Ah ≈ ${when.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+    }
+    summary.textContent = txt;
+    document.getElementById('degr-newest').textContent = `${last.day} → projected to ${new Date(xEnd).toLocaleDateString()}`;
+  } else {
+    summary.textContent = `${last.capacity_ah.toFixed(2)} Ah (${last.soh.toFixed(1)}% SOH) — need ≥ 2 days for a trend`;
+    document.getElementById('degr-newest').textContent = last.day;
+  }
+  document.getElementById('degr-oldest').textContent = pts[0].day;
+}
+async function pollHealth() {
+  try { const r = await fetch('/api/health'); drawDegradation(await r.json()); } catch (e) { /* offline */ }
+}
+pollHealth();
+if (!SHOT) setInterval(pollHealth, 60000);
+</script>
+<script src="/static/vendor/gridstack-all.js"></script>
+<script src="/static/tilestudio.js"></script>
+<script>TileStudio.init();</script>
+</body>
+</html>

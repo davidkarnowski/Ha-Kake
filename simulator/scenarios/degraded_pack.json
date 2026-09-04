@@ -1,0 +1,15 @@
+{
+  "name": "degraded_pack",
+  "vehicle": "leaf_ze0",
+  "seed": 7,
+  "description": "The failure this whole simulator exists for: one cell pair collapses under load, the spread blows out, and isolation starts to go. None of this can be arranged in a real car. The load is a 35 mph drive with the pedal on, so the weak pair sags under real motor current.",
+  "knobs": {"soc": 55, "capacity_ah": 18.5, "hx": 9.5, "pack_temp_c": 30,
+            "ambient_c": 26, "cell_spread_mv": 60, "weak_cell_index": 41,
+            "gear": "P", "start_state": "ready", "locked": false},
+  "timeline": [
+    {"t": 10, "set": {"speed_mph": 35, "accel_pedal_pct": 25, "gear": "D", "handbrake": false}},
+    {"t": 30, "set": {"fault.cell_degraded": true}},
+    {"t": 60, "set": {"fault.insulation_low": true}},
+    {"t": 90, "set": {"fault.lv_battery_weak": true}}
+  ]
+}

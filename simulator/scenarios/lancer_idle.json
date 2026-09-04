@@ -1,0 +1,13 @@
+{
+  "name": "lancer_idle",
+  "vehicle": "lancer_2009",
+  "seed": 1,
+  "description": "The 2026-08-28 idle capture: warm engine, 719 rpm, 13.84 V, no codes.",
+  "knobs": {"rpm": 719, "coolant_temp_c": 99, "module_v": 13.84, "load_pct": 29.8,
+            "throttle_pct": 15.7, "maf_gs": 3.08, "map_kpa": 40, "iat_c": 49,
+            "ambient_c": 49, "fuel_pct": 98.8, "engine_running": true},
+  "timeline": [
+    {"t": 30, "set": {"rpm": 2400, "throttle_pct": 45, "load_pct": 62, "maf_gs": 14.2, "map_kpa": 78}},
+    {"t": 60, "set": {"rpm": 719, "throttle_pct": 15.7, "load_pct": 29.8, "maf_gs": 3.08, "map_kpa": 40}}
+  ]
+}

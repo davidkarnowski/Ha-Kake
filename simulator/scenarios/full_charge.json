@@ -1,0 +1,22 @@
+{
+  "name": "full_charge",
+  "vehicle": "leaf_ze0",
+  "seed": 1,
+  "description": "The whole curve, end to end: a Level 1 (1.4 kW) charge from 15 % to full on a healthy 60 Ah pack, so the flat CC phase is long and the taper knee sits high (~86 %). This is the scenario to point a power-vs-time chart at. Runs at REAL TIME (1x), like every shipped scenario bar degradation_arc: compress it yourself with --speed, or with the cockpit's Time card, so the clock is always one you chose (docs/SIMULATOR.md, 'Compressing time'). The whole charge is ~16 hours at 1x; `--speed 240` puts it into about four minutes.",
+  "knobs": {
+    "capacity_ah": 60.0,
+    "soc": 15,
+    "ambient_c": 14,
+    "pack_temp_c": 14,
+    "cabin_temp_c": 14,
+    "cell_spread_mv": 18,
+    "hx": 92,
+    "gear": "P",
+    "handbrake": true,
+    "locked": true,
+    "start_state": "off",
+    "charger": "l1",
+    "charging": true
+  },
+  "timeline": []
+}

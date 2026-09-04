@@ -1,0 +1,10 @@
+{
+  "name": "charge",
+  "vehicle": "leaf_ze0",
+  "seed": 1,
+  "description": "Level 2 (3.3 kW) charge from 40 %. The taper is the MODEL's, not a script: charge power holds flat to the knee (which sits near 69 % on this 35 %-SOH pack) and then rolls off smoothly toward zero at 100 %. Runs at REAL TIME (1x), like every shipped scenario bar degradation_arc: compress it yourself with --speed, or with the cockpit's Time card, so the clock is always one you chose (docs/SIMULATOR.md, 'Compressing time'). The charge takes about five hours at 1x; `--speed 120` puts it into two and a half minutes.",
+  "knobs": {"soc": 40, "ambient_c": 18, "pack_temp_c": 18, "cabin_temp_c": 18,
+            "gear": "P", "handbrake": true, "locked": true, "start_state": "off",
+            "charger": "l2", "charging": true},
+  "timeline": []
+}

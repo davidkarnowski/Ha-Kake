@@ -1,0 +1,35 @@
+#!/bin/sh
+# Refuse to push anything that fails the privacy sweep or the test suite.
+# Enable once per clone:  git config core.hooksPath .githooks
+#
+# Limits of this hook — read before trusting it:
+#   * it runs on this developer's machine only. A clone that never ran the
+#     `git config` line above has no hook at all, and forks never get it.
+#   * a hook is advisory: `git push --no-verify` skips it entirely.
+#   * so this is a seatbelt, not a gate. The real gate is CI
+#     (.github/workflows/ci.yml), which runs the same two commands on every
+#     push and pull request, including from forks where this hook cannot run.
+#
+# `--history` is deliberately NOT run here. It scans every blob ever committed,
+# costs seconds rather than milliseconds, and today it reports leaks that are
+# already known and slated for the release history rewrite — noise on every
+# push. Run it by hand before publishing, or set PRIVACY_SWEEP_HISTORY=1:
+#     python scripts/privacy_sweep.py --history
+cd "$(git rev-parse --show-toplevel)" || exit 1
+PY=./venv/bin/python; [ -x "$PY" ] || PY=python3
+
+HIST=
+[ -n "$PRIVACY_SWEEP_HISTORY" ] && HIST=--history
+
+"$PY" scripts/privacy_sweep.py --log 50 $HIST || {
+    echo "pre-push: privacy sweep failed — push aborted."
+    echo "  fix the flagged line, move the file to research/, or mark it privacy-ok"
+    echo "  re-check with: $PY scripts/privacy_sweep.py --log 50"
+    exit 1
+}
+
+"$PY" -m pytest -q || {
+    echo "pre-push: tests failed — push aborted."
+    echo "  re-run with: $PY -m pytest -q     (add -x --lf to stop at the first failure)"
+    exit 1
+}

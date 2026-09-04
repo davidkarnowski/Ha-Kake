@@ -1,0 +1,6 @@
+# Captured CAN data and third-party libs shouldn't count as "our" code on GitHub
+tests/fixtures/*.json linguist-generated=true
+web/static/vendor/** linguist-vendored=true
+*.jsonl linguist-generated=true
+docs/demo/*.json linguist-generated=true
+docs/img/*.png -diff

@@ -1,0 +1,96 @@
+{
+ "hakake_replay": 1,
+ "vehicle": "lancer_2009",
+ "title": "2009 Mitsubishi Lancer ES",
+ "adapter": "ELM327 v1.5",
+ "synthetic": false,
+ "captured": "2026-09-03T03:38:03.642665Z",
+ "source": [
+  "tests/fixtures/lancer_idle_raw_20260828.json \u2014 mode 01 PIDs, captured 2026-08-28T14:55:52+00:00 (engine idling)",
+  "tests/fixtures/lancer_dtc_raw_20260828.json \u2014 modes 01/03/07 from both ECUs, captured 2026-08-28T08:20:10.306886"
+ ],
+ "notes": "Derived by record_session.py --derive; every line is verbatim recorded data. One frozen moment \u2014 the Lancer captures are single snapshots, so replay repeats them.",
+ "frames": [
+  {
+   "t": 0.0,
+   "uds": {
+    "7E0": {
+     "0105": [
+      "7E8 03 41 05 8B",
+      "7E9 03 41 05 8C"
+     ],
+     "0142": [
+      "7E9 04 41 42 35 C3",
+      "7E8 04 41 42 36 5C"
+     ],
+     "010C": [
+      "7E9 04 41 0C 0B 1C",
+      "7E8 04 41 0C 0B 1B"
+     ],
+     "010D": [
+      "7E9 03 41 0D 00",
+      "7E8 03 41 0D 00"
+     ],
+     "0104": [
+      "7E8 03 41 04 4C"
+     ],
+     "0111": [
+      "7E8 03 41 11 28"
+     ],
+     "010F": [
+      "7E8 03 41 0F 59"
+     ],
+     "0146": [
+      "7E8 03 41 46 59"
+     ],
+     "012F": [
+      "7E8 03 41 2F FC"
+     ],
+     "0110": [
+      "7E8 04 41 10 01 34"
+     ],
+     "010B": [
+      "7E8 03 41 0B 28"
+     ],
+     "0133": [
+      "7E8 03 41 33 64"
+     ],
+     "010E": [
+      "7E8 03 41 0E 94"
+     ],
+     "011F": [
+      "7E9 04 41 1F 05 60",
+      "7E8 04 41 1F 05 62"
+     ],
+     "0103": [
+      "7E8 04 41 03 02 00"
+     ],
+     "0101": [
+      "7E8 06 41 01 8C 07 E5 00"
+     ],
+     "03": [
+      "7E8 10 1A 43 0C 01 71 01 34",
+      "7E8 21 01 31 21 95 01 32 01",
+      "7E8 22 22 02 23 12 33 12 34",
+      "7E8 23 12 35 01 45 15 90 00"
+     ],
+     "07": [
+      "7E8 06 47 02 01 31 21 95"
+     ]
+    },
+    "7E1": {
+     "0101": [
+      "7E9 06 41 01 01 04 00 00"
+     ],
+     "03": [
+      "7E9 04 43 01 08 68"
+     ],
+     "07": [
+      "7E9 02 47 00"
+     ]
+    }
+   },
+   "passive": {}
+  }
+ ]
+}

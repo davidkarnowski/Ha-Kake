@@ -1,0 +1,19 @@
+{
+  "name": "degradation_arc",
+  "vehicle": "leaf_ze0",
+  "seed": 5,
+  "description": "Two years of ageing compressed into a couple of minutes: capacity, HX and cell spread walked along an arc while the dashboard watches, so the health tiles and their colour scales can be exercised at every point of the range. The car sits switched off (only the base_off drain). For a POPULATED degradation CHART use `hakake_sim.py --generate` instead — a live scenario cannot write months of history, only walk through it. THE ONE SHIPPED SCENARIO THAT DOES NOT RUN AT REAL TIME. It keeps clock_scale 3600 \u2014 one simulated HOUR per real second \u2014 because two years of ageing at 1x is two years of waiting. Everything else ships at 1x and is compressed with --speed.",
+  "knobs": {"soc": 62, "capacity_ah": 45.0, "hx": 72, "cell_spread_mv": 18,
+            "pack_temp_c": 24, "ambient_c": 22, "cabin_temp_c": 24,
+            "gear": "P", "handbrake": true, "locked": true,
+            "start_state": "off", "insulation_kohm": 1400, "clock_scale": 3600},
+  "timeline": [
+    {"t": 259200,  "set": {"capacity_ah": 41.0, "hx": 63, "cell_spread_mv": 21, "insulation_kohm": 1280}},
+    {"t": 604800,  "set": {"capacity_ah": 36.5, "hx": 54, "cell_spread_mv": 25, "insulation_kohm": 1150}},
+    {"t": 1036800, "set": {"capacity_ah": 32.0, "hx": 44, "cell_spread_mv": 31, "insulation_kohm": 1010}},
+    {"t": 1468800, "set": {"capacity_ah": 28.0, "hx": 33, "cell_spread_mv": 39, "insulation_kohm": 940}},
+    {"t": 1900800, "set": {"capacity_ah": 25.0, "hx": 24, "cell_spread_mv": 48, "insulation_kohm": 900}},
+    {"t": 2332800, "set": {"capacity_ah": 23.2, "hx": 18, "cell_spread_mv": 58, "insulation_kohm": 885}},
+    {"t": 2764800, "set": {"capacity_ah": 21.4, "hx": 13, "cell_spread_mv": 72, "weak_cell_offset_mv": -60}}
+  ]
+}

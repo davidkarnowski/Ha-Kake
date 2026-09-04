@@ -1,0 +1,110 @@
+Ha-Kake — attribution and third-party notices
+=============================================
+
+Ha-Kake is a read-only OBD-II telemetry dashboard, developed on a 2012 Nissan
+Leaf (ZE0) and now vehicle-agnostic through the profiles in `vehicles/`.
+
+Copyright and licensing
+-----------------------
+
+    Ha-Kake
+    Copyright (C) 2026 David D. Karnowski
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+The documentation — everything under `docs/`, including `docs/SIGNALS.md` and
+`docs/reverse-engineering/` — is licensed instead under Creative Commons
+Attribution-ShareAlike 4.0 International (CC BY-SA 4.0). See `LICENSE-DOCS`.
+
+Proprietary licensing is available separately for anyone who cannot ship under
+the AGPL; see `COMMERCIAL.md`.
+
+(This file is an attribution notice for readers. It is not an Apache-2.0
+NOTICE file, and no Apache-2.0 obligations attach to it.)
+
+Bundled third-party components
+------------------------------
+
+  gridstack.js — v13.2.0, MIT License
+  Copyright (c) 2019-2025 Alain Dumesny;
+  v0.4.0 and older (c) 2014-2018 Pavel Reznikov, Dylan Weiss.
+  https://github.com/gridstack/gridstack.js
+
+  Vendored at `web/static/vendor/` (`gridstack-all.js`, `gridstack.min.css`).
+  The full MIT license text ships alongside it at
+  `web/static/vendor/LICENSE.gridstack`. The MIT license requires that the
+  copyright notice and permission notice travel with all copies and
+  substantial portions of the software, so that file must stay in place in
+  any copy, fork or redistribution of Ha-Kake.
+
+Derived knowledge — where the CAN facts came from
+-------------------------------------------------
+
+Decoding a car's bus is a community effort, and Ha-Kake stands on other
+people's published findings. Two projects in particular were used to
+cross-check CAN arbitration IDs, byte offsets and scale factors while working
+out the Leaf signals:
+
+  Open Vehicle Monitoring System (OVMS), Nissan Leaf module
+  `vehicle_nissanleaf.cpp` in Open-Vehicle-Monitoring-System-3
+  https://github.com/openvehicles/Open-Vehicle-Monitoring-System-3
+  License: MIT. Verified 2026-09-02 — the repository LICENSE file states
+  "The following license covers the majority of code in this project: MIT
+  License, Copyright (c) 2011-2017 Open Vehicles", and the header of
+  `vehicle_nissanleaf.cpp` itself carries an MIT permission notice
+  ((C) 2011 Michael Stegen / Stegen Electronics; (C) 2011-2017 Mark
+  Webb-Johnson; (C) 2011 Sonny Chen @ EPRO/DX; (C) 2017 Tom Parker).
+  Confidence: high for that file; the repository notes that some other files
+  use different licenses.
+
+  dalathegreat/leaf_can_bus_messages — DBC collection
+  https://github.com/dalathegreat/leaf_can_bus_messages
+  License: GNU General Public License v3. Verified 2026-09-02 from the
+  repository's LICENSE file, which is the verbatim GPL-3.0 text.
+  Confidence: high that GPL-3.0 is the stated repository license.
+
+**No code from either project is present in Ha-Kake.** Every decoder here was
+written from scratch against captures taken from the owner's own car, and every
+signal was re-verified on that car before being marked verified in
+`docs/SIGNALS.md`.
+
+What was taken from those projects is *facts*: that a particular arbitration ID
+carries a particular quantity, that a value sits at a given byte offset, that a
+raw count scales by a given factor. Facts about how a physical device behaves
+are not copyrightable, and observing that a Leaf reports pack voltage on a
+certain CAN ID is a fact about the Leaf, not an expression owned by whoever
+wrote it down first. The credit above is therefore offered as ordinary good
+citizenship in the Leaf-hacking community — these people did the hard early
+work in public and it saved real time — and not because a license required it.
+Their licenses are recorded here so that anyone building on Ha-Kake can make
+their own assessment rather than having to redo the research.
+
+Trademarks
+----------
+
+"Ha-Kake" and the Ha-Kake leaf logo are trademarks of David D. Karnowski. They are
+**not** licensed under the AGPL or CC BY-SA. A copyright license grants no
+trademark rights (see AGPL section 7(e) and CC BY-SA section 2(b)(2)).
+
+If you fork this project, you are very welcome to the code — please just give
+your fork its own name and its own logo, so that nobody downloads yours
+thinking it is this one, and so bug reports land in the right place. Saying
+"based on Ha-Kake" is fine and appreciated.
+
+"Nissan" and "Leaf" are trademarks of Nissan Motor Co., Ltd. "Mitsubishi" and
+"Lancer" are trademarks of Mitsubishi Motors Corporation. They are used here
+only to identify the vehicles this software has been tested against. This
+project is independent and is not affiliated with, authorised by, endorsed by,
+or in any way connected to Nissan, Mitsubishi, or any vehicle manufacturer.
+Use it on a vehicle you own or are authorised to work on; see `SECURITY.md`.
