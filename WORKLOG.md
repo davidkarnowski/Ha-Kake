@@ -854,3 +854,81 @@ in a comment above it.
 731 tests (one added: the Eco coast regen figure is now pinned to the band the
 drive observed). Privacy sweep clean. `web/leaf_battery.db` was opened
 read-only throughout, with `?immutable=1`, and never by a `Store`.
+
+### Audible alerts — a beep when a value crosses the line  2026-09-07
+
+Branch `feature/tile-alerts`. The dashboard could show a hundred values and
+never say a word when one went wrong; the first ask was plain — "beep when the
+Leaf's SOC drops below N %". Roadmap C4 imagined a server-side rule engine with
+macOS notifications and phone push; this is its client-side half, and it is
+built into the ⋯ menu every tile already has rather than a new panel.
+
+**What a rule is.** One per value a tile shows: `{signal, min, max, when, tone,
+repeat, enabled}`, stored in the tile's `opts.alerts`. That placement was the
+load-bearing decision — `opts` is the only free-form field `_clean_tile` passes
+through, so rules survive `PUT /api/tiles`, `web/tiles.json`, saved layouts and
+the cockpit's `/api/sim/tiles` with no schema change, and a hidden tile (which
+is not polled) simply has no rules evaluated. The server now runs
+`_clean_alerts()` over them on every write: unknown signals, unknown keys and
+rules with no threshold are dropped, numbers coerced.
+
+**Which values a tile offers.** A signal tile has one. A built-in tile had no
+notion of "what I display" — only `items` (what to poll), and `lbc01` alone
+feeds SOC, pack voltage, current, power, SOH, capacity, 12 V and insulation.
+So each `TILES` entry in `vehicles/leaf_ze0.py` now declares `signals`, the
+registry keys it actually paints (verified against the element ids in the
+template and the partials), and `validate_profile` checks every one exists.
+A profile that declares none gets every non-text signal its items produce.
+The lists are served as `tile_signals` on `/api/signals` — not decorated onto
+`/api/tiles` GET, because the cockpit loads its layout from a different store
+and would have been left alert-less.
+
+**The sound.** No file, no library: `web/static/alerts.js` drives a Web Audio
+`OscillatorNode` through a gain node with an 8 ms attack and 20 ms release so
+it does not click — four patterns, `low` (two notes down, the default for
+"below"), `high`, `chirp`, `triple`. Every browser boots the `AudioContext`
+suspended until a user gesture; the module resumes it on the page's first
+pointerdown/keydown, the menu says "click anywhere to enable sound" until it
+has, and ▶ on a row doubles as that gesture. Safari's `webkitAudioContext`
+costs one `||`.
+
+**The engine** is pure and lives beside the tone: `evaluate(rules, record,
+now, ctx)`. Fire on the transition into breach; nag on the rule's repeat
+(once, 10 s … 5 min) — but only while the value is actually past the line,
+which a first draft got wrong (it nagged from inside the re-arm band, so a
+value that had climbed back to 20.5 with a floor of 20 still beeped); re-arm
+only after the value comes back inside by 1 % of the signal's registry range
+(1 % SOC, 0.05 V on the 12 V, 0.3 psi), clamped so two close thresholds keep
+a gap; freeze — no fire, no re-arm — while `status` is not `ok`, the item's
+`item_age` is missing or past `max(90 s, 3 × period)`, or the value is null.
+Freezing rather than clearing matters: a breach cleared on "reconnecting"
+would re-fire the moment data returned. The cockpit's record carries neither
+`status` nor `item_age`, so their absence means "evaluate". Breach state is
+memory only; a reload sounds a still-breached rule once. Tests drive all of
+this from node the way `tiles.js` is tested.
+
+**The menu.** An *Alerts* section under the colour controls: per value, a
+tick, *below* / *above* (or *when on* / *off* for a lamp), tone, repeat, ▶.
+Thresholds commit on `change`, not `input` — the existing range fields save
+per keystroke, which for a threshold means typing "50" fires at "5". Setting
+a threshold arms the row; clearing both drops the rule. Editing a rule resets
+its engine state; hiding, removing or resetting a tile clears all. A breached
+card gets a red outline; 🔔 in the header is a global mute kept in
+localStorage so the cockpit shares it (the cockpit evaluates the same rules
+through `TileStudio.update()` but has no bell).
+
+Docs in the same commit: README (Tile Studio paragraph, file and API tables,
+badge), ARCHITECTURE (menu, persistence, engine), ADDING_A_VEHICLE (`signals`
+on `TILES`), the profile contract docstring, ROADMAP (status line; B6 and C4
+annotated with what is now done and what is still open — the store-backed
+multi-read rules, `/api/alerts`, push that reaches a phone), SIMULATOR
+(shared files). Known limits, stated: demo mode does not persist rules, each
+open tab beeps on its own, sound needs one click per page load.
+
+751 tests (twelve added: the engine's crossing / repeat / hysteresis /
+freeze / bool / dotted-key sequences from node, the source seams, the
+`tile_signals` lists, and the rules' round trip through `/api/tiles`, saved
+layouts and `/api/sim/tiles`). Not yet heard in a browser — the assistant
+cannot open one; the owner's check is `--adapter sim`, an SOC rule at 40
+lowered from the cockpit: one beep, red outline, the 30 s nag, silence at
+40.5, clear at 41. Privacy sweep clean.

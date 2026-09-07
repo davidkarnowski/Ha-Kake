@@ -1014,7 +1014,7 @@ in wall-clock time, which is the right trade.
 | The rig: pty, control API, `--launch-dashboard`, CLI | `hakake_sim.py` |
 | The fallback panel on the API port | `simulator/panel.html` |
 | The cockpit page | `web/templates/sim.html`, `web/static/sim.js`, `web/static/sim.css` |
-| The tiles the cockpit and dashboard share | `web/templates/tiles/*.html`, `web/static/tiles.js`, `web/static/tiles.css`, `web/static/tilestudio.js` |
+| The tiles the cockpit and dashboard share | `web/templates/tiles/*.html`, `web/static/tiles.js`, `web/static/tiles.css`, `web/static/tilestudio.js`, `web/static/alerts.js` (the cockpit's cards evaluate the same audible alert rules; the 🔔 mute is shared through localStorage) |
 | `--adapter sim`, `/sim`, `/api/sim/tiles`, the banner | `web/app.py`, `web/reader.py` |
 | Tests | `tests/test_simulator.py`, `test_sim_loads.py`, `test_sim_record.py`, `test_sim_lamps.py`, `test_sim_charge.py`, `test_sim_history.py`, `test_sim_stability.py`, `test_sim_timescale.py`, `test_sim_transport.py`, `test_sim_control.py`, `test_sim_launch.py`, `test_sim_panel.py`, `test_sim_page.py` |
 | A contract-only stand-in core | `tests/sim_stub.py` |

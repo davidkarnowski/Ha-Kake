@@ -132,6 +132,52 @@ set_vehicle()
 TILE_FIELDS = ("id", "enabled", "span", "kind", "signal", "type", "opts", "title", "x", "y", "h")
 
 
+def _num_or_none(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f not in (float("inf"), float("-inf")) else None
+
+
+def _clean_alerts(raw):
+    """Validate a tile's `opts.alerts` — the audible threshold rules the ⋯
+    menu writes, one per (tile, signal): {signal, min, max, when, tone,
+    repeat, enabled}. Unknown signals, unknown keys and rules with no
+    threshold at all are dropped; numbers are coerced or become None. The
+    browser evaluates these; the server only keeps them well-formed."""
+    out = []
+    for r in raw if isinstance(raw, list) else []:
+        if not isinstance(r, dict) or r.get("signal") not in signals.SIGNALS:
+            continue
+        c = {"signal": r["signal"], "min": _num_or_none(r.get("min")), "max": _num_or_none(r.get("max"))}
+        if r.get("when") in ("on", "off"):
+            c["when"] = r["when"]
+        if c["min"] is None and c["max"] is None and "when" not in c:
+            continue
+        if isinstance(r.get("tone"), str):
+            c["tone"] = r["tone"][:20]
+        try:
+            c["repeat"] = max(0, int(r.get("repeat", 0)))
+        except (TypeError, ValueError):
+            c["repeat"] = 0
+        c["enabled"] = bool(r.get("enabled", True))
+        out.append(c)
+    return out
+
+
+def _clean_opts(out):
+    """Copy a tile's opts and normalise `alerts` in place (shared by the
+    dashboard and cockpit stores)."""
+    opts = dict(out["opts"]) if isinstance(out.get("opts"), dict) else {}
+    if "alerts" in opts:
+        alerts = _clean_alerts(opts.pop("alerts"))
+        if alerts:
+            opts["alerts"] = alerts
+    if opts or "opts" in out:
+        out["opts"] = opts
+
+
 def _clean_tile(t):
     """Validate one tile entry; returns None if it is not usable."""
     if not isinstance(t, dict) or not isinstance(t.get("id"), str):
@@ -162,8 +208,7 @@ def _clean_tile(t):
                 del out[k]
     if "x" in out:
         out["x"] = min(out["x"], 12 - out["span"])
-    if not isinstance(out.get("opts", {}), dict):
-        out["opts"] = {}
+    _clean_opts(out)
     return out
 
 
@@ -237,8 +282,7 @@ def _clean_sim_tile(t):
     for k in ("kind", "signal", "type", "title"):
         if k in out and not isinstance(out[k], str):
             del out[k]
-    if "opts" in out and not isinstance(out["opts"], dict):
-        out["opts"] = {}
+    _clean_opts(out)
     return out
 
 

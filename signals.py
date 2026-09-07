@@ -67,6 +67,25 @@ def signal_item(sig):
     return s["item"] if s else None
 
 
+def tile_signals(tiles):
+    """Which registry keys each built-in tile shows: {tile id: [signal key, …]}.
+
+    A tile that declares `signals` gets exactly that list; otherwise every
+    non-text signal polled by one of its `items`. The ⋯ menu builds its
+    Alerts section from this (served through /api/signals so the cockpit,
+    which loads its tiles from a different store, sees the same lists).
+    """
+    out = {}
+    for t in tiles:
+        if "signals" in t:
+            out[t["id"]] = list(t["signals"])
+        else:
+            items = set(t.get("items", ()))
+            out[t["id"]] = [k for k, s in SIGNALS.items()
+                            if s.get("item") in items and s.get("kind", "number") != "text"]
+    return out
+
+
 # default binding so `import signals` alone works (tests, tools)
 from vehicles import get_vehicle as _gv   # noqa: E402
 use(_gv())

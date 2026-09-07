@@ -12,8 +12,11 @@ A profile is a module in this package exporting:
   TARGETS          dict kind -> (tx, rx) for UDS request/response headers, or
                    None for passive monitor capture (ATCAF0 + ATCRA + ATMA).
   KIND_ORDER       tuple — poll order within a cycle (minimise ECU switching)
-  TILES            list of built-in dashboard tiles ({id, name, items}) — may
-                   be empty; user signal tiles work for any profile.
+  TILES            list of built-in dashboard tiles ({id, name, items[,
+                   signals]}) — may be empty; user signal tiles work for any
+                   profile. Optional `signals` lists the SIGNALS keys the tile
+                   displays: what its ⋯ menu offers for audible alerts. Absent,
+                   every non-text signal whose `item` is in `items` is offered.
   DEFAULT_SPAN     dict tile id -> span (built-ins only)
   DEFAULT_TILES    list — the out-of-the-box tile config (built-in and/or
                    signal tiles)
@@ -221,6 +224,13 @@ def validate_profile(mod):
             for i in t["items"]:
                 if i not in mod.ITEMS:
                     p.append(f"{name}: tile {t['id']!r} references unknown item {i!r}")
+            if "signals" in t:
+                if not isinstance(t["signals"], (list, tuple)) or not all(isinstance(k, str) for k in t["signals"]):
+                    p.append(f"{name}: tile {t['id']!r} 'signals' must be a list of SIGNALS keys")
+                else:
+                    for k in t["signals"]:
+                        if k not in mod.SIGNALS:
+                            p.append(f"{name}: tile {t['id']!r} lists unknown signal {k!r}")
             if t["id"] not in mod.DEFAULT_SPAN:
                 p.append(f"{name}: tile {t['id']!r} has no DEFAULT_SPAN entry")
     builtin = {t["id"] for t in mod.TILES if isinstance(t, dict) and "id" in t}

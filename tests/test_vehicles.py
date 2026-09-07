@@ -286,6 +286,12 @@ def test_validate_catches_tile_problems():
     assert "unknown item" in _problem(TILES=[{"id": "t", "name": "T", "items": ["zzz"]}],
                                       DEFAULT_SPAN={"t": 4})
     assert "no DEFAULT_SPAN" in _problem(TILES=[{"id": "t", "name": "T", "items": ["a"]}])
+    assert "unknown signal 'nope'" in _problem(
+        TILES=[{"id": "t", "name": "T", "items": ["a"], "signals": ["x", "nope"]}], DEFAULT_SPAN={"t": 4})
+    assert "must be a list" in _problem(
+        TILES=[{"id": "t", "name": "T", "items": ["a"], "signals": "x"}], DEFAULT_SPAN={"t": 4})
+    assert validate_profile(_fake(TILES=[{"id": "t", "name": "T", "items": ["a"], "signals": ["x"]}],
+                                  DEFAULT_SPAN={"t": 4})) == []
     assert "not in SIGNALS" in _problem(
         DEFAULT_TILES=[{"id": "u_y", "kind": "signal", "signal": "y"}])
 

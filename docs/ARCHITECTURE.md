@@ -207,6 +207,27 @@ leaving eleven that will never take a value.
   animation, and closes the menu if its tile goes away. ⋯ toggles, Escape
   closes, and a *Done* button sits at the right of the foot beside hide and
   reset — changes were always applied live, so Done only closes.
+- **Alerts (in the same menu):** one row per value the tile shows — a signal
+  tile its one signal, a built-in tile the `signals` list its profile
+  declares on the `TILES` entry (served as `tile_signals` by `/api/signals`,
+  so the cockpit sees the same lists; a tile that declares none offers every
+  non-text signal its items produce). A row is a rule: *below* / *above* (or
+  *when on* / *off* for a bool), a tone, a repeat (once, 10 s … 5 min) and a
+  tick to arm it. Thresholds commit on `change`, not per keystroke, so typing
+  "50" never fires at "5". `web/static/alerts.js` owns the sound and the
+  engine: the tone is a Web Audio oscillator (four patterns, gain-ramped so
+  it does not click; the `AudioContext` is unlocked on the page's first
+  pointerdown/keydown, and ▶ on a row doubles as that gesture), and
+  `createEngine().evaluate(rules, record, now, ctx)` is pure — it fires on
+  the transition into breach, nags on the rule's repeat only while the value
+  is actually past the line, re-arms after the value comes back inside by a
+  hysteresis of 1 % of the signal's registry range, and freezes (no fire, no
+  re-arm) while `status` is not `ok`, the item's `item_age` is missing or
+  past `max(90 s, 3 × period)`, or the value is null. Breach state is
+  in-memory only; a reload re-evaluates and a still-breached rule sounds
+  once. 🔔 in the header is a global mute in `localStorage`
+  (`hakake-alerts-muted`), shared by the cockpit, which runs the same engine
+  through `TileStudio.update()`; a breached card carries `.alerting`.
 - **User tiles:** *Tiles ▾ → add* creates a tile for any entry in
   `signals.py` with any renderer: number, ring, arc gauge, dial, bar,
   thermometer, battery, line / area / bar graph (from `/api/history`), text,
@@ -214,7 +235,11 @@ leaving eleven that will never take a value.
 - **Calibration:** per-car offsets (current zero) live in gitignored
   `web/calibration.json` via `GET/PUT/DELETE /api/calibration`.
 - **Persistence:** `web/tiles.json` via `GET/PUT /api/tiles` (order, enabled,
-  x/y/span/h, type, opts, signal) is the *active* layout. **Named layouts**
+  x/y/span/h, type, opts, signal) is the *active* layout. Alert rules travel
+  inside `opts.alerts`, one `{signal, min, max, when, tone, repeat, enabled}`
+  per value; `reader._clean_alerts()` keeps them well-formed on every write
+  (unknown signals, unknown keys and rules with no threshold are dropped,
+  numbers coerced), for the dashboard store and the cockpit's alike. **Named layouts**
   live in `web/layouts.json` (`/api/layouts`): save the active one under a
   name, load one back (it overwrites `tiles.json`, so the reader follows),
   delete, or reset to defaults. Both files are gitignored — layouts are
@@ -223,7 +248,7 @@ leaving eleven that will never take a value.
   is off — built-in or user — is not polled**; a user tile pulls in exactly
   the one item its signal needs.
 - `/api/signals` serves the registry (signals, colour scales, tile types,
-  items) so the UI never hard-codes them.
+  items, `tile_signals`) so the UI never hard-codes them.
 
 The **tires** tile is drawn by `web/static/tiles.js` into a 2×2 block that is
 an inline-size container, so the wheel art is sized by the card and not by the
@@ -280,4 +305,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 730 tests at the time of writing.
+that must stay green. 751 tests at the time of writing.

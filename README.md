@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-730%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
+![status](https://img.shields.io/badge/tests-751%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 > ### ⚠️ Active development
 >
@@ -205,6 +205,21 @@ arrangement under a name from *Tiles ▾ → Saved layouts*, switch between
 them, or reset to the default; every tile's ⋯ menu has *reset tile*. **A tile that is off is not
 polled** — its bus time goes to the tiles you are looking at.
 
+**Audible alerts:** the same ⋯ menu has an *Alerts* section listing every
+value the tile shows — the battery tile offers SOC and pack voltage, the
+health tile SOH, capacity, 12 V and insulation, a user tile its one signal.
+Tick a value, type *below* and/or *above* (or *when on* / *when off* for a
+lamp), pick a tone and a repeat, and the computer beeps when the value
+crosses the line: "SOC below 20 %" is one row. The tone is the browser's
+own oscillator (Web Audio), so nothing is downloaded and it works in every
+current browser; browsers keep sound locked until the page has been clicked
+once, and the menu says so until it has. A card with a breached rule gets a
+red outline, the 🔔 in the header mutes and unmutes, ▶ on a row plays its
+tone. Rules re-arm only after the value comes back inside by 1 % of the
+gauge's range, so a value hovering on the threshold does not chatter, and
+they freeze while the reader is reconnecting or a reading is stale. Rules
+are saved with the tile, so they ride along in saved layouts.
+
 ![Tiles menu — enable, reorder and save layouts; a disabled tile isn't polled](docs/img/tile-studio.png)
 
 ![Add a tile for any signal in any of a dozen gauge and graph styles](docs/img/gauge-types.png)
@@ -217,7 +232,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 730 offline tests, no car needed
+pytest -q                          # 751 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -275,6 +290,7 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `leaf_decoders.py` | the Leaf's decoders: LBC groups 01–06, HVAC amp, Car-CAN frames |
 | `signals.py` | registry machinery shared by every profile (colour scales, renderers, resolvers) |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag-to-reorder |
+| `web/static/alerts.js` | audible alerts: the Web Audio tone generator and the threshold rule engine (pure, node-tested) |
 | `docs/ADDING_SIGNALS.md` | **the six-step routine for decoding and wiring a new input** |
 | `docs/reverse-engineering/` | **the eight-chapter guide to finding signals in any car** |
 | `web/reader.py` | the only process that talks to the car — tile-driven scheduler, reconnect, pause |
@@ -312,8 +328,8 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `GET /api/history?minutes=N` | downsampled readings (`N=0` → everything) |
 | `GET /api/health` | one row per day: capacity, SOH, temps, spread, 12 V, insulation |
 | `GET /api/cells?limit=N` | per-cell voltages for the last N full reads |
-| `GET/PUT /api/tiles` | tile order, enabled, span, type, options, user tiles (drives what the reader polls) |
-| `GET /api/signals` | signal registry, colour scales, tile types, items, tile defaults |
+| `GET/PUT /api/tiles` | tile order, enabled, span, type, options (including each tile's `opts.alerts` rules), user tiles (drives what the reader polls) |
+| `GET /api/signals` | signal registry, colour scales, tile types, items, tile defaults, which signals each built-in tile shows (`tile_signals`) |
 | `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored) |
 | `GET/PUT/DELETE /api/calibration` | per-car offsets (`zero_current`) in `web/calibration.json` (gitignored) |
 | `GET /sim` | the simulator cockpit page (always renders; shows the launch commands when nothing is simulated) |
@@ -371,7 +387,7 @@ Being on the bus at all has consequences worth knowing:
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
-- 730 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 751 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

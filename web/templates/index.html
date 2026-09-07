@@ -537,6 +537,7 @@
     </div>
     <span id="status-dot" class="waiting"></span>
     <span id="status-text">Waiting for reader...</span>
+    <button class="tiles-btn" id="alerts-bell" title="Alert sounds">🔔</button>
     <div class="tiles-menu">
       <button class="tiles-btn" id="tiles-btn" title="Choose and order tiles. Disabled tiles are not polled from the car.">Tiles ▾</button>
       <div class="tiles-panel" id="tiles-panel">
@@ -1474,6 +1475,7 @@ async function pollHealth() {
 pollHealth();
 if (!SHOT) setInterval(pollHealth, 60000);
 </script>
+<script src="/static/alerts.js"></script>
 <script src="/static/vendor/gridstack-all.js"></script>
 <script src="/static/tilestudio.js"></script>
 <script>TileStudio.init();</script>

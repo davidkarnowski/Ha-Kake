@@ -26,7 +26,7 @@
   };
   let OPTS = DEFAULTS, API = DEFAULTS.api;
   let grid = null;
-  let REG = { signals: {}, colors: {}, types: {}, items: {} };
+  let REG = { signals: {}, colors: {}, types: {}, items: {}, tile_signals: {} };
   let cfg = [];                      // tile entries in display order
   let lastData = null, lastHist = [];
   const SPANS = [2, 3, 4, 6, 8, 12];
@@ -68,6 +68,47 @@
   function effMin(t, s) { const o = t.opts || {}; return o.min != null && o.min !== '' ? +o.min : (s ? s.min : 0); }
   function effMax(t, s) { const o = t.opts || {}; return o.max != null && o.max !== '' ? +o.max : (s ? s.max : 100); }
   function effColor(t, s) { return (t.opts && t.opts.color) || (s && s.color) || 'mono'; }
+
+  // ── audible alerts (engine + tones in alerts.js; rules live in t.opts.alerts) ──
+  // A tile's candidates are the values it shows: a signal tile has one, a
+  // built-in tile the list its profile declared (served as tile_signals).
+  // Text signals cannot be thresholded, so they never appear.
+  const alertEngine = window.Alerts ? Alerts.createEngine() : null;
+  const REPEATS = [[0, 'once'], [10, 'every 10 s'], [30, 'every 30 s'], [60, 'every 60 s'], [300, 'every 5 min']];
+  function candidateSignals(t) {
+    const keys = t.kind === 'signal' ? [t.signal] : (REG.tile_signals[t.id] || []);
+    return keys.filter(k => REG.signals[k] && REG.signals[k].kind !== 'text');
+  }
+  function ruleFor(t, sig, create) {
+    const o = t.opts = t.opts || {};
+    let r = (o.alerts || []).find(x => x.signal === sig);
+    if (!r && create) { r = { signal: sig, enabled: true }; (o.alerts = o.alerts || []).push(r); }
+    return r || null;
+  }
+  function dropRule(t, sig) {
+    const o = t.opts || {};
+    if (o.alerts) { o.alerts = o.alerts.filter(x => x.signal !== sig); if (!o.alerts.length) delete o.alerts; }
+  }
+  function alertId(t, r) { return `${t.id}:${r.signal}`; }
+  let alertingTiles = new Set();
+  function runAlerts(data) {
+    if (!alertEngine) return;
+    const rules = [];
+    cfg.forEach(t => { if (t.enabled && t.opts && Array.isArray(t.opts.alerts)) t.opts.alerts.forEach(r => rules.push(Object.assign({ id: alertId(t, r), tile: t.id }, r))); });
+    const res = alertEngine.evaluate(rules, data, Date.now(), { signals: REG.signals, items: REG.items, staleAfter: Alerts.STALE_AFTER });
+    if (!Alerts.muted()) res.fired.forEach(r => Alerts.tone.play(r.tone));
+    alertingTiles = new Set(res.breached.map(id => id.split(':')[0]));
+    cfg.forEach(t => { const c = cardOf(t); if (c) c.classList.toggle('alerting', alertingTiles.has(t.id)); });
+    refreshBell();
+  }
+  function refreshBell() {
+    const bell = document.getElementById('alerts-bell'); if (!bell || !window.Alerts) return;
+    const m = Alerts.muted(), ready = Alerts.tone.ready();
+    bell.textContent = m ? '🔕' : '🔔';
+    bell.classList.toggle('muted', m);
+    bell.classList.toggle('active', alertingTiles.size > 0);
+    bell.title = !ready ? 'Alert sounds — click to enable sound in this tab' : m ? 'Alert sounds are muted — click to unmute' : 'Alert sounds are on — click to mute';
+  }
 
   // ── renderers ───────────────────────────────────────────────────────
   const R = {};
@@ -328,6 +369,7 @@
     const d = (REG.tile_defaults || {})[t.id];
     if (t.kind === 'signal') { t.span = 3; t.type = 'number'; delete t.title; } else { t.span = d || 4; }
     delete t.x; delete t.y; delete t.h; t.opts = {}; t.enabled = true;
+    if (alertEngine) alertEngine.clear();
     const w = wrapperOf(t); const g = ensureGrid();
     if (g && w && w.gridstackNode) g.removeWidget(w, false);   // so apply() re-adds with autoPosition + measured height
     apply(); save();
@@ -377,7 +419,7 @@
       const s = sigOf(t);
       const name = t.kind === 'signal' ? (t.title || (s ? s.label : t.id)) + ` <span class="items">(${REG.types[t.type] || t.type})</span>` : t.name || t.id;
       row.innerHTML = `<input type="checkbox" ${t.enabled ? 'checked' : ''}><label>${name}<div class="items">${(t.items || (s ? [s.item] : [])).join(', ')} · ${t.span}×${t.h || '?'}</div></label><span class="items">⋯</span>`;
-      row.querySelector('input').addEventListener('change', e => { t.enabled = e.target.checked; if (t.enabled) { delete t.x; delete t.y; } apply(); save(); });
+      row.querySelector('input').addEventListener('change', e => { t.enabled = e.target.checked; if (t.enabled) { delete t.x; delete t.y; } if (alertEngine) alertEngine.clear(); apply(); save(); });
       row.querySelector('label').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); const el = grid.querySelector(`[data-tile="${t.id}"]`); if (el && t.enabled) { if (panel) panel.classList.remove('open'); openTileMenu(t.id, el); } });
       list.appendChild(row);
     });
@@ -459,6 +501,7 @@
       <span class="swatch" id="tm-swatch" style="background:${gradientCss(effColor(t, s))}"></span>
       <div class="row" style="margin-top:6px"><label>Range</label><input type="number" id="tm-min" value="${o.min != null ? o.min : ''}" placeholder="${s ? s.min : ''}"> – <input type="number" id="tm-max" value="${o.max != null ? o.max : ''}" placeholder="${s ? s.max : ''}"></div>` : ''}
       ${isSig ? `<div class="row" id="tm-graph-row" style="${GRAPH_TYPES.has(t.type) ? '' : 'display:none'}"><label>History</label><select id="tm-range">${[[5, '5 min'], [15, '15 min'], [60, '1 h'], [360, '6 h'], [1440, '24 h'], [10080, '7 d'], [0, 'all']].map(([v, l]) => `<option value="${v}" ${(+o.range || 60) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
+      ${window.Alerts ? `<h5>Alerts — beep when a value goes out of bounds</h5><div id="tm-alerts">${alertRows(t)}</div>` : ''}
       <div class="foot"><button id="tm-hide">${t.enabled ? 'hide tile' : 'show tile'}</button>
       <button id="tm-reset" title="default size, style, colours and position">reset tile</button>
       ${isSig ? '<button id="tm-remove" class="danger">remove</button>' : ''}
@@ -479,10 +522,64 @@
     on('#tm-min', 'input', e => { o.min = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); save(); });
     on('#tm-max', 'input', e => { o.max = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); save(); });
     on('#tm-range', 'change', e => { o.range = +e.target.value; renderSignalTile(t); save(); });
-    on('#tm-hide', 'click', () => { t.enabled = !t.enabled; if (t.enabled) { delete t.x; delete t.y; } closeMenus(); apply(); save(); });
+    if (window.Alerts) bindAlertRows(m, t);
+    on('#tm-hide', 'click', () => { t.enabled = !t.enabled; if (t.enabled) { delete t.x; delete t.y; } if (alertEngine) alertEngine.clear(); closeMenus(); apply(); save(); });
     on('#tm-reset', 'click', () => { closeMenus(); resetTile(t); });
-    on('#tm-remove', 'click', () => { cfg = cfg.filter(x => x.id !== id); closeMenus(); apply(); save(); });
+    on('#tm-remove', 'click', () => { cfg = cfg.filter(x => x.id !== id); if (alertEngine) alertEngine.clear(); closeMenus(); apply(); save(); });
     on('#tm-done', 'click', closeMenus);
+  }
+  // One row per value the tile shows: tick to arm, "below" / "above" (or
+  // on / off for a lamp), a tone and a repeat. Thresholds commit on change
+  // (blur / Enter), not per keystroke — typing "50" must not fire at "5".
+  function alertRows(t) {
+    const keys = candidateSignals(t);
+    if (!keys.length) return '<div class="gt-sub">no alertable values on this tile</div>';
+    const esc = v => v == null ? '' : String(v).replace(/"/g, '&quot;');
+    const tones = Object.entries(Alerts.PATTERNS);
+    const rows = keys.map(k => {
+      const s = REG.signals[k], r = ruleFor(t, k, false) || {};
+      const armed = !!(r.signal && r.enabled !== false);
+      const thr = s.kind === 'bool'
+        ? `<select class="al-when"><option value="">— pick —</option><option value="on" ${r.when === 'on' ? 'selected' : ''}>when on</option><option value="off" ${r.when === 'off' ? 'selected' : ''}>when off</option></select>`
+        : `<input type="number" class="al-min" step="any" placeholder="below" title="alert when the value drops below this" value="${esc(r.min)}">
+           <input type="number" class="al-max" step="any" placeholder="above" title="alert when the value rises above this" value="${esc(r.max)}">`;
+      return `<div class="al-row ${armed ? '' : 'off'}" data-sig="${k}">
+        <label class="al-head"><input type="checkbox" class="al-on" ${armed ? 'checked' : ''}> ${s.label}${s.unit ? ` <small>${s.unit}</small>` : ''}</label>
+        <button class="al-test" title="play this alert's tone (also enables sound)">▶</button>
+        <div class="row al-thr">${thr}
+          <select class="al-tone" title="tone">${tones.map(([n, p]) => `<option value="${n}" ${(r.tone || 'low') === n ? 'selected' : ''}>${p.label}</option>`).join('')}</select>
+          <select class="al-rep" title="repeat while out of bounds">${REPEATS.map(([v, l]) => `<option value="${v}" ${(+r.repeat || 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        </div></div>`;
+    }).join('');
+    return rows + `<div class="gt-sub al-note" ${Alerts.tone.ready() ? 'style="display:none"' : ''}>click anywhere on the page once to enable sound</div>`;
+  }
+  function bindAlertRows(m, t) {
+    m.querySelectorAll('.al-row').forEach(row => {
+      const sig = row.dataset.sig;
+      const num = el => el.value === '' ? undefined : +el.value;
+      const commit = () => {
+        const r = ruleFor(t, sig, true);
+        const mn = row.querySelector('.al-min'), mx = row.querySelector('.al-max'), wh = row.querySelector('.al-when');
+        if (mn) { r.min = num(mn); r.max = num(mx); } else { r.when = wh.value || undefined; }
+        r.tone = row.querySelector('.al-tone').value; r.repeat = +row.querySelector('.al-rep').value;
+        r.enabled = row.querySelector('.al-on').checked;
+        const hasThr = r.min != null || r.max != null || r.when;
+        if (!hasThr) dropRule(t, sig);
+        row.classList.toggle('off', !(hasThr && r.enabled));
+        if (alertEngine) alertEngine.reset(`${t.id}:${sig}`);
+        save();
+      };
+      row.querySelectorAll('.al-min, .al-max, .al-when, .al-tone, .al-rep').forEach(el => el.addEventListener('change', () => {
+        if (!el.classList.contains('al-tone') && !el.classList.contains('al-rep') && el.value !== '') row.querySelector('.al-on').checked = true;   // setting a threshold arms the row
+        commit();
+      }));
+      row.querySelector('.al-on').addEventListener('change', commit);
+      row.querySelector('.al-test').addEventListener('click', () => {
+        Alerts.tone.unlock(); Alerts.tone.play(row.querySelector('.al-tone').value);
+        const note = m.querySelector('.al-note'); if (note && Alerts.tone.ready()) note.style.display = 'none';
+        refreshBell();
+      });
+    });
   }
   document.addEventListener('click', e => { if (!e.target.closest('.tile-menu')) closeMenus(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.tile-menu')) { closeMenus(); e.preventDefault(); } });
@@ -491,6 +588,16 @@
   const btn = document.getElementById('tiles-btn'), panel = document.getElementById('tiles-panel');
   if (btn) btn.addEventListener('click', () => panel.classList.toggle('open'));
   if (panel) document.addEventListener('click', e => { if (!e.target.closest('.tiles-menu')) panel.classList.remove('open'); });
+  const bell = document.getElementById('alerts-bell');
+  if (bell && window.Alerts) {
+    bell.addEventListener('click', () => {
+      // pointerdown already tried to unlock; if the context is still not
+      // running (Safari resumes asynchronously) this click only enables sound
+      if (!Alerts.tone.ready()) { Alerts.tone.unlock(); setTimeout(refreshBell, 150); return; }
+      Alerts.setMuted(!Alerts.muted()); refreshBell();
+    });
+    refreshBell();
+  }
   const reset = document.getElementById('tiles-reset');
   if (reset) reset.addEventListener('click', async () => {
     if (!confirm('Reset to the default arrangement? Saved layouts are kept.')) return;
@@ -511,7 +618,7 @@
   }
   window.TileStudio = {
     init,
-    update(data) { lastData = data; cfg.forEach(t => { if (t.kind === 'signal' && t.enabled) renderSignalTile(t); }); },
+    update(data) { lastData = data; cfg.forEach(t => { if (t.kind === 'signal' && t.enabled) renderSignalTile(t); }); runAlerts(data); },
     history(rows) { lastHist = rows || []; cfg.forEach(t => { if (t.kind === 'signal' && t.enabled && GRAPH_TYPES.has(t.type)) renderSignalTile(t); }); },
     reload: reloadLayout,
   };

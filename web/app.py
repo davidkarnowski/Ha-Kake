@@ -319,6 +319,7 @@ def api_signals():
         "types": TILE_TYPES,
         "items": {k: {"label": v["label"], "period": v["period"], "kind": v["kind"]} for k, v in reader.ITEMS.items()},
         "tile_defaults": reader.DEFAULT_SPAN,
+        "tile_signals": signals.tile_signals(reader.TILES),
         "vehicle": {"name": reader.VEHICLE.NAME, "title": reader.VEHICLE.TITLE},
         "demo": bool(DEMO),
     })

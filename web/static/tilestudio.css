@@ -41,6 +41,21 @@
 .tile-menu .foot button:hover { color: var(--text); border-color: var(--accent); }
 .tile-menu .foot .primary { margin-left: auto; background: var(--accent); border-color: var(--accent); color: #0a0e17; font-weight: 600; padding: 4px 14px; }
 .tile-menu .foot .primary:hover { color: #0a0e17; filter: brightness(1.1); }
+.tile-menu .al-row { padding: 6px 0; border-top: 1px solid var(--border); }
+.tile-menu .al-row:first-child { border-top: 0; }
+.tile-menu .al-row.off .al-thr { opacity: 0.55; }
+.tile-menu .al-head { display: inline-flex; align-items: center; gap: 6px; color: var(--text); cursor: pointer; }
+.tile-menu .al-head small { color: var(--dim); }
+.tile-menu .al-test { float: right; background: var(--card2); color: var(--dim); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.9em; }
+.tile-menu .al-test:hover { color: var(--accent); border-color: var(--accent); }
+.tile-menu .al-thr { margin-top: 4px; }
+.tile-menu .al-thr input[type=number] { width: 62px; }
+.tile-menu .al-thr select { flex: 1; min-width: 80px; }
+.tile-menu .al-note { color: var(--dim); font-size: 0.9em; margin-top: 6px; }
+/* a card with a breached alert rule */
+.card.alerting { outline: 2px solid var(--red); box-shadow: 0 0 0 3px rgba(239, 83, 80, 0.25); }
+#alerts-bell.muted { opacity: 0.6; }
+#alerts-bell.active { border-color: var(--red); color: var(--red); }
 
 /* generic tile body */
 .gtile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; gap: 6px; }

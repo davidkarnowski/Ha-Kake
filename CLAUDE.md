@@ -116,6 +116,11 @@ specifics go in `config.local.json` (gitignored), never in code.
   matches the group-01 sensors.
 - Legacy scripts stay in `legacy/` for reference; do not resurrect their
   copy-pasted transports.
+- Audible alerts are client-side: `web/static/alerts.js` (Web Audio tone +
+  pure rule engine, node-tested), rules in each tile's `opts.alerts`, and a
+  built-in tile's alertable values are the `signals` list on its `TILES`
+  entry in the profile. The server only keeps rules well-formed
+  (`reader._clean_alerts`); it never evaluates them.
 - The simulator is a fixture, not a verifier: `--adapter sim` is never
   auto-detected, its rows never reach `web/leaf_battery.db`, every load in
   `simulator/model.py` `LOADS_W` carries a MEASURED / OWNER REPORT / ASSERTED
