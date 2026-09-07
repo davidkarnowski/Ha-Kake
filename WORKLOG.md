@@ -945,3 +945,6 @@ and each repeat — restarts a 0.7 s `.alert-flash` keyframe on the card, the
 steady `.alerting` outline holding between flashes; mute silences the tone
 and leaves the flash. Tests updated for the clamp, the default and the
 seams; 751 tests, privacy sweep clean. Browser check again the owner's.
+
+**Owner's browser check passed** (same day): the slider, the beat and the
+flash behave as described; merged to `main` and pushed.
