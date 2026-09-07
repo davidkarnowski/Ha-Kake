@@ -132,6 +132,9 @@ set_vehicle()
 TILE_FIELDS = ("id", "enabled", "span", "kind", "signal", "type", "opts", "title", "x", "y", "h")
 
 
+ALERT_REPEAT_MIN, ALERT_REPEAT_MAX, ALERT_REPEAT_DEFAULT = 1, 60, 10   # mirrors Alerts.REPEAT in alerts.js
+
+
 def _num_or_none(v):
     try:
         f = float(v)
@@ -157,10 +160,10 @@ def _clean_alerts(raw):
             continue
         if isinstance(r.get("tone"), str):
             c["tone"] = r["tone"][:20]
-        try:
-            c["repeat"] = max(0, int(r.get("repeat", 0)))
+        try:                                    # the menu's slider: every 1–60 s (default 10)
+            c["repeat"] = min(ALERT_REPEAT_MAX, max(ALERT_REPEAT_MIN, int(r.get("repeat", ALERT_REPEAT_DEFAULT))))
         except (TypeError, ValueError):
-            c["repeat"] = 0
+            c["repeat"] = ALERT_REPEAT_DEFAULT
         c["enabled"] = bool(r.get("enabled", True))
         out.append(c)
     return out

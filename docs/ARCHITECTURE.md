@@ -212,15 +212,18 @@ leaving eleven that will never take a value.
   declares on the `TILES` entry (served as `tile_signals` by `/api/signals`,
   so the cockpit sees the same lists; a tile that declares none offers every
   non-text signal its items produce). A row is a rule: *below* / *above* (or
-  *when on* / *off* for a bool), a tone, a repeat (once, 10 s … 5 min) and a
+  *when on* / *off* for a bool), a tone, a *repeat* slider (every 1–60 s,
+  default 10; `Alerts.REPEAT`, mirrored by `reader.ALERT_REPEAT_*`) and a
   tick to arm it. Thresholds commit on `change`, not per keystroke, so typing
   "50" never fires at "5". `web/static/alerts.js` owns the sound and the
   engine: the tone is a Web Audio oscillator (four patterns, gain-ramped so
   it does not click; the `AudioContext` is unlocked on the page's first
   pointerdown/keydown, and ▶ on a row doubles as that gesture), and
   `createEngine().evaluate(rules, record, now, ctx)` is pure — it fires on
-  the transition into breach, nags on the rule's repeat only while the value
-  is actually past the line, re-arms after the value comes back inside by a
+  the transition into breach, fires again every `repeat` seconds while the
+  value is actually past the line (each fire sounds the tone and restarts the
+  card's `.alert-flash` animation, so the flash keeps the tone's beat; mute
+  silences the tone only), re-arms after the value comes back inside by a
   hysteresis of 1 % of the signal's registry range, and freezes (no fire, no
   re-arm) while `status` is not `ok`, the item's `item_age` is missing or
   past `max(90 s, 3 × period)`, or the value is null. Breach state is

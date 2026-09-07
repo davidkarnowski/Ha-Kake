@@ -209,13 +209,14 @@ polled** — its bus time goes to the tiles you are looking at.
 value the tile shows — the battery tile offers SOC and pack voltage, the
 health tile SOH, capacity, 12 V and insulation, a user tile its one signal.
 Tick a value, type *below* and/or *above* (or *when on* / *when off* for a
-lamp), pick a tone and a repeat, and the computer beeps when the value
-crosses the line: "SOC below 20 %" is one row. The tone is the browser's
+lamp), pick a tone and slide *repeat* to anywhere from every 1 s to every
+60 s, and the computer beeps at that beat for as long as the value is over
+the line, the card flashing on every beep: "SOC below 20 %" is one row. The tone is the browser's
 own oscillator (Web Audio), so nothing is downloaded and it works in every
 current browser; browsers keep sound locked until the page has been clicked
-once, and the menu says so until it has. A card with a breached rule gets a
-red outline, the 🔔 in the header mutes and unmutes, ▶ on a row plays its
-tone. Rules re-arm only after the value comes back inside by 1 % of the
+once, and the menu says so until it has. A card with a breached rule keeps
+a red outline between flashes, the 🔔 in the header mutes the sound (the
+flash stays), ▶ on a row plays its tone. Rules re-arm only after the value comes back inside by 1 % of the
 gauge's range, so a value hovering on the threshold does not chatter, and
 they freeze while the reader is reconnecting or a reading is stale. Rules
 are saved with the tile, so they ride along in saved layouts.

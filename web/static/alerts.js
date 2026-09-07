@@ -75,6 +75,15 @@
 
   // ── rule engine ─────────────────────────────────────────────────────
   const STALE_AFTER = 90;   // seconds; an item older than max(this, 3 × period) freezes its rules
+  // How often a breached rule sounds (and its card flashes) — a 1–60 s slider
+  // in the menu. A rule saved without one gets the default; the engine itself
+  // still treats 0 as "once", so a hand-written rule can ask for that.
+  const REPEAT = { min: 1, max: 60, dflt: 10 };
+  function repeatSeconds(v) {
+    const n = Math.round(+v);
+    if (!isFinite(n) || v == null || v === '') return REPEAT.dflt;
+    return Math.min(REPEAT.max, Math.max(REPEAT.min, n));
+  }
   function getVal(data, key) {
     if (!data || !key) return null;
     if (key.includes('.')) { const [b, i] = key.split('.'); const seq = data[b]; return Array.isArray(seq) ? seq[+i] : null; }
@@ -137,5 +146,5 @@
     };
   }
 
-  window.Alerts = { PATTERNS, tone, createEngine, muted, setMuted, hysteresis, getVal, STALE_AFTER };
+  window.Alerts = { PATTERNS, tone, createEngine, muted, setMuted, hysteresis, getVal, STALE_AFTER, REPEAT, repeatSeconds };
 })();

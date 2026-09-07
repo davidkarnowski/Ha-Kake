@@ -74,7 +74,7 @@
   // built-in tile the list its profile declared (served as tile_signals).
   // Text signals cannot be thresholded, so they never appear.
   const alertEngine = window.Alerts ? Alerts.createEngine() : null;
-  const REPEATS = [[0, 'once'], [10, 'every 10 s'], [30, 'every 30 s'], [60, 'every 60 s'], [300, 'every 5 min']];
+  const repLabel = v => `every ${v} s`;
   function candidateSignals(t) {
     const keys = t.kind === 'signal' ? [t.signal] : (REG.tile_signals[t.id] || []);
     return keys.filter(k => REG.signals[k] && REG.signals[k].kind !== 'text');
@@ -94,13 +94,19 @@
   function runAlerts(data) {
     if (!alertEngine) return;
     const rules = [];
-    cfg.forEach(t => { if (t.enabled && t.opts && Array.isArray(t.opts.alerts)) t.opts.alerts.forEach(r => rules.push(Object.assign({ id: alertId(t, r), tile: t.id }, r))); });
+    cfg.forEach(t => { if (t.enabled && t.opts && Array.isArray(t.opts.alerts)) t.opts.alerts.forEach(r => rules.push(Object.assign({ id: alertId(t, r), tile: t.id }, r, { repeat: Alerts.repeatSeconds(r.repeat) }))); });
     const res = alertEngine.evaluate(rules, data, Date.now(), { signals: REG.signals, items: REG.items, staleAfter: Alerts.STALE_AFTER });
-    if (!Alerts.muted()) res.fired.forEach(r => Alerts.tone.play(r.tone));
+    const muted = Alerts.muted();
+    res.fired.forEach(r => {                       // every fire — first and each repeat — sounds and flashes together
+      if (!muted) Alerts.tone.play(r.tone);
+      const t = cfg.find(x => x.id === r.tile); const c = t && cardOf(t); if (c) flashCard(c);
+    });
     alertingTiles = new Set(res.breached.map(id => id.split(':')[0]));
     cfg.forEach(t => { const c = cardOf(t); if (c) c.classList.toggle('alerting', alertingTiles.has(t.id)); });
     refreshBell();
   }
+  // restart the CSS flash even when the previous one has not finished
+  function flashCard(c) { c.classList.remove('alert-flash'); void c.offsetWidth; c.classList.add('alert-flash'); }
   function refreshBell() {
     const bell = document.getElementById('alerts-bell'); if (!bell || !window.Alerts) return;
     const m = Alerts.muted(), ready = Alerts.tone.ready();
@@ -548,8 +554,8 @@
         <button class="al-test" title="play this alert's tone (also enables sound)">▶</button>
         <div class="row al-thr">${thr}
           <select class="al-tone" title="tone">${tones.map(([n, p]) => `<option value="${n}" ${(r.tone || 'low') === n ? 'selected' : ''}>${p.label}</option>`).join('')}</select>
-          <select class="al-rep" title="repeat while out of bounds">${REPEATS.map(([v, l]) => `<option value="${v}" ${(+r.repeat || 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-        </div></div>`;
+        </div>
+        <div class="row al-rep-row"><label>repeat</label><input type="range" class="al-rep" min="${Alerts.REPEAT.min}" max="${Alerts.REPEAT.max}" step="1" value="${Alerts.repeatSeconds(r.repeat)}" title="how often it sounds and flashes while out of bounds"><output class="al-rep-val">${repLabel(Alerts.repeatSeconds(r.repeat))}</output></div></div>`;
     }).join('');
     return rows + `<div class="gt-sub al-note" ${Alerts.tone.ready() ? 'style="display:none"' : ''}>click anywhere on the page once to enable sound</div>`;
   }
@@ -561,7 +567,7 @@
         const r = ruleFor(t, sig, true);
         const mn = row.querySelector('.al-min'), mx = row.querySelector('.al-max'), wh = row.querySelector('.al-when');
         if (mn) { r.min = num(mn); r.max = num(mx); } else { r.when = wh.value || undefined; }
-        r.tone = row.querySelector('.al-tone').value; r.repeat = +row.querySelector('.al-rep').value;
+        r.tone = row.querySelector('.al-tone').value; r.repeat = Alerts.repeatSeconds(row.querySelector('.al-rep').value);
         r.enabled = row.querySelector('.al-on').checked;
         const hasThr = r.min != null || r.max != null || r.when;
         if (!hasThr) dropRule(t, sig);
@@ -574,6 +580,8 @@
         commit();
       }));
       row.querySelector('.al-on').addEventListener('change', commit);
+      const rep = row.querySelector('.al-rep');
+      rep.addEventListener('input', () => { row.querySelector('.al-rep-val').textContent = repLabel(rep.value); });   // live label only; the value commits on change
       row.querySelector('.al-test').addEventListener('click', () => {
         Alerts.tone.unlock(); Alerts.tone.play(row.querySelector('.al-tone').value);
         const note = m.querySelector('.al-note'); if (note && Alerts.tone.ready()) note.style.display = 'none';

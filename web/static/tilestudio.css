@@ -52,8 +52,18 @@
 .tile-menu .al-thr input[type=number] { width: 62px; }
 .tile-menu .al-thr select { flex: 1; min-width: 80px; }
 .tile-menu .al-note { color: var(--dim); font-size: 0.9em; margin-top: 6px; }
-/* a card with a breached alert rule */
+.tile-menu .al-rep-row { margin-top: 4px; }
+.tile-menu .al-rep-row label { min-width: 52px; }
+.tile-menu .al-rep-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.tile-menu .al-rep-val { color: var(--dim); min-width: 64px; text-align: right; }
+/* a card with a breached alert rule: steady outline while breached, and a
+   flash each time its alert sounds (the same beat as the tone) */
 .card.alerting { outline: 2px solid var(--red); box-shadow: 0 0 0 3px rgba(239, 83, 80, 0.25); }
+@keyframes alert-flash {
+  0%   { background-color: rgba(239, 83, 80, 0.55); box-shadow: 0 0 0 6px rgba(239, 83, 80, 0.6); }
+  100% { background-color: transparent; box-shadow: 0 0 0 3px rgba(239, 83, 80, 0.25); }
+}
+.card.alert-flash { animation: alert-flash 0.7s ease-out; }
 #alerts-bell.muted { opacity: 0.6; }
 #alerts-bell.active { border-color: var(--red); color: var(--red); }
 

@@ -932,3 +932,16 @@ layouts and `/api/sim/tiles`). Not yet heard in a browser — the assistant
 cannot open one; the owner's check is `--adapter sim`, an SOC rule at 40
 lowered from the cockpit: one beep, red outline, the 30 s nag, silence at
 40.5, clear at 41. Privacy sweep clean.
+
+**Same day, after the owner's first browser test** (baseline works, the red
+highlight and the row controls approved): two requirement changes. The
+repeat is now a slider, every 1 s to every 60 s (default 10), in place of the
+once / 10 s / 30 s / 60 s / 5 min list — `Alerts.REPEAT` in `alerts.js`,
+`ALERT_REPEAT_*` in `reader.py` clamping what is stored, the engine unchanged
+(a hand-written `repeat: 0` still means once). The slider's label follows it
+live on `input`; the value commits on `change` like every other threshold
+control. And the card now flashes on the tone's beat: every fire — the first
+and each repeat — restarts a 0.7 s `.alert-flash` keyframe on the card, the
+steady `.alerting` outline holding between flashes; mute silences the tone
+and leaves the flash. Tests updated for the clamp, the default and the
+seams; 751 tests, privacy sweep clean. Browser check again the owner's.
