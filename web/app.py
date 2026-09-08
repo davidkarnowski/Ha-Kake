@@ -125,9 +125,14 @@ def vehicle_ctx():
     """
     v = reader.VEHICLE
     level = next((k for k in ("soc", "fuel_pct") if k in signals.SIGNALS), None)
+    # the 3D pack tile's geometry rides along when the profile declares one
+    pack = None
+    if getattr(v, "PACK_LAYOUT", None):
+        pack = {"module": v.PACK_MODULE, "case": v.PACK_CASE,
+                "layout": v.PACK_LAYOUT, "sensors": getattr(v, "PACK_SENSORS", [])}
     return {"name": v.NAME, "title": v.TITLE,
             "logo": getattr(v, "LOGO", "dial"),
-            "level_key": level}
+            "level_key": level, "pack": pack}
 
 
 @app.route("/")

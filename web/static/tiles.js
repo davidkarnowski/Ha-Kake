@@ -240,5 +240,17 @@
     return CLIMATE_KEYS.some(k => data[k] != null);
   }
 
-  window.Tiles = { fmtTemp, fmtTempParts, tempColor, socColor, drawWheel, setShifter, renderVehicle, renderTires, renderBody, renderClimate };
+  // ── Cell-pair colour: shared by the module grid and the 3D pack tile so a pair
+  // reads the same colour in both. t = 0 (lowest) → red, t = 1 (highest) → blue.
+  function cellColor(mv, min, max) {
+    if (min === max) return 'var(--green)';
+    const t = (mv - min) / (max - min);
+    if (t > 0.8) return `hsl(195, 80%, ${50 + t*10}%)`;
+    if (t > 0.6) return `hsl(${120 + (t-0.6)*375}, 65%, 48%)`;
+    if (t > 0.35) return `hsl(${80 + (t-0.35)*160}, 75%, 50%)`;
+    if (t > 0.15) return `hsl(${30 + (t-0.15)*250}, 85%, 50%)`;
+    return `hsl(${t*200}, 80%, 48%)`;
+  }
+
+  window.Tiles = { fmtTemp, fmtTempParts, tempColor, socColor, cellColor, drawWheel, setShifter, renderVehicle, renderTires, renderBody, renderClimate };
 })();

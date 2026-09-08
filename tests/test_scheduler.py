@@ -36,7 +36,8 @@ def test_default_enables_everything(r):
 
 
 def test_disabling_tiles_removes_only_their_items(r, tmp_path):
-    cfg = {"tiles": [{"id": t["id"], "enabled": t["id"] not in ("tires", "climate", "cells")} for t in rd.TILES]}
+    # lbc02 is shared by the cell grid and the 3D pack — both must go before it drops
+    cfg = {"tiles": [{"id": t["id"], "enabled": t["id"] not in ("tires", "climate", "cells", "pack3d")} for t in rd.TILES]}
     (tmp_path / "tiles.json").write_text(json.dumps(cfg))
     r.cache.update({"tpms_psi": [1, 2, 3, 4], "cells": [1], "cabin_temp_f": 70, "soc": 50})
     r.refresh_items()

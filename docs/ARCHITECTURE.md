@@ -176,15 +176,28 @@ wordmark silhouette from `LOGO` (`leaf_ze0` sets `"leaf"`; a profile without
 one gets a neutral dial), and the mark's level fill appears only when the
 profile's registry declares a level signal (`soc`, else `fuel_pct`).
 
-The same file holds the eleven built-in tiles — SOC, health, temps,
+The same file holds the twelve built-in tiles — SOC, health, temps,
 vehicle/shifter, tires, body (doors/locks/lights on a top-down car), climate,
-power, history, degradation, cells — four of which (vehicle, tires, body,
-climate) are `{% include %}`d from `web/templates/tiles/*.html` and painted by
+power, history, degradation, cells, and the 3D pack — five of which (vehicle,
+tires, body, climate, pack3d) are `{% include %}`d from
+`web/templates/tiles/*.html`; the first four are painted by
 `web/static/tiles.js`, so the cockpit can host the same markup from the same
 record. Those are Leaf assets: they belong to whichever profile lists them in
 `TILES`, and for a profile that lists none (the Lancer's `TILES = []`)
 `tilestudio.js` takes them out of the grid and hides the cards rather than
-leaving eleven that will never take a value.
+leaving twelve that will never take a value.
+
+The 3D pack tile is the page's one ES module (`web/static/pack3d.js`, three.js
+via an import map). It reads the profile's `PACK_*` geometry from a `PACK`
+constant the template writes, turns it into 96 bodies through the pure
+`web/static/pack_layout.js`, and publishes `window.Pack3D`; `updateDash` calls
+`Pack3D.render(document, data)` each poll, parking the record in
+`window.__pack3dPending` when the module has not finished loading (module
+scripts are deferred). Tile Studio gives such tiles three small hooks:
+`TileStudio.opts(id)`, `TileStudio.enabled(id)`, and `TileStudio.menuExtra(id, fn)`
+to add tile-specific rows to the ⋯ menu, plus a `tiles:applied` DOM event after
+every layout change so the tile can re-read its opts and re-measure. See
+`docs/PACK3D.md`.
 `web/static/tilestudio.js` owns everything configurable:
 
 - **Layout:** [gridstack.js](https://github.com/gridstack/gridstack.js) v13

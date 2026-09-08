@@ -665,6 +665,8 @@
 
 {% include "tiles/climate.html" %}
 
+{% include "tiles/pack3d.html" %}
+
 <div class="card power-card" data-tile="power" data-span="12">
   <div class="history-header">
     <div class="card-title" style="margin-bottom:0">Power Monitor</div>
@@ -828,6 +830,12 @@
 </main>
 </div>
 
+<!-- The 3D pack tile is the page's one ES module: three.js ships as modules only, so an
+     import map points 'three' at the vendored copy. Module scripts are deferred, so
+     pack3d.js runs after every classic script below and publishes window.Pack3D. -->
+<script type="importmap">{"imports":{"three":"/static/vendor/three/three.module.min.js","three/addons/":"/static/vendor/three/addons/"}}</script>
+<script src="/static/pack_layout.js"></script>
+<script type="module" src="/static/pack3d.js"></script>
 <script src="/static/tiles.js"></script>
 <script>
 // Build module tree: 48 modules × 2 cells
@@ -850,6 +858,7 @@ for (let m = 0; m < 48; m++) {
 const CIRC = 2 * Math.PI * 85; // gauge circumference
 const STALE_AFTER_SEC = 90;    // dot turns yellow if no new reading within this
 const LOGO_LEVEL = {{ veh.get('level_key', 'soc') | tojson }};  // state key the wordmark fills with, or null
+const PACK = {{ veh.get('pack') | tojson }};  // the profile's physical pack layout for the 3D tile, or null
 const IDLE_A = 0.6, IDLE_KW = 0.25;  // LBC current sensors wander about 0.5 A around zero; below this is idle
 
 // Power smoothing (EMA)
@@ -881,17 +890,7 @@ function powerGaugeColor(t, isCharging) {
   return 'hsl(0, 80%, 50%)';                     // red
 }
 
-function cellColor(mv, min, max) {
-  if (min === max) return 'var(--green)';
-  const t = (mv - min) / (max - min);
-  if (t > 0.8) return `hsl(195, 80%, ${50 + t*10}%)`;
-  if (t > 0.6) return `hsl(${120 + (t-0.6)*375}, 65%, 48%)`;
-  if (t > 0.35) return `hsl(${80 + (t-0.35)*160}, 75%, 50%)`;
-  if (t > 0.15) return `hsl(${30 + (t-0.15)*250}, 85%, 50%)`;
-  return `hsl(${t*200}, 80%, 48%)`;
-}
-
-const { tempColor, socColor } = Tiles;   // shared with the four tiles in tiles.js
+const { tempColor, socColor, cellColor } = Tiles;   // shared with the tiles in tiles.js (cellColor also drives the 3D pack)
 
 function updateDash(data) {
   // Status
@@ -1046,6 +1045,8 @@ function updateDash(data) {
   Tiles.renderTires(document, data);
   Tiles.renderBody(document, data);
   Tiles.renderClimate(document, data);
+  // 3D pack (web/static/pack3d.js, an ES module that may still be loading on the first poll)
+  if (window.Pack3D) Pack3D.render(document, data); else window.__pack3dPending = data;
 
   // Power monitor gauge
   if (data.power_kw != null) {

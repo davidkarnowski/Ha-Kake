@@ -73,10 +73,17 @@ TILES = [
      "signals": ["capacity_ah", "soh"]},
     {"id": "cells",       "name": "Cell pairs",             "items": ["lbc02", "lbc06"],
      "signals": ["cell_min", "cell_max", "cell_avg", "cell_spread"]},
+    {"id": "pack3d",      "name": "Battery pack (3D)",      "items": ["lbc02", "lbc06"],
+     "signals": ["cell_min", "cell_max", "cell_avg", "cell_spread"]},
 ]
 DEFAULT_SPAN = {"soc": 4, "health": 5, "temps": 3, "vehicle": 4, "tires": 4, "climate": 4,
-                "body": 4, "power": 12, "history": 12, "degradation": 12, "cells": 12}
-DEFAULT_TILES = [{"id": t["id"], "enabled": True, "span": DEFAULT_SPAN[t["id"]]} for t in TILES]
+                "body": 4, "power": 12, "history": 12, "degradation": 12, "cells": 12, "pack3d": 12}
+# Tiles whose height cannot be measured from their markup (a WebGL canvas has no
+# intrinsic height) ship a default in gridstack rows of 40 px; the rest auto-measure.
+DEFAULT_H = {"pack3d": 12}
+DEFAULT_TILES = [dict({"id": t["id"], "enabled": True, "span": DEFAULT_SPAN[t["id"]]},
+                      **({"h": DEFAULT_H[t["id"]]} if t["id"] in DEFAULT_H else {}))
+                 for t in TILES]
 
 # keys produced by each item, dropped from the cache when the item is disabled
 ITEM_KEYS = {
@@ -158,6 +165,53 @@ HISTORY_COLS = {
 # raw/bulk keys not worth keeping in the `extra` JSON bag (per-cell voltages
 # have their own table; the temp lists are already in columns)
 EXTRA_SKIP = ("temps", "temps_c", "temps_f", "temps_raw", "balancing", "readings")
+
+# ── Physical pack layout for the 3D tile ──────────────────────────────────
+# Millimetres, car coordinates: x forward (+ toward the nose), y up, z toward
+# the passenger side (the driver side is −z). Module 303 × 223 × 35 mm, 3.8 kg,
+# four pouch cells as 2s2p, so two measured cell pairs per module.
+#
+# What is published (Wikipedia, Qnovo, a 2013 pack teardown on summet.com):
+# 48 modules in three sections — 24 on edge in one row across the car under
+# the rear seat, and 12 lying flat on each side of the floor in "2-high packs
+# of 4 and 4-high packs of 8". What is stated for cell order (mynissanleaf,
+# "LeafSpy cell locations in the pack", a 2013+ diagram): "48 cellpairs are
+# in the back, then 24 driver, then 24 passenger".
+#
+# What is ASSUMED here and not yet verified on a 2012 (each entry says so in
+# `verify`): the direction inside the rear block, which floor stacks are
+# 2-high and which 4-high, and the order of travel through the floor stacks.
+# The service manual's EVB "cell voltage loss inspection" figure settles all
+# of it; until then the tile marks these rows and docs/SIGNALS.md says the same.
+# Indices are the dashboard's 0-based cell-pair numbers; LeafSpy shows +1.
+PACK_MODULE = {"L": 303, "W": 223, "T": 35}
+PACK_CASE = {"L": 1570, "W": 1188, "H": 190, "hump": {"L": 365, "W": 900, "H": 265}}
+PACK_LAYOUT = [
+    # kind "edge": modules on edge in one row across the car (stack axis = z);
+    # kind "flat": modules lying flat, stacked upward (stack axis = y).
+    # `first` is the index of the first cell pair; a stack holds n * 2 pairs.
+    {"name": "Rear block (under rear seat)",    "kind": "edge", "x": -603, "z": 0,    "n": 24, "first": 0,
+     "verify": "order passenger end → driver end is assumed"},
+    {"name": "Driver side, stack 1 (2-high)",   "kind": "flat", "x": -268, "z": -300, "n": 2,  "first": 48,
+     "verify": "2-high vs 4-high placement and rear → front order are assumed"},
+    {"name": "Driver side, stack 2 (2-high)",   "kind": "flat", "x": -15,  "z": -300, "n": 2,  "first": 52, "verify": "assumed"},
+    {"name": "Driver side, stack 3 (4-high)",   "kind": "flat", "x": 238,  "z": -300, "n": 4,  "first": 56, "verify": "assumed"},
+    {"name": "Driver side, stack 4 (4-high)",   "kind": "flat", "x": 491,  "z": -300, "n": 4,  "first": 64, "verify": "assumed"},
+    {"name": "Passenger side, stack 4 (4-high)", "kind": "flat", "x": 491,  "z": 300, "n": 4,  "first": 72,
+     "verify": "front → rear order is assumed"},
+    {"name": "Passenger side, stack 3 (4-high)", "kind": "flat", "x": 238,  "z": 300, "n": 4,  "first": 80, "verify": "assumed"},
+    {"name": "Passenger side, stack 2 (2-high)", "kind": "flat", "x": -15,  "z": 300, "n": 2,  "first": 88, "verify": "assumed"},
+    {"name": "Passenger side, stack 1 (2-high)", "kind": "flat", "x": -268, "z": 300, "n": 2,  "first": 92, "verify": "assumed"},
+]
+# The four 2011–2012 pack temperature sensors, at the locations LeafSpy's help
+# table gives: 1 rear block centre-back, 2 right side under the front right
+# seat, 3 left side under the rear left floor, 4 rear block right end.
+PACK_SENSORS = [
+    {"n": "T1", "x": -770, "y": 131, "z": 0},
+    {"n": "T2", "x": 491,  "y": 172, "z": 431},
+    {"n": "T3", "x": -268, "y": 102, "z": -431},
+    {"n": "T4", "x": -603, "y": 131, "z": 435},
+]
 
 SIGNALS = {
     # ── LBC group 01 ──

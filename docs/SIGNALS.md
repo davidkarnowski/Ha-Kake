@@ -59,6 +59,33 @@ discharging; the dashboard treats |I| < 0.6 A (|P| < 0.25 kW) as idle.
 #### Group 02 — cell pair voltages (192 B of cell data; the ISO-TP parse pads to 200 B) — verified
 96 × u16 mV, `0xFFFF` padding after the last cell.
 
+##### Cell order in the pack — partly assumed
+
+The 3D pack tile places each of the 96 pairs in the car
+(`PACK_LAYOUT` in `vehicles/leaf_ze0.py`, described in `docs/PACK3D.md`).
+Indices here are the dashboard's 0-based pair numbers; LeafSpy shows +1.
+
+- **Published:** 48 modules of 303 × 223 × 35 mm, 2s2p, in three sections —
+  24 on edge in one row across the car under the rear seat, 12 lying flat on
+  each side of the floor in "2-high packs of 4 and 4-high packs of 8"
+  (Wikipedia; Qnovo; a 2013 pack teardown on summet.com). The LBC on the
+  driver's side of the rear block (mynissanleaf).
+- **Stated for the 2013+ 24 kWh pack, assumed for 2011–12:** series order
+  rear block (pairs 0–47), then driver side (48–71), then passenger side
+  (72–95) — mynissanleaf, "LeafSpy cell locations in the pack" (2016), with a
+  diagram for the AZE0.
+- **Assumed, unverified:** the direction inside the rear block (drawn
+  passenger end → driver end, ending at the LBC), which floor stacks are
+  2-high and which 4-high (drawn 2-high in the rear footwell, 4-high under
+  the front seats), and the order of travel through the floor stacks (drawn
+  driver side rear → front, passenger side front → rear, bottom → top in
+  each stack, so the string is one loop).
+- **How to settle it:** the ZE0 service manual, EVB section, cell voltage
+  loss inspection (EVB-67) carries the module-number figure. Weak
+  circumstantial support: the weakest pair was 53 in February and 55 in
+  August, both in the driver-side block under this order — the block next to
+  the LBC and the hottest floor region.
+
 #### Group 03 (32 B) — tentative
 Bytes 10–11 cell max mV, 12–13 cell min mV. Rest unknown.
 

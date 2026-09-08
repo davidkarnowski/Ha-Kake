@@ -14,6 +14,7 @@ caught by test_demo_mode_never_opens_the_database.
 """
 import datetime as dt
 import json
+import re
 
 import pytest
 
@@ -244,6 +245,16 @@ def test_calibration_delete_clears(api):
 def test_index_renders_with_the_active_vehicle(api):
     html = api.get("/").get_data(as_text=True)
     assert "Leaf" in html
+
+
+def test_index_carries_the_pack_layout_for_the_3d_tile(api):
+    """vehicle_ctx() hands the profile's PACK_* data to the page as one JSON constant."""
+    html = api.get("/").get_data(as_text=True)
+    m = re.search(r"const PACK = (.*?);  //", html)
+    assert m, "no PACK constant"
+    pack = json.loads(m.group(1))
+    assert pack["module"] == {"L": 303, "W": 223, "T": 35}
+    assert sum(s["n"] for s in pack["layout"]) == 48 and len(pack["sensors"]) == 4
 
 
 # ── demo mode ────────────────────────────────────────────────────────────

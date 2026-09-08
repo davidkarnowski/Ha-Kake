@@ -171,6 +171,7 @@ The Leaf profile, as an example of how far a profile can go:
 | SOC history — 1 min … 30 d … all | SQLite | |
 | Capacity degradation — daily means, least-squares fit, projection | SQLite | |
 | Cell pairs — 96 voltages, 48 modules, min/max/spread, balancing flags | LBC groups 02/06 | 20–30 s |
+| Battery pack — 3D: the pack as it sits under the car, every cell pair a body coloured by voltage (deviation from mean, grid scale, or drop from rest); orbit / zoom, hover for the value, click to pin | LBC groups 02/06 | 20–30 s |
 
 On an old EV the point of the tool is the battery — capacity, state of health,
 internal resistance, the 12 V and insulation:
@@ -292,6 +293,9 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `signals.py` | registry machinery shared by every profile (colour scales, renderers, resolvers) |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag-to-reorder |
 | `web/static/alerts.js` | audible alerts: the Web Audio tone generator and the threshold rule engine (pure, node-tested) |
+| `web/static/pack3d.js`, `web/static/pack_layout.js` | the 3D battery pack tile: the three.js module, and the pure geometry / colour-scale layer it draws from (node-tested) |
+| `web/static/vendor/` | gridstack.js and three.js, vendored with their MIT licences — nothing loads from a CDN |
+| `docs/PACK3D.md` | **the 3D pack tile: colour scales, how the model is built, where each cell pair is and how sure we are** |
 | `docs/ADDING_SIGNALS.md` | **the six-step routine for decoding and wiring a new input** |
 | `docs/reverse-engineering/` | **the eight-chapter guide to finding signals in any car** |
 | `web/reader.py` | the only process that talks to the car — tile-driven scheduler, reconnect, pause |
@@ -303,7 +307,7 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `scan_ble.py` | passive BLE scan to find your adapter |
 | `web/store.py` | SQLite time series, downsampling, daily health, migration — schema built from the profile's `HISTORY_COLS` |
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
-| `web/templates/index.html` | the dashboard page (no framework); the four styled tiles are partials in `web/templates/tiles/`, painted by `web/static/tiles.js` |
+| `web/templates/index.html` | the dashboard page (no framework); the styled tiles are partials in `web/templates/tiles/`, painted by `web/static/tiles.js` (the 3D pack by `pack3d.js`) |
 | `record_session.py` | record a drive (or convert an old capture) into a replayable session fixture |
 | `docs/REPLAY.md` | **running the whole dashboard with no car — replay mode and its fixtures** |
 | `simulator/`, `hakake_sim.py` | the simulated car: model, load table, scenarios, encoder; the rig, control API and history generator |
@@ -384,10 +388,15 @@ Being on the bus at all has consequences worth knowing:
   **do not operate the laptop while driving.** The dashboard is a passenger's
   tool.
 
-## Status (2026-09-03)
+## Status (2026-09-08)
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **3D battery pack** (2026-09-08): the pack drawn as it sits under the car,
+  96 cell-pair bodies coloured by voltage on three scales, orbit / zoom /
+  hover / pin, built from a layout table in the profile (no CAD file) and
+  drawn with a vendored three.js. Where each pair sits is partly assumed and
+  says so — `docs/PACK3D.md`.
 - 751 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).

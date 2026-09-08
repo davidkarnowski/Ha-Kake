@@ -121,6 +121,12 @@ specifics go in `config.local.json` (gitignored), never in code.
   built-in tile's alertable values are the `signals` list on its `TILES`
   entry in the profile. The server only keeps rules well-formed
   (`reader._clean_alerts`); it never evaluates them.
+- The 3D pack tile (`web/static/pack3d.js`) is the page's only ES module —
+  three.js ships as modules only — and talks to the classic scripts through
+  `window.Pack3D`. Its geometry is data (`PACK_LAYOUT` in the profile), not a
+  CAD file; the pure maths in `pack_layout.js` is node-tested, the WebGL half
+  is checked in the owner's browser. A label layer is a class, never an id
+  shared with a control.
 - The simulator is a fixture, not a verifier: `--adapter sim` is never
   auto-detected, its rows never reach `web/leaf_battery.db`, every load in
   `simulator/model.py` `LOADS_W` carries a MEASURED / OWNER REPORT / ASSERTED
@@ -140,3 +146,4 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Adapter won't talk | `elm327.py` header comments, README "Hardware" |
 | Add another vehicle? | `vehicles/__init__.py` contract docstring; `vehicles/lancer_2009.py` is the minimal example |
 | Simulate the car / drive the cockpit | `docs/SIMULATOR.md`; `python web/app.py --adapter sim`, then `/sim`; the core's interface is `docs/SIMULATOR_CONTRACT.md` |
+| Where is cell pair N in the pack? | `docs/PACK3D.md`; the table is `PACK_LAYOUT` in `vehicles/leaf_ze0.py` (partly assumed — it says which rows) |

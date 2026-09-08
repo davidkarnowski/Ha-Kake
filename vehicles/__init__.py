@@ -67,6 +67,12 @@ mechanism: a record carrying a `cells` list of per-cell millivolts gets one row
 per cell, which is what the Leaf's 96 cell pairs need. Profiles that emit no
 `cells` key never touch that table.
 
+`PACK_MODULE`, `PACK_CASE`, `PACK_LAYOUT` and `PACK_SENSORS` are likewise optional
+and only read by the 3D pack tile: a module's dimensions, the case envelope, a
+list of stacks placing every cell-pair index in the pack, and the temperature
+sensor positions. A profile that declares `PACK_LAYOUT` must cover every index
+from 0 to (pairs − 1) exactly once; `validate_profile` checks that.
+
 `get_vehicle(name)` resolves: explicit arg -> HAKAKE_VEHICLE env ->
 config.local.json "vehicle" -> "leaf_ze0", and validates the profile.
 `validate_profile(mod)` returns the list of problems (empty == valid) and is
@@ -241,6 +247,20 @@ def validate_profile(mod):
         if t["id"] not in builtin and t.get("signal") not in mod.SIGNALS:
             p.append(f"{name}: default signal tile {t['id']!r} names signal "
                      f"{t.get('signal')!r}, which is not in SIGNALS")
+
+    # ── pack layout (optional, for the 3D tile) ──
+    layout = getattr(mod, "PACK_LAYOUT", None)
+    if layout is not None:
+        seen = []
+        for s in layout:
+            if not isinstance(s, dict) or not {"name", "kind", "x", "z", "n", "first"} <= set(s):
+                p.append(f"{name}: PACK_LAYOUT entries need name/kind/x/z/n/first, found {s!r}")
+                continue
+            if s["kind"] not in ("edge", "flat"):
+                p.append(f"{name}: PACK_LAYOUT {s['name']!r} kind must be 'edge' or 'flat'")
+            seen.extend(range(s["first"], s["first"] + s["n"] * 2))
+        if sorted(seen) != list(range(len(seen))):
+            p.append(f"{name}: PACK_LAYOUT must cover every cell-pair index 0..N-1 exactly once")
 
     # ── item bookkeeping ──
     for i, keys in mod.ITEM_KEYS.items():

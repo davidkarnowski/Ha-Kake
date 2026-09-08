@@ -31,9 +31,11 @@ STATIC = os.path.join(ROOT, "web", "static")
 TILES_JS = os.path.join(STATIC, "tiles.js")
 
 # partial → the element id that only that partial's markup carries
-PARTIALS = {"vehicle": "shifter", "tires": "wheels", "body": "body-svg", "climate": "hvac-cabin"}
-EXPORTS = ["fmtTemp", "fmtTempParts", "tempColor", "socColor", "drawWheel", "setShifter",
+PARTIALS = {"vehicle": "shifter", "tires": "wheels", "body": "body-svg", "climate": "hvac-cabin",
+            "pack3d": "pack3d"}
+EXPORTS = ["fmtTemp", "fmtTempParts", "tempColor", "socColor", "cellColor", "drawWheel", "setShifter",
            "renderVehicle", "renderTires", "renderBody", "renderClimate"]
+SHARED_SCALES = "const { tempColor, socColor, cellColor } = Tiles;"
 
 
 def read(path):
@@ -86,7 +88,7 @@ def test_partials_render_verbatim(page):
 
 # ── tiles.js ──
 
-def test_tiles_js_exports_the_ten_names():
+def test_tiles_js_exports_the_expected_names():
     m = re.search(r"window\.Tiles\s*=\s*\{([^}]*)\}", read(TILES_JS))
     assert m, "no window.Tiles export"
     names = [n.strip() for n in m.group(1).split(",") if n.strip()]
@@ -105,8 +107,8 @@ def test_index_delegates_the_four_tiles_and_shares_the_colour_scales():
     index = read(os.path.join(TEMPLATES, "index.html"))
     for fn in ("renderVehicle", "renderTires", "renderBody", "renderClimate"):
         assert f"Tiles.{fn}(document, data);" in index, fn
-    assert "const { tempColor, socColor } = Tiles;" in index
-    for gone in ("function tempColor(", "function socColor(", "function drawWheel(", "function setShifter("):
+    assert SHARED_SCALES in index
+    for gone in ("function tempColor(", "function socColor(", "function cellColor(", "function drawWheel(", "function setShifter("):
         assert gone not in index, gone
 
 
@@ -155,9 +157,24 @@ def test_head_links_shared_css_after_tilestudio_and_before_inline_style(page):
 
 
 def test_tiles_js_loads_before_the_page_script_and_tilestudio_is_booted(page):
-    assert page.index('src="/static/tiles.js"') < page.index("const { tempColor, socColor } = Tiles;")
+    assert page.index('src="/static/tiles.js"') < page.index(SHARED_SCALES)
     assert page.index('src="/static/alerts.js"') < page.index('src="/static/tilestudio.js"') < page.index("TileStudio.init();")
     assert page.count("TileStudio.init();") == 1
+
+
+def test_importmap_precedes_the_pack3d_module_and_the_page_hands_it_records(page):
+    """three.js is ES-module only: the import map must come before the one module
+    script, the pure layout helper before that, and updateDash must park a record
+    for the module when it has not loaded yet (module scripts are deferred)."""
+    assert page.count('type="importmap"') == 1 and page.count('type="module"') == 1
+    assert page.index('type="importmap"') < page.index('src="/static/pack3d.js"')
+    assert page.index('src="/static/pack_layout.js"') < page.index('src="/static/pack3d.js"')
+    assert '"three":"/static/vendor/three/three.module.min.js"' in page
+    assert "if (window.Pack3D) Pack3D.render(document, data); else window.__pack3dPending = data;" in page
+    assert "const PACK = " in page
+    js = read(os.path.join(STATIC, "pack3d.js"))
+    assert "window.Pack3D = { render, setOpts, dispose };" in js
+    assert 'id="pack3d-labels"' not in read(os.path.join(TEMPLATES, "tiles", "pack3d.html"))  # class, never an id
 
 
 def _rules(text, prefix=""):

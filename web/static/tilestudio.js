@@ -31,6 +31,9 @@
   let lastData = null, lastHist = [];
   const SPANS = [2, 3, 4, 6, 8, 12];
   const GRAPH_TYPES = new Set(['line', 'area', 'bars']);
+  // tile id → fn(box, opts, commit): tile-specific controls a built-in tile adds to its
+  // ⋯ menu (the 3D pack's colour scale, for one). `commit()` saves and re-applies.
+  const MENU_EXTRAS = {};
 
   // ── colour scales ───────────────────────────────────────────────────
   function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
@@ -298,7 +301,7 @@
       if (w) { if (g && w.gridstackNode) g.removeWidget(w, false); w.style.display = 'none'; }
       else c.style.display = 'none';
     });
-    if (!g) { cfg.forEach(t => { const c = cardOf(t); if (c) c.closest('.grid-stack-item').style.display = t.enabled ? '' : 'none'; }); renderPanel(); return; }
+    if (!g) { cfg.forEach(t => { const c = cardOf(t); if (c) c.closest('.grid-stack-item').style.display = t.enabled ? '' : 'none'; }); renderPanel(); applied(); return; }
     applying = true;
     g.batchUpdate();
     cfg.forEach(t => {
@@ -327,7 +330,11 @@
     applying = false;
     cfg.forEach(t => { if (t.kind === 'signal' && t.enabled) renderSignalTile(t); });
     renderPanel();
+    applied();
   }
+  // Built-in tiles with their own renderer (the 3D pack) listen for this to re-read
+  // their opts and re-measure after any layout or menu change.
+  function applied() { document.dispatchEvent(new CustomEvent('tiles:applied')); }
   function setSize(t, w, h) {
     const g = ensureGrid(), el = wrapperOf(t); if (!g || !el) return;
     const o = {}; if (w != null) o.w = w; if (h != null) o.h = h;
@@ -507,6 +514,7 @@
       <span class="swatch" id="tm-swatch" style="background:${gradientCss(effColor(t, s))}"></span>
       <div class="row" style="margin-top:6px"><label>Range</label><input type="number" id="tm-min" value="${o.min != null ? o.min : ''}" placeholder="${s ? s.min : ''}"> – <input type="number" id="tm-max" value="${o.max != null ? o.max : ''}" placeholder="${s ? s.max : ''}"></div>` : ''}
       ${isSig ? `<div class="row" id="tm-graph-row" style="${GRAPH_TYPES.has(t.type) ? '' : 'display:none'}"><label>History</label><select id="tm-range">${[[5, '5 min'], [15, '15 min'], [60, '1 h'], [360, '6 h'], [1440, '24 h'], [10080, '7 d'], [0, 'all']].map(([v, l]) => `<option value="${v}" ${(+o.range || 60) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
+      ${MENU_EXTRAS[id] ? '<div id="tm-extra"></div>' : ''}
       ${window.Alerts ? `<h5>Alerts — beep when a value goes out of bounds</h5><div id="tm-alerts">${alertRows(t)}</div>` : ''}
       <div class="foot"><button id="tm-hide">${t.enabled ? 'hide tile' : 'show tile'}</button>
       <button id="tm-reset" title="default size, style, colours and position">reset tile</button>
@@ -517,6 +525,7 @@
     m.addEventListener('pointerdown', e => e.stopPropagation());
     placeMenu(m, btn);
     trackMenu(m, btn);
+    if (MENU_EXTRAS[id]) MENU_EXTRAS[id](m.querySelector('#tm-extra'), o, () => { save(); apply(); });
     m.querySelectorAll('[data-span]').forEach(b => b.addEventListener('click', () => { m.querySelectorAll('[data-span]').forEach(x => x.classList.toggle('on', x === b)); setSize(t, +b.dataset.span, null); if (isSig) renderSignalTile(t); }));
     m.querySelectorAll('[data-h]').forEach(b => b.addEventListener('click', () => { m.querySelectorAll('[data-h]').forEach(x => x.classList.toggle('on', x === b)); const h = b.dataset.h === 'auto' ? measureRows(t, card) : +b.dataset.h; setSize(t, null, h); }));
     const on = (sel, ev, fn) => { const el = m.querySelector(sel); if (el) el.addEventListener(ev, fn); };
@@ -629,5 +638,9 @@
     update(data) { lastData = data; cfg.forEach(t => { if (t.kind === 'signal' && t.enabled) renderSignalTile(t); }); runAlerts(data); },
     history(rows) { lastHist = rows || []; cfg.forEach(t => { if (t.kind === 'signal' && t.enabled && GRAPH_TYPES.has(t.type)) renderSignalTile(t); }); },
     reload: reloadLayout,
+    // a copy of one tile's opts, whether it is enabled, and a hook for tile-specific menu controls
+    opts(id) { const t = cfg.find(x => x.id === id); return t ? Object.assign({}, t.opts || {}) : {}; },
+    enabled(id) { const t = cfg.find(x => x.id === id); return !!(t && t.enabled); },
+    menuExtra(id, fn) { MENU_EXTRAS[id] = fn; },
   };
 })();

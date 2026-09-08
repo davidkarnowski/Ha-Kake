@@ -82,3 +82,26 @@ html.shot * { transition: none !important; }
 .fan-bars i.on { background: var(--accent); }
 .hvac-big small { font-size: 0.4em; color: var(--dim); font-weight: 400; margin-left: 6px; }
 .raw-hex { font: 10px ui-monospace, Menlo, monospace; color: var(--dim); word-break: break-all; margin-top: 10px; line-height: 1.4; }
+
+/* ── 3D pack tile: the canvas fills the card below the title; the tile's `h` sets its size.
+   The label layer is a class on purpose — an id shared with a control once resized the
+   wrong element. ── */
+.card[data-tile="pack3d"] { display: flex; flex-direction: column; }
+.card[data-tile="pack3d"] > .card-title, .card[data-tile="pack3d"] > .pack3d-note { flex: none; }
+.pack3d { flex: 1 1 auto; min-height: 240px; position: relative; overflow: hidden; border-radius: 10px;
+          background: radial-gradient(ellipse at 50% 40%, #131b2c 0%, var(--bg) 75%); cursor: grab; }
+.pack3d:active { cursor: grabbing; }
+.pack3d canvas { display: block; }
+.pack3d-labels { position: absolute; inset: 0; pointer-events: none; }
+.pack3d-lbl { font: 500 11px/1 ui-monospace, Menlo, monospace; padding: 2px 4px; border-radius: 4px;
+              background: rgba(10, 14, 23, .72); color: var(--text); white-space: nowrap; transform: translateY(-14px); }
+.pack3d-lbl.hot { color: var(--red); }
+.pack3d-lbl.axis { font: 600 10px/1 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); background: none; }
+.pack3d-legend { position: absolute; left: 10px; bottom: 8px; font: 11px ui-monospace, Menlo, monospace; color: var(--dim); }
+.pack3d-legend i { display: block; width: 160px; height: 7px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 3px; }
+.pack3d-legend span + span { float: right; }
+.pack3d-hint { position: absolute; right: 10px; top: 8px; font: 11px ui-monospace, Menlo, monospace; color: var(--dim);
+               background: rgba(10, 14, 23, .6); padding: 3px 7px; border-radius: 6px; }
+.pack3d-note { margin-top: 8px; font: 12px ui-monospace, Menlo, monospace; color: var(--dim); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+.pack3d-note b { color: var(--text); font-weight: 600; }
+.pack3d-note .verify { color: var(--yellow); }
