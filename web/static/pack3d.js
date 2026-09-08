@@ -30,14 +30,14 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 
 const VIEWS = { iso: [1500, 1300, 1700], top: [1, 2600, 1], rear: [-2100, 700, 0], driver: [200, 650, -2300] };
 // scale 'abs' is the cell grid's own colouring, so a pair reads the same colour side by side
-const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true };
+const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '' };
 const WHITE = new THREE.Color(0xffffff), BLUE = new THREE.Color(0x42a5f5), ACCENT = 0x4fc3f7;
 const EDGE_RADIUS = 6;                                   // mm, the real module's rounded edge
 
 const state = {
   built: false, opts: Object.assign({}, DEFAULT_OPTS), rest: null, playback: false,
   hover: -1, pinned: -1, last: null, host: null, note: null, pane: null,
-  flashLo: -1, flashHi: -1, loBase: new THREE.Color(), hiBase: new THREE.Color(),
+  flashing: [],                        // [{i, base, to}] — the lowest → white, the highest → blue, thresholds likewise
   expanded: false, baseH: null,
 };
 let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLabels, bodies, modules, ro, sensors = [];
@@ -186,11 +186,18 @@ function paint() {
   const cells = data.cells, f = PackLayout.stats(cells), sc = PackLayout.SCALES[state.opts.scale] || PackLayout.SCALES.abs;
   for (let i = 0; i < bodies.length; i++) setPairColor(i, cssColor(pairCss(cells[i], f, i, sc)));
   flushColors();
-  // the lowest pair breathes toward white, the highest toward blue (see loop)
-  state.flashLo = state.opts.flash ? f.imin : -1;
-  state.flashHi = state.opts.flash ? f.imax : -1;
-  if (state.flashLo >= 0) state.loBase.copy(cssColor(pairCss(cells[f.imin], f, f.imin, sc)));
-  if (state.flashHi >= 0) state.hiBase.copy(cssColor(pairCss(cells[f.imax], f, f.imax, sc)));
+  // what breathes (see loop): the lowest pair toward white and the highest toward blue,
+  // plus every pair below / above the thresholds set in the ⋯ menu
+  const flashing = [], below = +state.opts.flashBelow, above = +state.opts.flashAbove;
+  const add = (i, to) => { if (!flashing.some(x => x.i === i)) flashing.push({ i, to, base: cssColor(pairCss(cells[i], f, i, sc)).clone() }); };
+  if (state.opts.flash) { add(f.imin, WHITE); add(f.imax, BLUE); }
+  for (let i = 0; i < cells.length; i++) {
+    if (below > 0 && cells[i] < below) add(i, WHITE);
+    if (above > 0 && cells[i] > above) add(i, BLUE);
+  }
+  state.flashing = flashing;
+  state.thresholdNote = (below > 0 ? ` · ${cells.filter(v => v < below).length} below ${below} mV` : '') +
+                        (above > 0 ? ` · ${cells.filter(v => v > above).length} above ${above} mV` : '');
   const mode = state.opts.labels;
   for (let i = 0; i < bodies.length; i++) {
     const show = mode === 'all' || (mode === 'minmax' && (i === f.imin || i === f.imax)) || i === state.pinned || i === state.hover;
@@ -224,7 +231,7 @@ function readout(i, cells, f) {
   const note = state.note; if (!note) return;
   if (i < 0 || !bodies[i]) {
     hoverBox.visible = false;
-    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b> · hover a pair, click to pin`;
+    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a pair, click to pin`;
     return;
   }
   const b = bodies[i], dev = cells[i] - f.mean, drop = state.rest ? cells[i] - state.rest[i] : null;
@@ -334,8 +341,7 @@ function loop() {
   // found at a glance; the pinned module's box pulses and its pin bobs
   const p = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI * 1.2);
   let dirty = false;
-  if (state.flashLo >= 0) { setPairColor(state.flashLo, tmpColor.copy(state.loBase).lerp(WHITE, 0.6 * p)); dirty = true; }
-  if (state.flashHi >= 0) { setPairColor(state.flashHi, tmpColor.copy(state.hiBase).lerp(BLUE, 0.7 * p)); dirty = true; }
+  for (const x of state.flashing) { setPairColor(x.i, tmpColor.copy(x.base).lerp(x.to, 0.65 * p)); dirty = true; }
   if (dirty) flushColors();
   if (selBox.visible) { selBox.material.opacity = 0.18 + 0.22 * p; selPin.position.y += Math.sin(now * 2 * Math.PI * 0.8) * 0.6; }
   controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera);
@@ -382,11 +388,15 @@ if (window.TileStudio && TileStudio.menuExtra) {
       <div class="row"><label>Values</label>${sel('labels', [['minmax', 'lowest and highest pair'], ['hover', 'hover only'], ['all', 'every pair']])}</div>
       <div class="row"><label>Case</label><input type="range" data-k="case" min="0" max="60" value="${Math.round((o.case ?? DEFAULT_OPTS.case) * 100)}"> <span style="color:var(--dim)">opacity</span></div>
       <div class="row seg">${Object.keys(VIEWS).map(v => `<button data-view="${v}" class="${(o.view || DEFAULT_OPTS.view) === v ? 'on' : ''}">${v}</button>`).join('')}<span style="color:var(--dim)">view</span></div>
-      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest pair white and the highest blue</label></div>`;
+      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest pair white and the highest blue</label></div>
+      <div class="row"><label>Flash all below</label><input type="number" data-k="flashBelow" min="0" max="5000" step="1" value="${o.flashBelow ?? ''}" placeholder="mV" style="width:78px">
+        <label style="min-width:0">above</label><input type="number" data-k="flashAbove" min="0" max="5000" step="1" value="${o.flashAbove ?? ''}" placeholder="mV" style="width:78px"></div>
+      <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Every pair under the first value breathes white, every pair over the second breathes blue. Leave blank for none.</div>`;
     box.querySelectorAll('select[data-k]').forEach(s => s.addEventListener('change', () => { o[s.dataset.k] = s.value; commit(); }));
     box.querySelector('input[data-k="case"]').addEventListener('input', e => { o.case = +e.target.value / 100; setOpts(o); });
     box.querySelector('input[data-k="case"]').addEventListener('change', commit);
     box.querySelectorAll('input[type="checkbox"][data-k]').forEach(c => c.addEventListener('change', e => { o[c.dataset.k] = e.target.checked; commit(); }));
+    box.querySelectorAll('input[type="number"][data-k]').forEach(n => n.addEventListener('change', e => { o[n.dataset.k] = e.target.value === '' ? '' : +e.target.value; commit(); }));
     box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
       box.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b)); o.view = b.dataset.view; commit();
     }));

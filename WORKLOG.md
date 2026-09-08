@@ -1095,3 +1095,9 @@ side pane. The record's `cells` list, `cell_min_idx` and the layout table's
 `first` stay 0-based array indices underneath. Entries above this one use the
 old 0-based count: the "cell 53 / 55" of February and August are pairs 54 and
 56 today, MD27 and MD28.
+
+**Same day:** the 3D tile's ⋯ menu gained *Flash all below / above* — two
+voltages; every pair under the first breathes white, every pair over the
+second breathes blue, the counts shown on the readout line. The flash
+machinery is now one set of (pair, base colour, target) rather than two fixed
+slots, and the lowest / highest flashes are just its first two entries.

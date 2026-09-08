@@ -185,7 +185,9 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "s.mesh.material.color.copy(c)" in js                           # sensor balls colour-mapped
     assert "function paintPane(i, cells, f, sc)" in js and "pack3d-pane-close" in js
     assert "TileStudio.size('pack3d', null, state.baseH * 2)" in js        # expand doubles the real height
-    assert "flash the lowest pair white and the highest blue" in js and "state.flashLo" in js and "state.flashHi" in js
+    assert "flash the lowest pair white and the highest blue" in js and "state.flashing = flashing" in js
+    assert "Flash all below" in js and 'data-k="flashBelow"' in js and 'data-k="flashAbove"' in js   # threshold flashes
+    assert "if (below > 0 && cells[i] < below) add(i, WHITE);" in js and "if (above > 0 && cells[i] > above) add(i, BLUE);" in js
     assert "RoundedBoxGeometry(b0.sx, b0.sy, b0.sz, 2, r)" in js              # rounded like the real module
     assert "slot[i] = { g: groups.length, k }" in js                          # one instanced mesh per body size
     assert 'style="color:${css}"' in js                                        # the pane's voltages in the pair's colour

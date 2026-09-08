@@ -28,9 +28,12 @@ it follows the recording; under `--demo` it shows the demo frame.
 
 Other options: *Values* (label the lowest and highest pair, hover only, or
 every pair), *Case* opacity, a view preset (iso, top, rear block, driver
-side), and *flash* — the lowest pair breathes toward white and the highest
-toward blue so both can be found at a glance (on by default). All of it
-persists in the tile's `opts` like any other tile setting.
+side), *flash* — the lowest pair breathes toward white and the highest
+toward blue so both can be found at a glance (on by default) — and *Flash
+all below / above*: two voltages in mV; every pair under the first breathes
+white and every pair over the second breathes blue, with the counts on the
+readout line (blank for none). All of it persists in the tile's `opts` like
+any other tile setting.
 
 **In the viewport.** The four balls are the pack's temperature sensors
 (T1–T4); each is coloured on the pack's own range — hottest red, coolest
