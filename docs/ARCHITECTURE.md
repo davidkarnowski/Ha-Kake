@@ -363,4 +363,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 791 tests at the time of writing.
+that must stay green. 792 tests at the time of writing.

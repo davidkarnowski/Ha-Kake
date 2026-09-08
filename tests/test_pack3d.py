@@ -139,7 +139,7 @@ def test_tilestudio_exposes_opts_enabled_menu_extra_and_the_applied_event():
     with open(os.path.join(STATIC, "tilestudio.js")) as f:
         src = f.read()
     pub = src[src.index("window.TileStudio = {"):]
-    for fn in ("opts(id)", "enabled(id)", "menuExtra(id, fn)"):
+    for fn in ("opts(id)", "enabled(id)", "menuExtra(id, fn)", "tile(id)", "size(id, w, h)"):
         assert fn in pub, fn
     assert "new CustomEvent('tiles:applied')" in src
     assert "MENU_EXTRAS[id](m.querySelector('#tm-extra'), o, () => { save(); apply(); })" in src
@@ -155,3 +155,27 @@ def test_cell_log_is_offered_from_both_tile_menus_and_shown_in_the_header():
     assert "classList.toggle('on', !!data.celllog && !data.playback)" in page
     with open(os.path.join(STATIC, "pack3d.js")) as f:
         assert "if (window.cellLogMenu) cellLogMenu(box, o, commit);" in f.read()
+
+
+def test_tile_matches_the_grid_colours_and_carries_its_tools():
+    """Owner's second browser round (2026-09-08): same colour as the grid side by side,
+    sensor balls coloured and labelled in °F/°C, a side pane on click, a help hint that is
+    not a button, an expand button, and the lowest pair flashing."""
+    with open(os.path.join(STATIC, "pack3d.js")) as f:
+        js = f.read()
+    assert "scale: 'abs'" in js                                            # the grid's own scale by default
+    assert "cssColor(Tiles.cellColor(mv, f.min, f.max))" in js             # exactly the grid's call
+    assert "HemisphereLight(0xffffff, 0x334466, Math.PI)" in js            # top face ≈ plain colour
+    assert "°F · " in js and "* 5 / 9" in js                               # sensors labelled in both units
+    assert "s.mesh.material.color.copy(c)" in js                           # sensor balls colour-mapped
+    assert "function paintPane(i, cells, f)" in js and "pack3d-pane-close" in js
+    assert "TileStudio.size('pack3d', null, state.baseH * 2)" in js        # expand doubles the real height
+    assert "flash the lowest pair" in js and "state.flashIdx" in js
+    with open(os.path.join(ROOT, "web", "templates", "tiles", "pack3d.html")) as f:
+        html = f.read()
+    for cls in ("pack3d-expand", "pack3d-help", "pack3d-pane"):
+        assert cls in html, cls
+    assert "pack3d-hint" not in html
+    with open(os.path.join(STATIC, "tiles.css")) as f:
+        css = f.read()
+    assert ".pack3d-pane {" in css and ".pack3d-hint" not in css

@@ -22,14 +22,24 @@ it follows the recording; under `--demo` it shows the demo frame.
 
 | Scale | What `t = 0` (red) … `t = 1` (blue) means | Use it for |
 |---|---|---|
-| **deviation from pack mean** (default) | −50 mV … +50 mV from the pack's mean at that instant | The weak-cell view. Under load every pair sags together; this shows who sags *more*. |
-| absolute mV (grid scale) | the frame's lowest pair … its highest | Exactly the grid tile's colouring. |
+| **absolute mV (grid scale)** (default) | the frame's lowest pair … its highest | Exactly the grid tile's colouring, so a pair is the same colour in both panels side by side. The slabs are lit so a top face shows its plain colour. |
+| deviation from pack mean | −50 mV … +50 mV from the pack's mean at that instant | The weak-cell view. Under load every pair sags together; this shows who sags *more*. |
 | drop from own rest voltage | −300 mV … 0 mV below the pair's first value this session | A per-pair internal-resistance proxy during a drive log or playback. |
 
 Other options: *Values* (label the lowest and highest pair, hover only, or
 every pair), *Case* opacity, a view preset (iso, top, rear block, driver
-side), auto-rotate. All of it persists in the tile's `opts` like any other
-tile setting.
+side), *flash the lowest pair* (it breathes toward white so it can be found
+at a glance; on by default), auto-rotate. All of it persists in the tile's
+`opts` like any other tile setting.
+
+**In the viewport.** The four balls are the pack's temperature sensors
+(T1–T4); each is coloured on the pack's own range — hottest red, coolest
+blue — and labelled with its reading in °F and °C. Hover a pair for its
+readout on the line below; **click a pair** to pin it and open a side pane
+with both pairs of that module, larger: voltage, deviation from the mean,
+drop from rest, rank in the pack (1st lowest is flagged), and whether the
+BMS is balancing it. The `⤢` button doubles the tile's height (a real
+resize, remembered with the layout); `?` holds the pointer help.
 
 ## How the model is built
 

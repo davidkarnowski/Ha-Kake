@@ -648,6 +648,9 @@
     opts(id) { const t = cfg.find(x => x.id === id); return t ? Object.assign({}, t.opts || {}) : {}; },
     enabled(id) { const t = cfg.find(x => x.id === id); return !!(t && t.enabled); },
     menuExtra(id, fn) { MENU_EXTRAS[id] = fn; },
+    // a tile's current geometry, and a resize that goes through gridstack (so it persists)
+    tile(id) { const t = cfg.find(x => x.id === id); return t ? { span: t.span, h: t.h, enabled: !!t.enabled } : null; },
+    size(id, w, h) { const t = cfg.find(x => x.id === id); if (t) setSize(t, w, h); },
     // forget alert hysteresis (the page calls this when it switches between live and playback)
     resetAlerts() { if (alertEngine) alertEngine.clear(); },
   };

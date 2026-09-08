@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-791%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
+![status](https://img.shields.io/badge/tests-792%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 > ### ⚠️ Active development
 >
@@ -171,7 +171,7 @@ The Leaf profile, as an example of how far a profile can go:
 | SOC history — 1 min … 30 d … all | SQLite | |
 | Capacity degradation — daily means, least-squares fit, projection | SQLite | |
 | Cell pairs — 96 voltages, 48 modules, min/max/spread, balancing flags | LBC groups 02/06 | 20–30 s |
-| Battery pack — 3D: the pack as it sits under the car, every cell pair a body coloured by voltage (deviation from mean, grid scale, or drop from rest); orbit / zoom, hover for the value, click to pin | LBC groups 02/06 | 20–30 s |
+| Battery pack — 3D: the pack as it sits under the car, every cell pair a body coloured by voltage (the grid's scale, deviation from mean, or drop from rest), the lowest pair flashing, the four temperature sensors coloured and labelled; orbit / zoom, hover for the value, click a pair for its module's stats | LBC groups 02/04/06 | 20–30 s |
 
 Every one of those tiles also works in **playback**: the header's Playback
 button turns the page into a viewer for what the database recorded — a
@@ -240,7 +240,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 791 offline tests, no car needed
+pytest -q                          # 792 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -416,7 +416,7 @@ Being on the bus at all has consequences worth knowing:
   hover / pin, built from a layout table in the profile (no CAD file) and
   drawn with a vendored three.js. Where each pair sits is partly assumed and
   says so — `docs/PACK3D.md`.
-- 791 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 792 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

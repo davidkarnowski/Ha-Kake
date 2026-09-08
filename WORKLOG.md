@@ -1050,3 +1050,13 @@ page now publishes `window.PACK = PACK` and the module accepts either form;
 a test pins both. Also asked for and added: a marker on the strip at the
 playhead — an accent line, a triangle on each edge, the frame's clock time
 in a pill that flips left near the right edge.
+
+**Owner's second browser round** (same day; the render works): the tile now
+defaults to the grid's own colour scale and is lit so a top face shows its
+plain colour, so a pair reads the same in both panels side by side; the four
+sensor balls are coloured on the pack's own range (hottest red) and labelled
+in °F and °C; clicking a pair opens a side pane with both pairs of its module,
+larger, with rank and balancing; the pointer help is a `?` rather than text
+that looks clickable; `⤢` doubles the tile's height through a real gridstack
+resize (`TileStudio.tile()` / `size()` are new); and the lowest pair breathes
+toward white (an option, on by default).
