@@ -414,7 +414,8 @@ Being on the bus at all has consequences worth knowing:
 - **3D battery pack** (2026-09-08): the pack drawn as it sits under the car,
   96 cell-pair bodies coloured by voltage on three scales, orbit / zoom /
   hover / pin, built from a layout table in the profile (no CAD file) and
-  drawn with a vendored three.js. Where each pair sits is partly assumed and
+  drawn with a vendored three.js. Where each module sits is verified against
+  the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
 - 792 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,

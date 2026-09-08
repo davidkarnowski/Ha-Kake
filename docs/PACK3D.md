@@ -64,35 +64,29 @@ script, reached through an import map that points at the vendored copy in
 ## Where each cell pair is — and how sure we are
 
 Indices are the dashboard's 0-based cell-pair numbers. LeafSpy shows the same
-pair as index + 1.
+pair as index + 1. The section-level layout is **verified against the ZE0
+service manual, page EVB-20** (quoted by RegGuheert on mynissanleaf,
+2013-04-29, for the 2011–2012 car; the full quote is in `docs/SIGNALS.md`,
+"Cell order in the pack"): module n holds cells 2n−1 and 2n, and the modules
+sit as follows.
 
-| Stack | Modules | Pairs | Confidence |
+| Where | Modules (manual) | Pairs (dashboard) | Confidence |
 |---|---|---|---|
-| Rear block, under the rear seat — 24 modules on edge in one row across the car, terminals up | 1–24 | 0–47 | section **published**; order within the block (passenger end → driver end) **assumed** |
-| Driver side, stack 1 (rear footwell, 2-high) | 25–26 | 48–51 | **assumed** |
-| Driver side, stack 2 (2-high) | 27–28 | 52–55 | **assumed** |
-| Driver side, stack 3 (under the front seat, 4-high) | 29–32 | 56–63 | **assumed** |
-| Driver side, stack 4 (4-high) | 33–36 | 64–71 | **assumed** |
-| Passenger side, stack 4 (front, 4-high) | 37–40 | 72–79 | **assumed** |
-| Passenger side, stack 3 (4-high) | 41–44 | 80–87 | **assumed** |
-| Passenger side, stack 2 (2-high) | 45–46 | 88–91 | **assumed** |
-| Passenger side, stack 1 (2-high) | 47–48 | 92–95 | **assumed** |
+| Rear stack under the rear seat — 24 modules on edge in one row across the car, MD1 at the far passenger side, MD24 at the far driver side | MD1–MD24 | 0–47 | **verified** (EVB-20) |
+| Rear driver's footwell — two 2-high stacks | MD25–MD28 | 48–55 | section verified; which stack is rearmost, and bottom → top, **assumed** |
+| Under the front driver's seat — two 4-high stacks | MD29–MD36 | 56–71 | section verified; stack order **assumed** |
+| Under the front passenger's seat — two 4-high stacks | MD37–MD44 | 72–87 | section verified; stack order **assumed** |
+| Rear passenger's footwell — two 2-high stacks | MD45–MD48 | 88–95 | section verified; stack order **assumed** |
 
-What the sources actually say (details and links in `docs/SIGNALS.md`, "Cell
-order in the pack"): the three sections and their module counts are
-published; a 2013 teardown gives the floor stacks as "2-high packs of 4 and
-4-high packs of 8" per side; and one forum post with a diagram for the 2013+
-24 kWh pack states the series order as rear block, then driver side, then
-passenger side. Nobody has published the order *inside* each section, which
-floor stacks are 2-high and which 4-high front-to-back, or confirmed any of
-it on a 2011–2012 car.
-
-Each `PACK_LAYOUT` entry carries a `verify` note saying what is assumed, the
-tile shows *(position unverified)* in its readout for such pairs, and the
-service manual's EVB "cell voltage loss inspection" figure (EVB-67) is the
-one-figure lookup that would settle it. When it is settled, correct the table
-in the profile — moving a stack is a data edit, not a code change — and drop
-the `verify` note.
+The stack heights (2-high in a footwell, 4-high under a seat) come from a
+2013 pack teardown that describes the floor as "2-high packs of 4 and 4-high
+packs of 8" per side, which is exactly what EVB-20's counts require. What
+nobody has published is the order of the two stacks inside a group and the
+bottom-to-top order within a stack; the tile draws the string as one loop
+(driver side rear → front, passenger side front → rear, bottom → top) and
+shows *(stack order assumed)* in its readout for those pairs. Each
+`PACK_LAYOUT` entry carries the same note; when the EVB-20 figure or a look
+under the seat settles it, moving a stack is a data edit, not a code change.
 
 ## Reading it under load
 

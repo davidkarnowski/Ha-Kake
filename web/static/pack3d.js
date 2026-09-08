@@ -201,7 +201,7 @@ function readout(i, cells, f) {
   const b = bodies[i], dev = cells[i] - f.mean, drop = state.rest ? cells[i] - state.rest[i] : null;
   note.innerHTML = `pair <b>${i}</b> (LeafSpy ${i + 1}) · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
     (drop == null ? '' : ` · ${sign(drop)} mV from rest`) + ` · module ${b.m + 1} of ${bodies.length / 2} · ${b.loc}` +
-    (b.verify ? ` <span class="verify" title="${b.verify}">(position unverified)</span>` : '') +
+    (b.verify ? ` <span class="verify" title="${b.verify}">(stack order assumed)</span>` : '') +
     (state.pinned === i ? ' · pinned' : '');
   hiBox.visible = true; hiBox.position.set(b.cx, b.cy, b.cz); hiBox.scale.set(b.sx + 4, b.sy + 4, b.sz + 4);
 }
@@ -227,7 +227,7 @@ function paintPane(i, cells, f) {
       <button class="pack3d-pane-close" title="unpin">×</button></div>
     ${pair(b)}${pair(sib)}
     <div class="pack3d-pane-foot">pack ${f.min}–${f.max} mV · spread ${(f.max - f.min).toFixed(0)} · mean ${f.mean.toFixed(0)}` +
-    (b.verify ? ` · <span class="verify" title="${b.verify}">position unverified</span>` : '') + `</div>`;
+    (b.verify ? ` · <span class="verify" title="${b.verify}">stack order assumed</span>` : '') + `</div>`;
   pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinned = -1; paint(); });
   pane.hidden = false;
 }

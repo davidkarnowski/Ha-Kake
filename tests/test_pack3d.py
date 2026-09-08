@@ -47,7 +47,16 @@ def test_leaf_declares_a_pack_layout_covering_every_pair_once():
         idx.extend(range(s["first"], s["first"] + s["n"] * 2))
     assert sorted(idx) == list(range(96))
     assert sum(s["n"] for s in v.PACK_LAYOUT) == 48
-    assert all(s["verify"] for s in v.PACK_LAYOUT), "every stack says what is unverified"
+    # service manual EVB-20 (via RegGuheert, mynissanleaf 2013-04-29): MD1–24 rear stack passenger
+    # end → driver end; MD25–28 rear driver footwell; MD29–36 front driver seat; MD37–44 front
+    # passenger seat; MD45–48 rear passenger footwell; module n holds cells 2n−1, 2n
+    rear = v.PACK_LAYOUT[0]
+    assert rear["kind"] == "edge" and rear["first"] == 0 and rear["n"] == 24 and rear["verify"] == ""
+    groups = [(s["z"] < 0, s["x"] > 0, s["first"], s["n"]) for s in v.PACK_LAYOUT[1:]]
+    assert [g[2] for g in groups] == [48, 52, 56, 64, 72, 80, 88, 92]
+    assert [(g[0], g[1], g[3]) for g in groups] == [(True, False, 2), (True, False, 2), (True, True, 4), (True, True, 4),
+                                                    (False, True, 4), (False, True, 4), (False, False, 2), (False, False, 2)]
+    assert all(s["verify"] for s in v.PACK_LAYOUT[1:]), "the stack order inside a group is still assumed"
     assert [s["n"] for s in v.PACK_SENSORS] == ["T1", "T2", "T3", "T4"]
 
 

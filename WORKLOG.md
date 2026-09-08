@@ -1060,3 +1060,18 @@ larger, with rank and balancing; the pointer help is a `?` rather than text
 that looks clickable; `⤢` doubles the tile's height through a real gridstack
 resize (`TileStudio.tile()` / `size()` are new); and the lowest pair breathes
 toward white (an option, on by default).
+
+**Cell positions, second attempt** (same day, at the owner's request): a
+primary source turned up. RegGuheert on mynissanleaf (2013-04-29, "Which
+cell loses capacity fastest?") quotes the ZE0 service manual, page EVB-20:
+MD1–MD24 in the rear stack with MD1 at the far passenger side and MD24 at
+the far driver side; MD25–28 under the rear driver's footwell; MD29–36
+under the front driver's seat; MD37–44 under the front passenger's seat;
+MD45–48 under the rear passenger's footwell; module n holds cells 2n−1 and
+2n. Every section, count, direction and index range the tile had assumed
+matches it, so the section-level layout is now marked verified in the
+profile, SIGNALS and PACK3D; what stays assumed is only the order of the two
+stacks inside a footwell or seat group and bottom → top within a stack, and
+the tile's readout now says *(stack order assumed)* rather than *(position
+unverified)*. Cells 53 and 55 — the weakest in February and August — are
+MD27/MD28, under the rear driver's footwell beside the LBC.

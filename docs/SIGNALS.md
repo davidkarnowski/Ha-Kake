@@ -61,32 +61,51 @@ discharging; the dashboard treats |I| < 0.6 A (|P| < 0.25 kW) as idle.
 default (`ITEMS["lbc02"]`, ~1.3 s a read over BLE); the *cell log* tile option
 moves it to every cycle and stores every read, for drive logs.
 
-##### Cell order in the pack — partly assumed
+##### Cell order in the pack — verified at the section level
 
 The 3D pack tile places each of the 96 pairs in the car
 (`PACK_LAYOUT` in `vehicles/leaf_ze0.py`, described in `docs/PACK3D.md`).
 Indices here are the dashboard's 0-based pair numbers; LeafSpy shows +1.
 
-- **Published:** 48 modules of 303 × 223 × 35 mm, 2s2p, in three sections —
-  24 on edge in one row across the car under the rear seat, 12 lying flat on
-  each side of the floor in "2-high packs of 4 and 4-high packs of 8"
-  (Wikipedia; Qnovo; a 2013 pack teardown on summet.com). The LBC on the
-  driver's side of the rear block (mynissanleaf).
-- **Stated for the 2013+ 24 kWh pack, assumed for 2011–12:** series order
-  rear block (pairs 0–47), then driver side (48–71), then passenger side
-  (72–95) — mynissanleaf, "LeafSpy cell locations in the pack" (2016), with a
-  diagram for the AZE0.
-- **Assumed, unverified:** the direction inside the rear block (drawn
-  passenger end → driver end, ending at the LBC), which floor stacks are
-  2-high and which 4-high (drawn 2-high in the rear footwell, 4-high under
-  the front seats), and the order of travel through the floor stacks (drawn
-  driver side rear → front, passenger side front → rear, bottom → top in
-  each stack, so the string is one loop).
-- **How to settle it:** the ZE0 service manual, EVB section, cell voltage
-  loss inspection (EVB-67) carries the module-number figure. Weak
-  circumstantial support: the weakest pair was 53 in February and 55 in
-  August, both in the driver-side block under this order — the block next to
-  the LBC and the hottest floor region.
+- **Verified — the ZE0 service manual, page EVB-20** (November 2010
+  edition, April 2011 revision), as quoted by RegGuheert on mynissanleaf,
+  2013-04-29, in "Which cell loses capacity fastest? Which retains it best?"
+  (a 2011–2012 thread): *"Modules MD1 through MD24 are contained in a stack
+  under the rear seat with MD1 on the far passenger's side and MD24 on the
+  far driver's side. Modules MD25 through MD28 are located under the rear
+  driver's side footwell. Modules MD29 through MD36 are located under the
+  front driver's seat. Modules MD37 through MD44 are located under the front
+  passenger's seat. Modules MD45 through MD48 are located under the rear
+  passenger's side footwell."* Module n holds cells 2n−1 and 2n, so in the
+  dashboard's numbering module m (0..47) holds pairs 2m and 2m+1: rear stack
+  0–47 passenger end → driver end, driver rear footwell 48–55, under the
+  front driver seat 56–71, under the front passenger seat 72–87, passenger
+  rear footwell 88–95.
+- **Published:** 48 modules of 303 × 223 × 35 mm, 2s2p, in three sections
+  (Wikipedia; Qnovo); the floor modules lie flat in "2-high packs of 4 and
+  4-high packs of 8" per side (a 2013 pack teardown on summet.com), which
+  with EVB-20 puts the 2-high stacks in the rear footwells and the 4-high
+  stacks under the front seats. The LBC on the driver's side of the rear
+  block (mynissanleaf).
+- **Still assumed:** inside a footwell or seat group, which of its two stacks
+  is rearmost and the bottom → top order within a stack (drawn so the string
+  runs driver side rear → front, passenger side front → rear, bottom → top);
+  and which half of a module carries the odd pair. Each `PACK_LAYOUT` row
+  says what it assumes; the tile shows *(stack order assumed)* for those
+  pairs. Settling it needs the EVB-20 figure itself or a look under the seat.
+- **A conflicting secondary claim, noted and not followed:** a search-engine
+  AI summary (September 2026, citing a YouTube repair video and a Facebook
+  group) puts modules 25–36 on the passenger side and 37–48 on the driver
+  side — the reverse — and calls the rear stack "double-stacked vertically",
+  which every teardown contradicts. Two independent sources agree on the
+  manual's order (the EVB-20 quote above and Arnis's 2016 diagram, "48 in
+  the back, then 24 driver, then 24 passenger"), and it is the geometrically
+  natural one: MD24 ends at the driver end of the rear stack beside the LBC,
+  so MD25 in the driver's footwell is a short bus-bar hop, while the reverse
+  would cross the pack. If a reader has the EVB-20 figure or has had the lid
+  off, this is the row to check.
+- The weakest pair was 53 in February and 55 in August — both in MD27/MD28
+  under the rear driver's footwell, next to the LBC.
 
 #### Group 03 (32 B) — tentative
 Bytes 10–11 cell max mV, 12–13 cell min mV. Rest unknown.
