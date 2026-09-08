@@ -21,7 +21,8 @@
 // coloured by its own reading) give it the shape of the real pack. Labels are
 // DOM elements tracked by CSS2DRenderer, so they use the dashboard's own fonts.
 // Clicking a pair pins its module — a glowing box, a bobbing pin and a label —
-// and opens a side pane with both pairs of that module.
+// and opens a side pane with both pairs of that module. Pairs are numbered 1–96
+// on screen, the service manual's count; `cells[i]` and every index here stay 0-based.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
@@ -194,7 +195,7 @@ function paint() {
   for (let i = 0; i < bodies.length; i++) {
     const show = mode === 'all' || (mode === 'minmax' && (i === f.imin || i === f.imax)) || i === state.pinned || i === state.hover;
     const l = pairLabels[i]; l.visible = show;
-    if (show) { l.element.textContent = `${i} · ${cells[i]}`; l.element.classList.toggle('hot', i === f.imin); l.element.classList.toggle('high', i === f.imax); }
+    if (show) { l.element.textContent = `${i + 1} · ${cells[i]}`; l.element.classList.toggle('hot', i === f.imin); l.element.classList.toggle('high', i === f.imax); }
   }
   const ends = state.host.querySelectorAll('.pack3d-legend span');
   if (ends.length === 2) { ends[0].textContent = sc.lo(f); ends[1].textContent = sc.hi(f); }
@@ -223,11 +224,11 @@ function readout(i, cells, f) {
   const note = state.note; if (!note) return;
   if (i < 0 || !bodies[i]) {
     hoverBox.visible = false;
-    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin}</b> · highest <b>${f.imax}</b> · hover a pair, click to pin`;
+    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b> · hover a pair, click to pin`;
     return;
   }
   const b = bodies[i], dev = cells[i] - f.mean, drop = state.rest ? cells[i] - state.rest[i] : null;
-  note.innerHTML = `pair <b>${i}</b> (№ ${i + 1}) · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
+  note.innerHTML = `pair <b>${i + 1}</b> · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
     (drop == null ? '' : ` · ${sign(drop)} mV from rest`) + ` · module ${b.m + 1} of ${bodies.length / 2} · ${b.loc}` +
     (b.verify ? ` <span class="verify" title="${b.verify}">(stack order assumed)</span>` : '') +
     (state.pinned === i ? ' · pinned' : '');
@@ -245,7 +246,7 @@ function paintSelection(cells, f, sc) {
   selBox.position.set(md.cx, md.cy, md.cz); selBox.scale.set(md.sx + 10, md.sy + 10, md.sz + 10);
   selPin.position.set(md.cx, md.cy + md.sy / 2 + 60, md.cz);
   selLabel.position.set(md.cx, md.cy + md.sy / 2 + 96, md.cz);
-  selLabel.element.textContent = `module ${b.m + 1} · pairs ${md.m * 2} & ${md.m * 2 + 1}`;
+  selLabel.element.textContent = `module ${b.m + 1} · pairs ${md.m * 2 + 1} & ${md.m * 2 + 2}`;
   paintPane(i, cells, f, sc);
 }
 function paintPane(i, cells, f, sc) {
@@ -257,7 +258,7 @@ function paintPane(i, cells, f, sc) {
     const rank = order.indexOf(p.i) + 1, bal = state.last.balancing && state.last.balancing[p.i];
     const css = pairCss(v, f, p.i, sc);                           // the pair's own colour, as the grid paints it
     return `<div class="pack3d-pane-pair ${p.i === i ? 'on' : ''}" style="border-left-color:${css}">
-      <div class="k">pair ${p.i} <small>№ ${p.i + 1}</small></div>
+      <div class="k">pair ${p.i + 1} <small>module ${p.m + 1}</small></div>
       <div class="v" style="color:${css}">${v}<small>mV</small></div>
       <div class="rows"><span>vs mean</span><b>${sign(dev)} mV</b>
         <span>from rest</span><b>${drop == null ? '—' : sign(drop) + ' mV'}</b>

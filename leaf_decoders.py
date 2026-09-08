@@ -159,6 +159,9 @@ def cell_stats(volts):
         "cell_spread": mx - mn,
         "cell_min_idx": volts.index(mn),
         "cell_max_idx": volts.index(mx),
+        # the same pairs as people count them (the service manual: 1–96); the *_idx are list indices
+        "cell_min_no": volts.index(mn) + 1,
+        "cell_max_no": volts.index(mx) + 1,
         "pack_v_cells": round(sum(volts) / 1000.0, 1),
     }
 

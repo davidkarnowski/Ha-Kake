@@ -872,7 +872,8 @@
 <script src="/static/tiles.js"></script>
 <script src="/static/playback.js"></script>
 <script>
-// Build module tree: 48 modules × 2 cells
+// Build module tree: 48 modules × 2 cells. Pairs are numbered 1–96 on screen (the service
+// manual's count); element ids and the record's `cells` list stay 0-based.
 const modGrid = document.getElementById('module-grid');
 for (let m = 0; m < 48; m++) {
   const c0 = m * 2, c1 = m * 2 + 1;
@@ -882,8 +883,8 @@ for (let m = 0; m < 48; m++) {
   div.innerHTML = `
     <div class="mod-id">M${m+1}</div>
     <div class="mod-cells">
-      <div class="mod-cell" id="cell-${c0}">${c0}</div>
-      <div class="mod-cell" id="cell-${c1}">${c1}</div>
+      <div class="mod-cell" id="cell-${c0}">${c0 + 1}</div>
+      <div class="mod-cell" id="cell-${c1}">${c1 + 1}</div>
     </div>
     <div class="mod-avg" id="mod-avg-${m}">--</div>`;
   modGrid.appendChild(div);
@@ -1048,7 +1049,7 @@ function updateDash(data) {
         el.textContent = mv;
         el.style.background = cellColor(mv, min, max);
         el.style.color = '#fff';
-        el.title = `Cell ${i}: ${mv} mV (${(mv/1000).toFixed(3)} V)`;
+        el.title = `Cell pair ${i + 1}: ${mv} mV (${(mv/1000).toFixed(3)} V)`;   // shown 1-based, as the service manual counts them
       }
     });
 

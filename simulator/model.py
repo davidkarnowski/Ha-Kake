@@ -530,7 +530,7 @@ def build_knobs():
       label="Pack temperature")
     a("cell_spread_mv", "float", 30.0, "Spread between the highest and lowest cell pair", "mV", 0.0, 800.0,
       label="Cell spread")
-    a("weak_cell_index", "int", 55, "Which cell pair carries weak_cell_offset_mv", "", 0, 95,
+    a("weak_cell_index", "int", 55, "Which cell pair carries weak_cell_offset_mv — a 0-based list index; the dashboard shows it as pair index + 1", "", 0, 95,
       label="Weak cell pair")
     a("weak_cell_offset_mv", "float", 0.0, "Offset applied to that one pair (negative = weak)", "mV", -1200.0, 200.0,
       label="Weak cell offset")
@@ -1550,6 +1550,7 @@ def record_from_state(st, cells=True):
         "cell_min": mn, "cell_max": mx,
         "cell_avg": round(sum(cell_list) / len(cell_list)), "cell_spread": mx - mn,
         "cell_min_idx": cell_list.index(mn), "cell_max_idx": cell_list.index(mx),
+        "cell_min_no": cell_list.index(mn) + 1, "cell_max_no": cell_list.index(mx) + 1,
         "balancing_active": sum(1 for b in k["balancing"] if b),
         # HVAC amp
         "cabin_temp_c": k["cabin_temp_c"], "cabin_temp_f": c_to_f(k["cabin_temp_c"]),

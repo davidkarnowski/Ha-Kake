@@ -174,7 +174,12 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
         js = f.read()
     assert "scale: 'abs'" in js                                            # the grid's own scale by default
     assert "Tiles.cellColor(mv, f.min, f.max)" in js                       # exactly the grid's call
-    assert "LeafSpy" not in js                                             # no third-party app names in the UI
+    assert "LeafSpy" not in js and "№" not in js                             # no third-party app names in the UI
+    # pairs are numbered 1–96 on screen (the manual's count); indices stay 0-based underneath
+    assert "pair <b>${i + 1}</b>" in js and "`${i + 1} · ${cells[i]}`" in js and "pairs ${md.m * 2 + 1} & ${md.m * 2 + 2}" in js
+    with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
+        page = f.read()
+    assert 'id="cell-${c0}">${c0 + 1}</div>' in page and "Cell pair ${i + 1}:" in page
     assert "HemisphereLight(0xffffff, 0x334466, Math.PI)" in js            # top face ≈ plain colour
     assert "°F · " in js and "* 5 / 9" in js                               # sensors labelled in both units
     assert "s.mesh.material.color.copy(c)" in js                           # sensor balls colour-mapped

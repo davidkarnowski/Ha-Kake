@@ -631,7 +631,8 @@ CREATE TABLE IF NOT EXISTS readings (
                         rec.update({
                             "cell_min": mn, "cell_max": mx, "cell_avg": round(sum(cells) / len(cells)),
                             "cell_spread": mx - mn, "cell_min_idx": cells.index(mn),
-                            "cell_max_idx": cells.index(mx), "pack_v": round(sum(cells) / 1000.0, 1),
+                            "cell_max_idx": cells.index(mx), "cell_min_no": cells.index(mn) + 1,
+                            "cell_max_no": cells.index(mx) + 1, "pack_v": round(sum(cells) / 1000.0, 1),
                         })
                     self.insert_reading(rec, ts=j["timestamp"], adapter="legacy-jsonl")
                     n += 1

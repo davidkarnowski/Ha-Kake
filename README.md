@@ -77,7 +77,7 @@ Two profiles ship:
 
 | Profile | Car | How it was built |
 |---|---|---|
-| `leaf_ze0` | 2011–2012 Nissan Leaf (ZE0) | Largely reverse engineered: 18 items, 57 signals, 33 history columns |
+| `leaf_ze0` | 2011–2012 Nissan Leaf (ZE0) | Largely reverse engineered: 18 items, 59 signals, 33 history columns |
 | `lancer_2009` | 2009 Mitsubishi Lancer ES | Standard SAE J1979 mode-01 PIDs — **no reverse engineering at all**: 19 items, 20 signals, 18 history columns, in 255 lines |
 
 ```bash
@@ -336,7 +336,7 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 
 | Route | Returns |
 |---|---|
-| `GET /api/status` | latest merged reading + `status`, `cycle_s`, per-item `item_age` |
+| `GET /api/status` | latest merged reading + `status`, `cycle_s`, per-item `item_age`. `cells` is a positional list (index 0 = pair 1); `cell_min_no` / `cell_max_no` are the pair numbers as people count them, 1–96, the same numbers the page shows; `cell_min_idx` / `cell_max_idx` are the 0-based list positions |
 | `GET /api/history?minutes=N` | downsampled readings (`N=0` → everything) |
 | `GET /api/health` | one row per day: capacity, SOH, temps, spread, 12 V, insulation |
 | `GET /api/cells?limit=N` | per-cell voltages for the last N full reads |

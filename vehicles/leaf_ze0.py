@@ -88,7 +88,7 @@ DEFAULT_TILES = [dict({"id": t["id"], "enabled": True, "span": DEFAULT_SPAN[t["i
 # keys produced by each item, dropped from the cache when the item is disabled
 ITEM_KEYS = {
     "lbc02": ("cells", "cell_min", "cell_max", "cell_avg", "cell_spread", "cell_min_idx",
-              "cell_max_idx", "cell_count", "pack_v_cells"),
+              "cell_max_idx", "cell_min_no", "cell_max_no", "cell_count", "pack_v_cells"),
     "lbc06": ("balancing", "balancing_active", "g06_raw"),
     "lbc04": ("temps", "temps_c", "temps_f", "temps_raw", "temp_avg_c", "temp_avg_f"),
     "p385": ("tpms_psi", "tpms_kpa"),
@@ -249,6 +249,10 @@ SIGNALS = {
     "cell_max":         {"label": "Highest cell pair", "unit": "mV", "min": 3000, "max": 4200, "dec": 0, "item": "lbc02", "hist": "cell_max", "color": "good-high"},
     "cell_avg":         {"label": "Average cell pair", "unit": "mV", "min": 3000, "max": 4200, "dec": 0, "item": "lbc02", "color": "good-high"},
     "cell_spread":      {"label": "Cell spread",     "unit": "mV",  "min": 0,   "max": 100, "dec": 0, "item": "lbc02", "hist": "spread",       "color": "good-low"},
+    # which pair, as people count them (1–96, the service manual's numbering); the record's
+    # cell_min_idx / cell_max_idx are the 0-based positions in the `cells` list
+    "cell_min_no":      {"label": "Lowest cell pair (No.)",  "unit": "", "min": 1, "max": 96, "dec": 0, "item": "lbc02", "color": "mono"},
+    "cell_max_no":      {"label": "Highest cell pair (No.)", "unit": "", "min": 1, "max": 96, "dec": 0, "item": "lbc02", "color": "mono"},
     "balancing_active": {"label": "Pairs balancing", "unit": "",    "min": 0,   "max": 96,  "dec": 0, "item": "lbc06", "color": "mono"},
     # ── HVAC amp (tentative decode) ──
     "cabin_temp_f":     {"label": "Cabin temp",      "unit": "°F",  "min": 20,  "max": 130, "dec": 0, "item": "hvac10", "color": "heat", "alt": "cabin_temp_c", "alt_unit": "°C"},

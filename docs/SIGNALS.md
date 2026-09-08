@@ -65,8 +65,12 @@ moves it to every cycle and stores every read, for drive logs.
 
 The 3D pack tile places each of the 96 pairs in the car
 (`PACK_LAYOUT` in `vehicles/leaf_ze0.py`, described in `docs/PACK3D.md`).
-Indices here are the dashboard's 0-based pair numbers; the service manual counts
-the same pairs 1–96 (the tile shows that as № n+1).
+Pairs are numbered 1–96 on screen, the service manual's count (since
+2026-09-08; before that the dashboard showed the 0-based list index, so a
+"cell 53" in older worklog entries is pair 54 today). The record's `cells`
+list, `cell_min_idx` / `cell_max_idx` and `PACK_LAYOUT`'s `first` are 0-based;
+`cell_min_no` / `cell_max_no` carry the 1-based numbers for anyone — a person or
+an agent reading the API — who wants the number the screen shows.
 
 - **Verified — the ZE0 service manual, page EVB-20** (November 2010
   edition, April 2011 revision), as quoted by RegGuheert on mynissanleaf,
@@ -77,11 +81,10 @@ the same pairs 1–96 (the tile shows that as № n+1).
   driver's side footwell. Modules MD29 through MD36 are located under the
   front driver's seat. Modules MD37 through MD44 are located under the front
   passenger's seat. Modules MD45 through MD48 are located under the rear
-  passenger's side footwell."* Module n holds cells 2n−1 and 2n, so in the
-  dashboard's numbering module m (0..47) holds pairs 2m and 2m+1: rear stack
-  0–47 passenger end → driver end, driver rear footwell 48–55, under the
-  front driver seat 56–71, under the front passenger seat 72–87, passenger
-  rear footwell 88–95.
+  passenger's side footwell."* Module n holds cells 2n−1 and 2n: rear stack
+  pairs 1–48 passenger end → driver end, driver rear footwell 49–56, under
+  the front driver seat 57–72, under the front passenger seat 73–88,
+  passenger rear footwell 89–96.
 - **Published:** 48 modules of 303 × 223 × 35 mm, 2s2p, in three sections
   (Wikipedia; Qnovo); the floor modules lie flat in "2-high packs of 4 and
   4-high packs of 8" per side (a 2013 pack teardown on summet.com), which
@@ -105,8 +108,9 @@ the same pairs 1–96 (the tile shows that as № n+1).
   so MD25 in the driver's footwell is a short bus-bar hop, while the reverse
   would cross the pack. If a reader has the EVB-20 figure or has had the lid
   off, this is the row to check.
-- The weakest pair was 53 in February and 55 in August — both in MD27/MD28
-  under the rear driver's footwell, next to the LBC.
+- The weakest pair was 54 in February and 56 in August (53 and 55 in the
+  old 0-based count) — both in MD27/MD28 under the rear driver's footwell,
+  next to the LBC.
 
 #### Group 03 (32 B) — tentative
 Bytes 10–11 cell max mV, 12–13 cell min mV. Rest unknown.

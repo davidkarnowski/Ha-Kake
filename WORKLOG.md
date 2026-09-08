@@ -1087,3 +1087,11 @@ tile; auto-rotate is a `⟳` button on the pane itself, no longer in the menu
 rounded edges — `RoundedBoxGeometry` vendored, and because a rounded box cannot
 be scaled per instance without distorting its corners, the 96 bodies are now one
 instanced mesh per body size with a slot table from pair to (mesh, instance).
+
+**Numbering** (same day, the owner's call): the dashboard now counts cell
+pairs 1–96 on screen, as the service manual and every other tool do — the
+cell grid's boxes and tooltips, the 3D tile's labels, readout, pin label and
+side pane. The record's `cells` list, `cell_min_idx` and the layout table's
+`first` stay 0-based array indices underneath. Entries above this one use the
+old 0-based count: the "cell 53 / 55" of February and August are pairs 54 and
+56 today, MD27 and MD28.

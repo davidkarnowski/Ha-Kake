@@ -74,13 +74,13 @@ service manual, page EVB-20** (quoted by RegGuheert on mynissanleaf,
 "Cell order in the pack"): module n holds cells 2n−1 and 2n, and the modules
 sit as follows.
 
-| Where | Modules (manual) | Pairs (dashboard) | Confidence |
+| Where | Modules | Pairs | Confidence |
 |---|---|---|---|
-| Rear stack under the rear seat — 24 modules on edge in one row across the car, MD1 at the far passenger side, MD24 at the far driver side | MD1–MD24 | 0–47 | **verified** (EVB-20) |
-| Rear driver's footwell — two 2-high stacks | MD25–MD28 | 48–55 | section verified; which stack is rearmost, and bottom → top, **assumed** |
-| Under the front driver's seat — two 4-high stacks | MD29–MD36 | 56–71 | section verified; stack order **assumed** |
-| Under the front passenger's seat — two 4-high stacks | MD37–MD44 | 72–87 | section verified; stack order **assumed** |
-| Rear passenger's footwell — two 2-high stacks | MD45–MD48 | 88–95 | section verified; stack order **assumed** |
+| Rear stack under the rear seat — 24 modules on edge in one row across the car, MD1 at the far passenger side, MD24 at the far driver side | MD1–MD24 | 1–48 | **verified** (EVB-20) |
+| Rear driver's footwell — two 2-high stacks | MD25–MD28 | 49–56 | section verified; which stack is rearmost, and bottom → top, **assumed** |
+| Under the front driver's seat — two 4-high stacks | MD29–MD36 | 57–72 | section verified; stack order **assumed** |
+| Under the front passenger's seat — two 4-high stacks | MD37–MD44 | 73–88 | section verified; stack order **assumed** |
+| Rear passenger's footwell — two 2-high stacks | MD45–MD48 | 89–96 | section verified; stack order **assumed** |
 
 The stack heights (2-high in a footwell, 4-high under a seat) come from a
 2013 pack teardown that describes the floor as "2-high packs of 4 and 4-high

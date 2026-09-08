@@ -101,6 +101,7 @@ def test_group02(raw):
     assert st["cell_count"] == 96
     assert st["cell_spread"] == st["cell_max"] - st["cell_min"]
     assert cells[st["cell_min_idx"]] == st["cell_min"]
+    assert st["cell_min_no"] == st["cell_min_idx"] + 1 and st["cell_max_no"] == st["cell_max_idx"] + 1   # 1-based, as shown
     # pack sum from cells should agree with group-01 pack voltage within 1 V
     g01 = ld.decode_group01(ld.parse_isotp(raw["2101"]))
     assert abs(st["pack_v_cells"] - g01["pack_v"]) < 1.0
