@@ -333,6 +333,8 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `GET /api/history?minutes=N` | downsampled readings (`N=0` → everything) |
 | `GET /api/health` | one row per day: capacity, SOH, temps, spread, 12 V, insulation |
 | `GET /api/cells?limit=N` | per-cell voltages for the last N full reads |
+| `GET /api/sessions?gap=600` | recorded sessions, newest first, derived from gaps in the data (start/end, rows, SOC, whether cells were read) |
+| `GET /api/playback/frames?from=&to=&max=3600&cells=0` | stored readings in an epoch range as playback frames: `records` in the `/api/status` shape, `hist` in the `/api/history` shape, `cells_at`; thinned to the last real row per bucket, never averaged |
 | `GET/PUT /api/tiles` | tile order, enabled, span, type, options (including each tile's `opts.alerts` rules), user tiles (drives what the reader polls) |
 | `GET /api/signals` | signal registry, colour scales, tile types, items, tile defaults, which signals each built-in tile shows (`tile_signals`) |
 | `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored) |

@@ -390,3 +390,87 @@ def test_db_file_is_opt_in(tmp_path, monkeypatch):
     assert s.path == os.path.join(str(tmp_path), "fake_1999.db")
     assert os.path.exists(s.path)
     s.close()
+
+
+# ── playback: frames() rebuilds the status shape from rows ──
+
+def _tile_keys(v):
+    """Every record key the Leaf's tiles read: the per-tile `signals` (base
+    name before a dotted index) plus everything the items produce."""
+    keys = set()
+    for t in v.TILES:
+        keys.update(k.split(".")[0] for k in t.get("signals", ()))
+    for ks in v.ITEM_KEYS.values():
+        keys.update(ks)
+    return keys
+
+
+def test_frames_round_trip_carries_every_tile_key(store, rec):
+    """What goes in comes back with the same keys — except the three the store
+    deliberately drops — so a tile painted from a frame is painted from the
+    same vocabulary as from the live state file."""
+    v = vehicles.get_vehicle("leaf_ze0")
+    store.insert_reading(rec, ts="2026-08-24T18:00:00Z", adapter="ble")
+    out = store.frames(0, 4e9, cells=True)
+    assert len(out["records"]) == 1 and out["cells_at"] == [0]
+    r = out["records"][0]
+    DROPPED = {"balancing", "temps_raw", "readings"}        # EXTRA_SKIP'd raw lists and the counter
+    lost = set(rec) - set(r)
+    assert lost <= DROPPED, lost
+    assert (_tile_keys(v) & set(rec)) - set(r) - DROPPED == set()
+    assert r["status"] == "ok" and r["playback"] is True and r["adapter_type"] == "ble"
+    assert r["timestamp"] == "2026-08-24T18:00:00Z" and r["last_ok"] == r["timestamp"]
+    assert r["cells"] == rec["cells"] and len(r["cells"]) == 96
+    assert r["soc"] == pytest.approx(rec["soc"]) and r["cell_min"] == rec["cell_min"]
+    assert out["hist"][0]["t"] == "2026-08-24T18:00:00Z" and out["t"][0] == to_utc("2026-08-24T18:00:00Z").timestamp()
+
+
+def test_frames_rebuild_temps_and_the_fahrenheit_twins(store, rec):
+    store.insert_reading(rec, ts="2026-08-24T18:00:00Z")
+    r = store.frames(0, 4e9)["records"][0]
+    assert r["temps"] == rec["temps"] and r["temps_c"] == rec["temps"]
+    assert r["temps_f"] == [round(t * 9 / 5 + 32, 1) for t in rec["temps"]]
+    # the decoder's own °F twin rides in `extra` and wins over a recomputation
+    assert r["temp_avg_f"] == rec["temp_avg_f"] == pytest.approx(r["temp_avg_c"] * 9 / 5 + 32, abs=0.5)
+    assert "cells" not in r                      # not asked for
+
+
+def test_frames_thinning_keeps_the_last_real_row_of_each_bucket(store):
+    t0 = dt.datetime(2026, 8, 24, 18, 0, tzinfo=dt.timezone.utc)
+    for i in range(200):
+        store.insert_reading({"soc": 50 + i / 10, "gear": "D" if i % 2 else "P", "cells": [3900 + i] * 96},
+                             ts=t0 + dt.timedelta(seconds=i))
+    e0 = t0.timestamp()
+    out = store.frames(e0, e0 + 199, max_points=20, cells=True)
+    assert len(out["records"]) == 20
+    assert out["t"] == sorted(out["t"]) and len(set(out["t"])) == 20
+    assert out["t"][-1] == e0 + 199 and out["records"][-1]["cells"][0] == 3900 + 199
+    assert all(r["gear"] in ("P", "D") for r in out["records"])    # real rows, never averaged
+    assert all(len(r["cells"]) == 96 for r in out["records"]) and out["cells_at"] == list(range(20))
+    full = store.frames(e0, e0 + 199, max_points=3600)
+    assert len(full["records"]) == 200 and "cells" not in full["records"][0]
+
+
+def test_frames_range_is_inclusive_and_vehicle_scoped(store):
+    t0 = dt.datetime(2026, 8, 24, 18, 0, tzinfo=dt.timezone.utc)
+    for i in range(5):
+        store.insert_reading({"soc": i}, ts=t0 + dt.timedelta(seconds=10 * i))
+    e0 = t0.timestamp()
+    assert [r["soc"] for r in store.frames(e0 + 10, e0 + 30)["records"]] == [1, 2, 3]
+    assert store.frames(e0 + 100, e0 + 200)["records"] == []
+
+
+def test_sessions_split_on_gaps_newest_first(store):
+    t0 = dt.datetime(2026, 8, 24, 18, 0, tzinfo=dt.timezone.utc)
+    for start, n, cells in ((0, 3, False), (3600, 4, True), (7200, 2, False)):
+        for i in range(n):
+            rec = {"soc": 60 - i, "cells": [3900] * 96} if cells else {"soc": 60 - i}
+            store.insert_reading(rec, ts=t0 + dt.timedelta(seconds=start + 5 * i), adapter="usb")
+    s = store.sessions(gap_s=600)
+    assert [x["n"] for x in s] == [2, 4, 3]                      # newest first
+    mid = s[1]
+    assert mid["cells"] is True and s[0]["cells"] is False
+    assert mid["soc_start"] == 60 and mid["soc_end"] == 57 and mid["duration_s"] == 15
+    assert mid["started"] == "2026-08-24T19:00:00Z" and mid["adapter"] == "usb"
+    assert mid["end_epoch"] - mid["start_epoch"] == 15
+    assert len(store.sessions(gap_s=86400)) == 1                # one long gap tolerance → one session

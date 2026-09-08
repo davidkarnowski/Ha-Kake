@@ -452,6 +452,129 @@ CREATE TABLE IF NOT EXISTS readings (
             out["cells"].append(mvs)
         return out
 
+    # ── playback ─────────────────────────────────────────────────────────
+
+    def frames(self, t_from, t_to, max_points=3600, cells=False):
+        """Stored readings in [t_from, t_to] (epoch seconds) as playback frames:
+
+            {"t": [epoch, ...],            one per frame, ascending
+             "records": [dict, ...],       the /api/status shape, rebuilt per row
+             "hist": [dict, ...],          the /api/history shape, same rows
+             "cells_at": [k, ...]}         frame indices whose record carries cells
+
+        The page drives every tile from `records[k]` exactly as it drives them
+        from the live state file. Thinning to `max_points` keeps the LAST real
+        row of each time bucket — never an average — so discrete values (gear,
+        doors, lamps) and the cells join stay meaningful. MAX(id) stands for
+        "last in the bucket" because one writer inserts in time order; a
+        database stitched together from elsewhere would need ts_epoch instead.
+        Cells are joined in one query per 500 rows (SQLite's variable limit).
+        """
+        vf, a = self._vfilter()
+        n = self.conn.execute(
+            f"SELECT COUNT(*) FROM readings WHERE {vf} AND ts_epoch BETWEEN ? AND ?",
+            a + [t_from, t_to]).fetchone()[0]
+        if n <= max_points:
+            rows = self.conn.execute(
+                f"SELECT * FROM readings WHERE {vf} AND ts_epoch BETWEEN ? AND ? ORDER BY ts_epoch",
+                a + [t_from, t_to]).fetchall()
+        else:
+            bucket = max((t_to - t_from) / max_points, 1e-6)
+            rows = self.conn.execute(
+                f"""SELECT r.* FROM readings r
+                    JOIN (SELECT MAX(id) AS id FROM readings
+                          WHERE {vf} AND ts_epoch BETWEEN ? AND ?
+                          GROUP BY MIN(CAST((ts_epoch - ?) / ? AS INTEGER), ?)) k ON k.id = r.id
+                    ORDER BY r.ts_epoch""",
+                a + [t_from, t_to, t_from, bucket, max_points - 1]).fetchall()
+        rows = [dict(r) for r in rows]
+        cell_map = {}
+        if cells and rows:
+            ids = [r["id"] for r in rows]
+            for i in range(0, len(ids), 500):
+                chunk = ids[i:i + 500]
+                q = (f"SELECT reading_id, idx, mv FROM cells WHERE reading_id IN "
+                     f"({','.join('?' * len(chunk))}) ORDER BY reading_id, idx")
+                for rid, _idx, mv in self.conn.execute(q, chunk):
+                    cell_map.setdefault(rid, []).append(mv)
+        out = {"t": [], "records": [], "hist": [], "cells_at": []}
+        for k, d in enumerate(rows):
+            mvs = cell_map.get(d["id"])
+            out["t"].append(d["ts_epoch"])
+            out["records"].append(self._row_to_record(d, mvs))
+            out["hist"].append(self._row_to_hist(d))
+            if mvs:
+                out["cells_at"].append(k)
+        return out
+
+    def _row_to_record(self, d, cells=None):
+        """Rebuild the /api/status shape from one readings row.
+
+        The `extra` bag holds everything the decode produced that has no
+        column; columns hold the rest; the temperature lists and every °F twin
+        the reader would have carried are rebuilt from the °C columns (they are
+        EXTRA_SKIP'd on the way in). `status`, `last_ok` and `adapter_type` are
+        synthesised, and `playback: True` marks the record so the page and the
+        alert engine can tell it from the car. Lost for good: `adapter_port`,
+        the `readings` counter and the raw `balancing` list.
+        """
+        rec = json.loads(d["extra"]) if d.get("extra") else {}
+        for col, s in self.cols.items():
+            key = s["key"]
+            v = d.get(col)
+            if callable(key):
+                key = col                              # derived values keep the column's name
+            elif not isinstance(key, str) or "." in key:
+                continue                               # dotted list indices are rebuilt below
+            if s["kind"] == "bool":
+                rec[key] = None if v is None else bool(v)
+            else:
+                rec[key] = v
+        temps = [d.get(f"temp{i}_c") for i in (1, 2, 3, 4)]
+        temps = [t for t in temps if t is not None]
+        if temps:
+            rec["temps"] = temps
+            rec["temps_c"] = temps
+            rec["temps_f"] = [round(t * 9 / 5 + 32, 1) for t in temps]
+        for c in ("temp_avg_c", "cabin_temp_c", "hvac_ambient_c", "hvac_evap_c", "hvac_target_c"):
+            twin = c[:-2] + "_f"
+            if rec.get(c) is not None and rec.get(twin) is None:
+                rec[twin] = round(rec[c] * 9 / 5 + 32, 1)
+        if cells:
+            rec["cells"] = cells
+        rec.update({"timestamp": d["ts"], "last_ok": d["ts"], "status": "ok",
+                    "adapter_type": d.get("adapter"), "playback": True})
+        return rec
+
+    def sessions(self, gap_s=600):
+        """Recorded sessions, newest first, derived from gaps in the data: a
+        silence longer than `gap_s` between rows starts a new one. Each carries
+        started / ended (ISO and epoch), duration_s, n rows, soc_start / soc_end,
+        adapter, and `cells` (whether any row in it has cell voltages).
+
+        Derived rather than read from the `sessions` table because that table
+        has no epoch column, no link to readings, and an open-ended row for
+        every session that ended in a crash — the data itself is the record.
+        """
+        vf, a = self._vfilter("r")
+        rows = self.conn.execute(
+            f"""SELECT r.ts_epoch, r.ts, r.soc, r.adapter,
+                       EXISTS(SELECT 1 FROM cells c WHERE c.reading_id = r.id) AS has_cells
+                FROM readings r WHERE {vf} ORDER BY r.ts_epoch""", a).fetchall()
+        out, cur = [], None
+        for te, ts, soc, adapter, has_cells in rows:
+            if cur is None or te - cur["end_epoch"] > gap_s:
+                cur = {"started": ts, "start_epoch": te, "soc_start": soc, "n": 0,
+                       "cells": False, "adapter": adapter}
+                out.append(cur)
+            cur["ended"], cur["end_epoch"], cur["soc_end"] = ts, te, soc
+            cur["n"] += 1
+            cur["cells"] = cur["cells"] or bool(has_cells)
+        for s in out:
+            s["duration_s"] = round(s["end_epoch"] - s["start_epoch"])
+        out.reverse()
+        return out
+
     # ── migration ────────────────────────────────────────────────────────
 
     def migrate_legacy(self, history_json=None, jsonl_path=None, state_json=None):

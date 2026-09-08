@@ -1,0 +1,14 @@
+[
+ {
+  "started": "2026-08-25T19:13:36Z",
+  "start_epoch": 1787685216.621,
+  "ended": "2026-08-25T19:36:36Z",
+  "end_epoch": 1787686596.621,
+  "duration_s": 1380,
+  "n": 24,
+  "soc_start": 58.24,
+  "soc_end": 62.61,
+  "adapter": "ble",
+  "cells": true
+ }
+]

@@ -168,6 +168,18 @@ Never pruned; downsampled on read.
 All timestamps UTC ISO-8601 with `Z`; legacy naive-local data was converted on
 migration.
 
+**Playback frames go the other way.** `Store.frames(t_from, t_to)` rebuilds
+the `/api/status` shape from rows — the `extra` bag, the columns, the
+temperature lists and every °F twin from the °C columns, the cells joined in
+one query — and marks each record `playback: True`, so the page can paint
+every tile from a stored moment exactly as it paints them from the live state
+file (`docs/PLAYBACK.md`). Thinning keeps the last *real* row of each time
+bucket rather than averaging, because a frame is a state (gear, doors, cells)
+and not a line. `Store.sessions()` derives sessions from gaps in the data
+(the `sessions` table has no epoch column and no link to readings). Lost on
+the way back, and documented as such: `adapter_port`, the `readings` counter
+and the raw `balancing` list.
+
 ## Dashboard and Tile Studio
 
 `web/templates/index.html` (no framework) is rendered with the active

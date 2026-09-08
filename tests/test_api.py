@@ -14,6 +14,7 @@ caught by test_demo_mode_never_opens_the_database.
 """
 import datetime as dt
 import json
+import os
 import re
 
 import pytest
@@ -290,13 +291,30 @@ def test_demo_mode_never_opens_the_database(demo):
     """Every route, including the ones that used to fall through to the real
     store — /api/health, /api/cells, /api/layouts, /api/calibration."""
     for path in ("/api/status", "/api/history", "/api/health", "/api/cells",
-                 "/api/signals", "/api/tiles", "/api/layouts", "/api/calibration"):
+                 "/api/signals", "/api/tiles", "/api/layouts", "/api/calibration",
+                 "/api/sessions", "/api/playback/frames?from=0&to=1"):
         assert demo.get(path).status_code == 200, path
 
 
 def test_demo_health_and_cells_are_empty_when_uncanned(demo):
     assert demo.get("/api/health").get_json() == []
     assert demo.get("/api/cells").get_json() == []
+    assert demo.get("/api/sessions").get_json() == []
+    assert demo.get("/api/playback/frames?from=0&to=1").get_json() == {"t": [], "records": [], "hist": [], "cells_at": []}
+
+
+def test_shipped_demo_playback_files_have_the_frames_shape():
+    """docs/demo/ carries one canned session so --demo can show the timeline."""
+    demo_dir = os.path.join(ROOT, "docs", "demo")
+    with open(os.path.join(demo_dir, "frames.json")) as f:
+        fr = json.load(f)
+    with open(os.path.join(demo_dir, "sessions.json")) as f:
+        se = json.load(f)
+    assert set(fr) == {"t", "records", "hist", "cells_at"}
+    assert len(fr["t"]) == len(fr["records"]) == len(fr["hist"]) > 0
+    assert fr["t"] == sorted(fr["t"]) and all(r["playback"] is True and r["status"] == "ok" for r in fr["records"])
+    assert all(len(r["cells"]) == 96 for r in fr["records"])
+    assert len(se) == 1 and se[0]["start_epoch"] == fr["t"][0] and se[0]["end_epoch"] == fr["t"][-1]
 
 
 def test_demo_serves_canned_health_when_present(demo):
@@ -328,3 +346,35 @@ def test_demo_falls_back_when_the_directory_is_missing(api, monkeypatch):
     monkeypatch.setattr(webapp, "DEMO", str(api.tmp / "nope"))
     assert api.get("/api/status").get_json()["status"] == "waiting"
     assert api.get("/api/history").get_json() == []
+
+
+# ── playback endpoints ───────────────────────────────────────────────────
+
+def test_playback_frames_returns_status_shaped_records(api):
+    seed(api, 3)
+    body = api.get("/api/playback/frames?from=0&to=4000000000&cells=1").get_json()
+    assert len(body["records"]) == 3 and body["cells_at"] == [0, 1, 2]
+    r = body["records"][0]
+    assert r["status"] == "ok" and r["playback"] is True and r["adapter_type"] == "replay"
+    assert r["soc"] == 60 and len(r["cells"]) == 96 and r["temps_f"][0] == 93.2
+    assert body["t"] == sorted(body["t"]) and body["hist"][0]["soc"] == 60
+    no_cells = api.get("/api/playback/frames?from=0&to=4000000000").get_json()
+    assert "cells" not in no_cells["records"][0] and no_cells["cells_at"] == []
+
+
+def test_playback_frames_validates_and_thins(api):
+    seed(api, 5)
+    assert api.get("/api/playback/frames").status_code == 400
+    assert api.get("/api/playback/frames?from=5&to=1").status_code == 400
+    e0 = dt.datetime(2026, 8, 25, 12, 0, tzinfo=dt.timezone.utc).timestamp()   # seed() starts here, 1 min apart
+    body = api.get(f"/api/playback/frames?from={e0}&to={e0 + 240}&max=2").get_json()
+    assert len(body["records"]) == 2 and body["records"][-1]["soc"] == 64   # last real row survives
+
+
+def test_sessions_are_listed_newest_first(api):
+    seed(api, 2)
+    t = dt.datetime(2026, 8, 26, 12, 0, tzinfo=dt.timezone.utc)
+    api.store.insert_reading({"soc": 70}, ts=t, adapter="usb")
+    s = api.get("/api/sessions").get_json()
+    assert [x["n"] for x in s] == [1, 2] and s[0]["adapter"] == "usb" and s[1]["cells"] is True
+    assert api.get("/api/sessions?gap=999999999").get_json()[0]["n"] == 3   # gap is clamped, still one session

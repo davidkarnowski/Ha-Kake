@@ -11,6 +11,9 @@ API:
   /api/history?minutes=1440      downsampled readings (omit or minutes=0 → all)
   /api/health                    per-day capacity / SOH / temps for degradation chart
   /api/cells?limit=30            per-cell voltages for the last N full reads
+  /api/sessions                  recorded sessions (gaps in the data), newest first
+  /api/playback/frames?from=&to= stored readings in an epoch range as playback frames
+                                 (&max=3600 thins to the last row per bucket; &cells=1 joins cells)
   /api/tiles                     GET/PUT tile layout (drives what the reader polls)
   /api/signals                   signal registry, colour scales, tile types
   /api/layouts[/<name>[/load]]   named layouts (save / load / delete)
@@ -336,6 +339,35 @@ def api_cells():
         return jsonify(_demo("cells.json", []))
     limit = min(request.args.get("limit", 30, type=int), 500)
     return jsonify(store().cell_history(limit=limit))
+
+
+# ── playback: the dashboard replaying what it recorded (docs/PLAYBACK.md) ──
+
+@app.route("/api/sessions")
+def api_sessions():
+    """Recorded sessions, newest first, derived from gaps in the data."""
+    if DEMO:
+        return jsonify(_demo("sessions.json", []))
+    gap = min(max(request.args.get("gap", 600, type=int), 60), 86400)
+    return jsonify(store().sessions(gap_s=gap))
+
+
+@app.route("/api/playback/frames")
+def api_playback_frames():
+    """Stored readings in an epoch range as playback frames: status-shaped
+    records, history-shaped rows, and which frames carry cells. `max` thins to
+    the last real row per bucket (never an average); `cells=1` joins the cell
+    voltages, which multiply the payload by six, so ask only when a cells
+    consumer is on screen."""
+    if DEMO:
+        return jsonify(_demo("frames.json", {"t": [], "records": [], "hist": [], "cells_at": []}))
+    t0 = request.args.get("from", type=float)
+    t1 = request.args.get("to", type=float)
+    if t0 is None or t1 is None or t1 < t0:
+        return jsonify({"error": "from and to are required epoch seconds, from <= to"}), 400
+    max_points = min(max(request.args.get("max", 3600, type=int), 1), 3600)
+    cells = request.args.get("cells", 0, type=int) == 1
+    return jsonify(store().frames(t0, t1, max_points=max_points, cells=cells))
 
 
 READER = os.path.join(DIR, "reader.py")
