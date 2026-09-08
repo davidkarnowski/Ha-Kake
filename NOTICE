@@ -48,6 +48,17 @@ Bundled third-party components
   substantial portions of the software, so that file must stay in place in
   any copy, fork or redistribution of Ha-Kake.
 
+  three.js — r170 (0.170.0), MIT License
+  Copyright © 2010-2024 three.js authors
+  https://threejs.org
+
+  Vendored at `web/static/vendor/three/` (`three.module.min.js`,
+  `addons/controls/OrbitControls.js`, `addons/renderers/CSS2DRenderer.js`),
+  reached through the dashboard page's import map; it draws the 3D battery
+  pack tile. The full MIT license text ships alongside it at
+  `web/static/vendor/three/LICENSE`, and for the same reason as above that
+  file must stay in place in any copy, fork or redistribution.
+
 Derived knowledge — where the CAN facts came from
 -------------------------------------------------
 

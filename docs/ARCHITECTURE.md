@@ -189,6 +189,9 @@ leaving eleven that will never take a value.
 
 - **Layout:** [gridstack.js](https://github.com/gridstack/gridstack.js) v13
   (MIT, vendored in `web/static/vendor/`, no CDN so the car works offline).
+  The 3D pack tile's [three.js](https://threejs.org) r170 is vendored the same
+  way under `web/static/vendor/three/` and reached through an import map, since
+  three.js ships as ES modules only.
   12 columns × 40 px rows; every tile carries `x, y, span, h`. Grab the
   **title bar** to move a tile anywhere — tiles it lands on are pushed aside
   and everything compacts upward (`float:false`); grab the **bottom-right

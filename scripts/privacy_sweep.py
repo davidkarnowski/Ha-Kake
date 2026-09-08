@@ -38,7 +38,10 @@ RULES = [
     ("ERROR", "secret-looking",   re.compile(r"(sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|xox[bp]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")),
     ("ERROR", "claude session",   re.compile(r"claude\.ai/code/session_[A-Za-z0-9]+")),
     ("ERROR", "device UUID",      re.compile(r"\b[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b")),
-    ("ERROR", "VIN",              re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")),
+    # A VIN always carries letters (the manufacturer code alone is alphabetic), so a
+    # run of 17 digits is not one — it is a float literal like 0.15915494309189535,
+    # which vendored three.js has four of. The lookahead keeps those from tripping.
+    ("ERROR", "VIN",              re.compile(r"\b(?![0-9]{17}\b)[A-HJ-NPR-Z0-9]{17}\b")),
     ("WARN",  "e-mail",           re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     ("WARN",  "IPv4",             re.compile(r"\b(?!127\.0\.0\.1)(?!0\.0\.0\.0)(\d{1,3}\.){3}\d{1,3}\b")),
     ("WARN",  "username",         re.compile(r"\b(dk|kn6irv|hustleyourcity)\b")),

@@ -20,6 +20,34 @@ def test_gridstack_is_vendored_with_license():
         assert "MIT" in f.read()
 
 
+def test_three_is_vendored_with_license():
+    """three.js drives the 3D pack tile. It ships as ES modules only (r160+), so the
+    files live under vendor/three/ and are reached through the page's import map —
+    never a CDN, because the car has no internet."""
+    d = os.path.join(VENDOR, "three")
+    assert os.path.getsize(os.path.join(d, "three.module.min.js")) > 400_000
+    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js"):
+        assert os.path.exists(os.path.join(d, rel)), rel
+    with open(os.path.join(d, "LICENSE")) as f:
+        assert "MIT" in f.read()
+    with open(os.path.join(d, "three.module.min.js")) as f:
+        head = f.read(400)
+    assert "@license" in head and "three.core" not in head   # self-contained build
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_three_addons_parse_as_modules():
+    """`node --check` reads .js as CommonJS; the addons are ES modules, so they are
+    checked from stdin with --input-type=module. Each must import from 'three' only."""
+    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js"):
+        with open(os.path.join(VENDOR, "three", rel)) as f:
+            src = f.read()
+        r = subprocess.run(["node", "--input-type=module", "--check"], input=src, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        import re
+        assert set(re.findall(r"from\s+'([^']+)'", src)) == {"three"}, rel
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_dashboard_javascript_parses():
     for f in ("tilestudio.js", os.path.join("vendor", "gridstack-all.js")):

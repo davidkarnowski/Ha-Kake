@@ -436,7 +436,8 @@ Contributions are offered inbound under Apache-2.0 with a DCO sign-off
 (`git commit -s`); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Bundled third-party code keeps its own license: gridstack.js (MIT) in
-`web/static/vendor/`, credited in NOTICE. CAN identities were cross-checked against
+`web/static/vendor/` and three.js (MIT) in `web/static/vendor/three/`, both
+credited in NOTICE. CAN identities were cross-checked against
 the OVMS Nissan Leaf module and the `leaf_can_bus_messages` DBC collection
 (credited in `docs/SIGNALS.md` and NOTICE). "Ha-Kake" and its logo are the
 author's trademarks and are not licensed with the code; forks, please pick your
