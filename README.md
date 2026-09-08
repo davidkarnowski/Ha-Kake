@@ -401,6 +401,10 @@ Being on the bus at all has consequences worth knowing:
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **Cell log** (2026-09-08): a tile option on the cell grid or the 3D pack
+  moves the cell-voltage read into every cycle and stores every fresh read
+  (a CELL LOG badge says so) — the same read-only request, more often — so a
+  logged drive plays back pair by pair through an acceleration.
 - **Playback** (2026-09-08): a Live / Playback switch in the header. Playback
   replays what the database recorded — pick a session, scrub, play at ½× to
   60×, drag on the strip to zoom into a stretch — and every tile, the 3D pack

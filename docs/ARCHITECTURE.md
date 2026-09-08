@@ -71,6 +71,19 @@ switching; `elm327.configure_uds(elm, tx, rx)` sets up one such conversation
 `signals.py` resolves a user tile's; `web/tiles.json` (written by the Tiles
 menu) says which tiles are on. Turning a tile off hands its bus time to the rest.
 
+**A tile option can also change how often.** `opts.celllog` on an enabled
+tile that polls the cell voltages (the cell grid or the 3D pack) is the one
+such option today: `reader.period_overrides()` turns it into `{lbc02: 0}`,
+`Reader.period(i)` consults that before the profile's period, and the cell
+read joins the fast lane — every cycle instead of every 20 s, budget or not.
+The main loop then stores a row for every *fresh* cell read (a `cells_seq`
+counter bumps on each real decode, so the sticky cache is never re-stored as
+four identical cell sets), on top of the usual row every `STORE_PERIOD`. The
+record carries `celllog: true` and the header shows a CELL LOG badge while it
+is armed: on BLE the read costs ~1.3 s a cycle, and the database grows by 96
+cell rows a cycle. It is the same read-only request, more often — what a
+drive log needs for playback to show an acceleration event pair by pair.
+
 An item's `est` is what one poll costs **over BLE** — that is the link the
 numbers were timed on, and they stay in those units so a vehicle profile never
 has to know which adapter is plugged in. The transport supplies the conversion:

@@ -111,7 +111,10 @@ specifics go in `config.local.json` (gitignored), never in code.
 - Adding an input follows `docs/ADDING_SIGNALS.md` — fixture, decoder, test,
   item, registry entry, SIGNALS.md row — in one commit.
 - `STORE_PERIOD` = 5 s even though cycles are ~2 s: the state file is live,
-  the database is for trends.
+  the database is for trends. The one exception is the cell log: with
+  `opts.celllog` on the cell grid or 3D pack tile, `lbc02` joins the fast
+  lane and every fresh cell read gets its own row (`cells_seq` marks
+  freshness, so the sticky cache is never stored twice).
 - Group 05 current is ÷1024, not ×0.001 — they differ by 2.4 % and 1024
   matches the group-01 sensors.
 - Legacy scripts stay in `legacy/` for reference; do not resurrect their

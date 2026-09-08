@@ -266,3 +266,73 @@ def test_emit_events_records_transitions(r):
     assert [e["value"] for e in ac] == ["0", "1"]     # baseline off, then on — not duplicated
     assert ac[1]["prev"] == "0"
     assert [e["value"] for e in r.store.events("gear")] == ["P", "D"]
+
+
+# ── the cell log: a tile option that moves lbc02 into the fast lane ──
+
+def _write_cfg(tmp_path, **opts_by_id):
+    cfg = {"tiles": [dict({"id": t["id"], "enabled": True}, **({"opts": opts_by_id[t["id"]]} if t["id"] in opts_by_id else {}))
+                     for t in rd.TILES]}
+    (tmp_path / "tiles.json").write_text(json.dumps(cfg))
+
+
+def _cycles(r, n=8, start=1021.0):
+    """n one-second cycles from `start`, every item marked run when planned; returns the plans."""
+    plans, t = [], start
+    for _ in range(n):
+        plan = r.plan(t)
+        for i in plan:
+            r.item_last[i] = t
+        plans.append(plan)
+        t += 1.0
+    return plans
+
+
+def test_celllog_opt_moves_lbc02_to_the_fast_lane(r, tmp_path):
+    for i in rd.ITEMS:
+        r.item_last[i] = 1000.0
+    control = _cycles(r)
+    assert sum("lbc02" in p for p in control) <= 2          # a 20 s item in eight 1 s cycles
+    assert r.next_due(1030.0) == 0.0                         # lbc01 is fast anyway
+
+    _write_cfg(tmp_path, pack3d={"celllog": True})
+    r.refresh_items()
+    assert r._periods == {"lbc02": 0} and r.period("lbc02") == 0 and r.period("lbc04") == rd.ITEMS["lbc04"]["period"]
+    for i in rd.ITEMS:
+        r.item_last[i] = 1000.0
+    armed = _cycles(r)
+    assert all("lbc02" in p for p in armed)                  # every cycle, budget or not
+    assert all(p.index("lbc02") < p.index(next(i for i in p if rd.ITEMS[i]["kind"] != "lbc")) for p in armed if any(rd.ITEMS[i]["kind"] != "lbc" for i in p))
+
+    _write_cfg(tmp_path)                                     # option cleared → back to the profile's period
+    import os, time
+    os.utime(tmp_path / "tiles.json", (time.time() + 5, time.time() + 5))
+    r.refresh_items()
+    assert r._periods == {} and r.period("lbc02") == 20
+
+
+def test_celllog_needs_an_enabled_tile_that_polls_the_cells(r, tmp_path):
+    cfg = {"tiles": [dict({"id": t["id"], "enabled": t["id"] != "pack3d"},
+                          **({"opts": {"celllog": True}} if t["id"] == "pack3d" else {})) for t in rd.TILES]}
+    (tmp_path / "tiles.json").write_text(json.dumps(cfg))
+    r.refresh_items()
+    assert r._periods == {}                                  # the arming tile is disabled
+    cfg = {"tiles": [dict({"id": t["id"], "enabled": True}, **({"opts": {"celllog": True}} if t["id"] == "soc" else {})) for t in rd.TILES]}
+    (tmp_path / "tiles.json").write_text(json.dumps(cfg))
+    import os, time
+    os.utime(tmp_path / "tiles.json", (time.time() + 5, time.time() + 5))
+    r.refresh_items()
+    assert r._periods == {}                                  # soc does not poll lbc02
+    _write_cfg(tmp_path, cells={"celllog": True})            # the cell grid can arm it too
+    os.utime(tmp_path / "tiles.json", (time.time() + 10, time.time() + 10))
+    r.refresh_items()
+    assert r._periods == {"lbc02": 0}
+    assert rd.period_overrides({"tiles": []}) == {}
+
+
+def test_celllog_opt_survives_save_tiles(tmp_path, monkeypatch):
+    monkeypatch.setattr(rd, "TILES_FILE", str(tmp_path / "tiles.json"))
+    out = rd.save_tiles({"tiles": [{"id": "pack3d", "enabled": True, "opts": {"celllog": True, "scale": "dev"}}]})
+    t = next(x for x in out["tiles"] if x["id"] == "pack3d")
+    assert t["opts"] == {"celllog": True, "scale": "dev"}
+    assert rd.period_overrides(rd.load_tiles()) == {"lbc02": 0}

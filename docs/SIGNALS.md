@@ -57,7 +57,9 @@ the per-car zero calibration, and clamps positive current while the BMS reports
 discharging; the dashboard treats |I| < 0.6 A (|P| < 0.25 kW) as idle.
 
 #### Group 02 — cell pair voltages (192 B of cell data; the ISO-TP parse pads to 200 B) — verified
-96 × u16 mV, `0xFFFF` padding after the last cell.
+96 × u16 mV, `0xFFFF` padding after the last cell. Polled every 20 s by
+default (`ITEMS["lbc02"]`, ~1.3 s a read over BLE); the *cell log* tile option
+moves it to every cycle and stores every read, for drive logs.
 
 ##### Cell order in the pack — partly assumed
 

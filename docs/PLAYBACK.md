@@ -98,8 +98,10 @@ blank. Everything a tile paints is there — a test inserts a real capture and
 asserts the frame comes back with every key the tiles read.
 
 **Resolution:** rows land every 5 s (`STORE_PERIOD`), cell voltages every 20 s
-on the default schedule. A drive log needs the cell-log capture mode (see
-`docs/PACK3D.md`) to make an acceleration event visible.
+on the default schedule. For a drive log arm the **cell log** from the ⋯ menu
+of the cell grid or the 3D pack (`docs/PACK3D.md`): the cell read runs every
+cycle and every fresh read gets its own row, so the strip's cell ticks come
+every cycle and stepping through an acceleration shows each pair sag.
 
 ## Demo mode
 

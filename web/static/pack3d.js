@@ -246,6 +246,7 @@ if (window.TileStudio && TileStudio.menuExtra) {
     box.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
       box.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b)); o.view = b.dataset.view; commit();
     }));
+    if (window.cellLogMenu) cellLogMenu(box, o, commit);      // the same rows the cell grid offers
   });
 }
 // re-read opts (and build, if the tile just became visible) after every layout change

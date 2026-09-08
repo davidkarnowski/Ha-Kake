@@ -89,6 +89,13 @@ the `verify` note.
 At rest a healthy pack is one colour. The interesting picture is during an
 acceleration: a pair with higher internal resistance sags more than its
 neighbours and shows up on the *deviation* scale while the current is
-flowing, then recovers. Today's 20 s cell cadence rarely catches that; the
-cell-log capture mode and playback (see `docs/PLAYBACK.md`) are what make
-it visible.
+flowing, then recovers. The default 20 s cell cadence rarely catches that.
+
+**Cell log** (⋯ menu of this tile or the cell grid → *read the cell voltages
+every cycle and store every read*): the reader moves the cell read into the
+fast lane and stores a row for every fresh read, and the header shows a CELL
+LOG badge while it is armed. Cost: on BLE the read is ~1.3 s a cycle, on USB
+well under half a second, and the database grows by 96 cell rows a cycle —
+turn it off after the drive. Then open playback (`docs/PLAYBACK.md`), pick the
+drive, drag the strip to the current spike, and step through it. A passenger
+runs the laptop; the driver drives.

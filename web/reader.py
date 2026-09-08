@@ -389,6 +389,28 @@ def enabled_items(tiles_cfg, fast_only=False):
     return items
 
 
+# A tile option that changes *how often* an item is polled, not just whether.
+# `opts.celllog` on an enabled built-in tile that polls the cell voltages puts
+# lbc02 in the fast lane — every cycle instead of every 20 s — and the main loop
+# stores every fresh read. It is the same read-only request, more often; it is
+# how a drive log gets cell voltages at the resolution an acceleration event
+# needs (docs/PACK3D.md, docs/PLAYBACK.md).
+CELLLOG_OPT = "celllog"
+CELLLOG_ITEM = "lbc02"
+
+
+def period_overrides(tiles_cfg):
+    """{item: period} overrides requested by tile options — today only the cell log."""
+    builtin = {t["id"]: t for t in TILES}
+    out = {}
+    for t in tiles_cfg.get("tiles", []):
+        if not t.get("enabled", True) or t["id"] not in builtin:
+            continue
+        if (t.get("opts") or {}).get(CELLLOG_OPT) and CELLLOG_ITEM in builtin[t["id"]]["items"]:
+            out[CELLLOG_ITEM] = 0
+    return out
+
+
 def load_calibration():
     try:
         with open(CALIB_FILE) as f:
@@ -480,6 +502,9 @@ class Reader:
         self.target = None                # "lbc" / "hvac" / "passive"
         self._tiles_mtime = None
         self._items = set()
+        self._periods = {}                # item → period override from tile opts (cell log)
+        self.cells_seq = 0                # bumps on every real cell-voltage decode
+        self._stored_cells_seq = None     # the cells_seq the last stored row carried
         self._last_store = 0.0
         self._calib_mtime = None
         self.calib = {}
@@ -496,7 +521,8 @@ class Reader:
             m = None
         if m != self._tiles_mtime or not self._items:
             self._tiles_mtime = m
-            new = enabled_items(load_tiles(), self.fast)
+            cfg = load_tiles()
+            new = enabled_items(cfg, self.fast)
             if new != self._items:
                 for it in self._items - new:
                     for k in ITEM_KEYS.get(it, ()):
@@ -504,6 +530,16 @@ class Reader:
                     self.item_last.pop(it, None)
                 print(f"  [reader] polling {sorted(new)}", flush=True)
             self._items = new
+            periods = period_overrides(cfg)
+            if periods != self._periods:
+                armed = periods.get(CELLLOG_ITEM) == 0
+                print(f"  [reader] cell log {'armed: cell voltages every cycle, every fresh read stored' if armed else 'off'}",
+                      flush=True)
+                self._periods = periods
+
+    def period(self, i):
+        """An item's polling period: the profile's, unless a tile option overrides it."""
+        return self._periods.get(i, ITEMS[i]["period"])
 
     # ── state helpers ────────────────────────────────────────────────────
 
@@ -558,10 +594,10 @@ class Reader:
 
     def plan(self, now):
         """Ordered item ids for this cycle: fast lane + most-overdue slow items within budget."""
-        fast = [i for i in self._items if ITEMS[i]["period"] == 0]
+        fast = [i for i in self._items if self.period(i) == 0]
         due = []
         for i in self._items:
-            p = ITEMS[i]["period"]
+            p = self.period(i)
             if p == 0:
                 continue
             last = self.item_last.get(i)
@@ -584,7 +620,7 @@ class Reader:
         """Seconds until the earliest slow item is due (0 if a fast item exists or nothing is known)."""
         waits = []
         for i in self._items:
-            p = ITEMS[i]["period"]
+            p = self.period(i)
             if p == 0:
                 return 0.0
             last = self.item_last.get(i)
@@ -667,6 +703,8 @@ class Reader:
         if responses:
             rec, a = VEHICLE.decode(responses)
             self.cache.update(rec)
+            if "cells" in rec:
+                self.cells_seq += 1           # a real cell read, as opposed to the sticky cache
             if a is not None:
                 alive = a
 
@@ -677,6 +715,8 @@ class Reader:
         merged["timing"] = timing
         merged["item_age"] = self.item_age
         merged["items"] = sorted(self._items)
+        merged["cells_seq"] = self.cells_seq
+        merged["celllog"] = self._periods.get(CELLLOG_ITEM) == 0
         return merged, alive
 
     # ── supervisor ───────────────────────────────────────────────────────
@@ -786,8 +826,16 @@ class Reader:
             # the dashboard can always be traced back to what generated it.
             if getattr(elm, "simulated", False):
                 rec.update(elm.marker() if hasattr(elm, "marker") else {"simulated": True})
-            if loop.time() - self._last_store >= STORE_PERIOD:
-                self.store.insert_reading(rec, ts=now, adapter=elm.adapter_type)
+            # A row every STORE_PERIOD, plus one for every fresh cell read while the
+            # cell log is armed. The cache is sticky, so cells that have not been
+            # re-read since the last row are left out of it: one cell set per read,
+            # never the same 96 values four times over.
+            fresh_cells = rec.get("cells_seq") != self._stored_cells_seq
+            due = loop.time() - self._last_store >= STORE_PERIOD
+            if due or (rec.get("celllog") and fresh_cells):
+                row = rec if fresh_cells else {k: v for k, v in rec.items() if k != "cells"}
+                self.store.insert_reading(row, ts=now, adapter=elm.adapter_type)
+                self._stored_cells_seq = rec.get("cells_seq")
                 self._last_store = loop.time()
             self.last_good = rec
             self.last_good["last_ok"] = rec["timestamp"]

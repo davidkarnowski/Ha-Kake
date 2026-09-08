@@ -57,6 +57,9 @@
   /* playback mode: same badge shape, the accent colour, links down to the timeline */
   .sim-badge.playback { background: var(--accent); color: #04121c; }
   .sim-badge.playback:hover { background: #81d4fa; }
+  /* the reader is logging every cell read (a tile option) — say so, it costs cycle time and rows */
+  .sim-badge.celllog { background: var(--green); color: #04160a; cursor: default; }
+  .sim-badge.celllog:hover { background: var(--green); }
   .adapter-info {
     display: flex;
     align-items: center;
@@ -534,6 +537,7 @@
   <div class="header-right">
     <a class="sim-badge" id="sim-badge" href="/sim" title="This run is a simulated car (--adapter sim). Open the cockpit to drive it.">SIMULATED</a>
     <a class="sim-badge playback" id="playback-badge" href="#timeline" title="Every tile is showing a recorded moment, not the car.">PLAYBACK</a>
+    <span class="sim-badge celllog" id="celllog-badge" title="The reader is polling the cell voltages every cycle and storing every read — the ⋯ menu of the cell grid or the 3D pack turns it off.">CELL LOG</span>
     <button class="tiles-btn" id="mode-btn" title="Switch between the live car and recorded sessions">Playback</button>
     <div class="adapter-info" id="adapter-info" style="display:none">
       <svg id="adapter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
@@ -956,6 +960,7 @@ function updateDash(data) {
     const shortPort = port.length > 24 ? '...' + port.slice(-20) : port;
     document.getElementById('adapter-detail').textContent = data.playback ? 'recorded' : shortPort;
   }
+  document.getElementById('celllog-badge').classList.toggle('on', !!data.celllog && !data.playback);
 
   if (!data.timestamp) return;  // keep showing the last good reading while reconnecting / asleep
 
@@ -1565,6 +1570,19 @@ function pbLoop(now) {
 }
 requestAnimationFrame(pbLoop);
 
+// ⋯ menu rows shared by the cell grid and the 3D pack (TileStudio.menuExtra): arm the
+// cell log — the reader polls the cell voltages every cycle and stores every fresh
+// read. Persisted in the tile's opts; the reader picks it up from tiles.json.
+window.cellLogMenu = function (box, o, commit) {
+  const h = document.createElement('h5'); h.textContent = 'Cell log — for drive logs';
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<label style="min-width:0"><input type="checkbox" id="tm-celllog" ${o.celllog ? 'checked' : ''}> read the cell voltages every cycle and store every read</label>`;
+  const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
+  why.textContent = 'Faster cycles and ~96 rows a cycle. Playback then shows every pair sag under an acceleration.';
+  row.querySelector('#tm-celllog').addEventListener('change', e => { o.celllog = e.target.checked; commit(); });
+  box.append(h, row, why);
+};
+
 let lastTimestamp = null;
 async function poll() {
   if (isPlayback()) return;            // every tile is being painted from stored frames
@@ -1681,6 +1699,6 @@ if (!SHOT) setInterval(pollHealth, 60000);
 <script src="/static/alerts.js"></script>
 <script src="/static/vendor/gridstack-all.js"></script>
 <script src="/static/tilestudio.js"></script>
-<script>TileStudio.init();</script>
+<script>TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init();</script>
 </body>
 </html>

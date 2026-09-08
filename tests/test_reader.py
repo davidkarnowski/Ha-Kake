@@ -346,3 +346,48 @@ def test_connecting_does_not_republish_the_previous_adapter(env, tmp_path):
 
     r.publish("ok", adapter_type="usb", adapter_name="ELM327 v1.5", adapter_port="/dev/ttyUSB0")
     assert rd.load_state()["adapter_type"] == "usb"
+
+
+# ── the cell log: every fresh cell read gets a row; unchanged cells are not re-stored ──
+
+def _boot(monkeypatch, script=("ok",) * 40):
+    elm = FakeELM(list(script))
+    elm.first_cmd = "2101"
+
+    async def fake_detect(prefer=None, log=None):
+        return elm
+
+    async def fake_configure(elm):
+        pass
+
+    monkeypatch.setattr(rd, "detect_adapter", fake_detect)
+    monkeypatch.setattr(rd, "configure_vehicle", fake_configure)
+    return elm
+
+
+def test_celllog_stores_every_fresh_cell_read(env, monkeypatch):
+    tmp_path, store = env
+    monkeypatch.setattr(rd, "STORE_PERIOD", 5.0)          # rows would otherwise be 5 s apart
+    cfg = {"tiles": [dict({"id": t["id"], "enabled": True},
+                          **({"opts": {"celllog": True}} if t["id"] == "pack3d" else {})) for t in rd.TILES]}
+    (tmp_path / "tiles.json").write_text(json.dumps(cfg))
+    _boot(monkeypatch)
+    reader = rd.Reader(interval=0.01, adapter_pref=None, store=store)
+    asyncio.run(run_for(reader, 0.5))
+    assert reader.readings >= 3 and reader.cells_seq >= 3   # lbc02 ran every cycle
+    rows = store.count()
+    with_cells = store.conn.execute("SELECT COUNT(DISTINCT reading_id) FROM cells").fetchone()[0]
+    assert rows == with_cells == reader.cells_seq            # one row per fresh read, each carrying its cells
+    s = state(tmp_path)
+    assert s["celllog"] is True and s["cells_seq"] == reader.cells_seq and len(s["cells"]) == 96
+
+
+def test_unchanged_cells_are_not_stored_again(env, monkeypatch):
+    tmp_path, store = env                                    # STORE_PERIOD 0: a row every cycle
+    _boot(monkeypatch)
+    reader = rd.Reader(interval=0.01, adapter_pref=None, store=store)
+    asyncio.run(run_for(reader, 0.5))
+    assert reader.readings >= 3 and reader.cells_seq == 1    # lbc02 is a 20 s item: one real read
+    assert store.count() == reader.readings                  # every cycle still persisted…
+    assert store.conn.execute("SELECT COUNT(DISTINCT reading_id) FROM cells").fetchone()[0] == 1   # …with cells once
+    assert state(tmp_path)["celllog"] is False and len(state(tmp_path)["cells"]) == 96            # the cache still shows them

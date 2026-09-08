@@ -378,3 +378,10 @@ def test_sessions_are_listed_newest_first(api):
     s = api.get("/api/sessions").get_json()
     assert [x["n"] for x in s] == [1, 2] and s[0]["adapter"] == "usb" and s[1]["cells"] is True
     assert api.get("/api/sessions?gap=999999999").get_json()[0]["n"] == 3   # gap is clamped, still one session
+
+
+def test_tiles_put_keeps_the_cell_log_option(api):
+    body = {"tiles": [{"id": "cells", "enabled": True, "opts": {"celllog": True}}]}
+    out = {t["id"]: t for t in api.put("/api/tiles", json=body).get_json()["tiles"]}
+    assert out["cells"]["opts"]["celllog"] is True
+    assert rd.period_overrides(rd.load_tiles()) == {"lbc02": 0}

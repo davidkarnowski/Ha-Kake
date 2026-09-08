@@ -144,3 +144,14 @@ def test_tilestudio_exposes_opts_enabled_menu_extra_and_the_applied_event():
     assert "new CustomEvent('tiles:applied')" in src
     assert "MENU_EXTRAS[id](m.querySelector('#tm-extra'), o, () => { save(); apply(); })" in src
     assert len(re.findall(r"['\"]/api/", src)) == 3        # still only the DEFAULTS routes
+
+
+def test_cell_log_is_offered_from_both_tile_menus_and_shown_in_the_header():
+    with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
+        page = f.read()
+    assert "window.cellLogMenu = function (box, o, commit)" in page
+    assert "TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init();" in page
+    assert 'id="celllog-badge"' in page
+    assert "classList.toggle('on', !!data.celllog && !data.playback)" in page
+    with open(os.path.join(STATIC, "pack3d.js")) as f:
+        assert "if (window.cellLogMenu) cellLogMenu(box, o, commit);" in f.read()
