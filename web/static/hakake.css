@@ -81,3 +81,22 @@ body {
   margin-bottom: 16px;
   font-weight: 600;
 }
+
+/* ── Playback timeline: a page-level card above the tile grid, shown only in playback mode ── */
+.timeline { margin: 0 0 14px; padding: 14px 18px 12px; }
+.timeline[hidden] { display: none; }
+.tl-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.tl-head select { flex: 1 1 280px; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 0.85em; }
+.tl-clock { font: 600 1em ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.tl-elapsed { font: 0.78em ui-monospace, Menlo, monospace; color: var(--dim); font-variant-numeric: tabular-nums; }
+.tl-alerts { font-size: 0.8em; color: var(--dim); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+#tl-strip { display: block; width: 100%; height: 72px; border-radius: 8px; background: var(--card2); cursor: crosshair; touch-action: none; }
+#tl-scrub { width: 100%; margin: 6px 0 4px; accent-color: var(--accent); }
+.tl-transport { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tl-transport button { background: var(--card2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 0.8em; cursor: pointer; }
+.tl-transport button:hover { border-color: var(--accent); }
+.tl-transport button.on { border-color: var(--accent); color: var(--accent); background: #12303f; }
+.tl-speeds { display: inline-flex; gap: 4px; margin-left: 8px; }
+.tl-x { font: 600 0.85em ui-monospace, Menlo, monospace; color: var(--accent); min-width: 3ch; }
+.tl-note { font-size: 0.75em; color: var(--dim); margin-left: auto; }
+.tiles-btn.on { border-color: var(--accent); color: var(--accent); }

@@ -9,8 +9,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 > (`docs/REPLAY.md`) re-runs *what the car said* through the reader, to
 > exercise the stack. Different questions, deliberately different tools.
 
-_The page side (mode switch, timeline, transport) lands with the next phase;
-this page documents the data contract it builds on._
+## Using it
+
+Press **Playback** in the header (or open `/?playback=1`). The page stops
+polling the car, a PLAYBACK badge appears, and a timeline card opens above the
+tiles:
+
+- **Session** — a recorded run, newest first, labelled with its date, length,
+  SOC start → end, row count, whether cell voltages were read, and the
+  adapter. Sessions are gaps in the data: ten minutes of silence starts a new
+  one (`/api/sessions?gap=`).
+- **The strip** — SOC as a line, pack current as an area (discharge drawn
+  downward), a tick at the bottom wherever cells were read, the playhead.
+  Click to seek. **Drag to zoom** into a stretch — the frames are re-fetched
+  at full resolution for just that range. *Whole session* zooms back out.
+- **Transport** — ⟨ frame / ▶ Play / frame ⟩, −1 min / −10 s / +10 s / +1 min,
+  and speeds ½× 1× 4× 10× 60× (real seconds × speed; a 5 s row every 5 s at
+  1×). The clock shows the frame's wall time and the offset from the window's
+  start. Keys: space plays and pauses, ← → step a frame, shift + ← → jump
+  ten seconds.
+- **Every tile follows** — the gauges, the history graphs (up to the
+  playhead), the cell grid and the 3D pack, user tiles, the body and climate
+  cards. The status dot says *Recorded <time>*; nothing is "stale".
+- **Alerts** stay silent unless the timeline's *alerts* box is ticked, and
+  the engine forgets its hysteresis whenever you switch mode or tick the box,
+  so a rule can be reviewed against an old drive without it firing on the
+  way in.
+- **Links** — the URL updates to `?playback=1&from=<epoch>&to=<epoch>` as you
+  brush, so a moment can be pasted into the worklog. With `?shot` the page
+  renders that first frame once and holds it.
+- **Back to live** resumes polling.
+
+Under `--demo` there is one canned session; under `--adapter replay` or
+`--adapter sim` playback reads that run's own throwaway database, never
+`web/leaf_battery.db`.
+
+## What it is built from
+
+The page keeps one paint path. Live mode's `poll()` fans `/api/status` and
+`/api/history` out to five sinks — `updateTrend`, `updateDash`,
+`updateSparkline`, `TileStudio.update`, `TileStudio.history`. Playback's
+`renderFrame(k)` feeds the same five from `records[k]` and `hist[0..k]`, so
+no tile has a playback branch. The clock is `web/static/playback.js` — a pure
+transport (seek, play, pause, speed, step, jump, tick) with node tests —
+driven from one `requestAnimationFrame` loop. It lives in the browser on
+purpose: the reader may be live on the car while two browsers scrub two
+different afternoons; what it borrows from the simulator is the vocabulary
+(`N×`, fixed jumps), not its Python clock.
 
 ## The endpoints
 

@@ -96,6 +96,12 @@
   let alertingTiles = new Set();
   function runAlerts(data) {
     if (!alertEngine) return;
+    // recorded frames stay silent unless the timeline's "alerts" box is ticked — a
+    // beeping replay of last Tuesday is noise, and it would also poison the hysteresis
+    if (data && data.playback && !window.__alertsInPlayback) {
+      cfg.forEach(t => { const c = cardOf(t); if (c) c.classList.remove('alerting'); });
+      return;
+    }
     const rules = [];
     cfg.forEach(t => { if (t.enabled && t.opts && Array.isArray(t.opts.alerts)) t.opts.alerts.forEach(r => rules.push(Object.assign({ id: alertId(t, r), tile: t.id }, r, { repeat: Alerts.repeatSeconds(r.repeat) }))); });
     const res = alertEngine.evaluate(rules, data, Date.now(), { signals: REG.signals, items: REG.items, staleAfter: Alerts.STALE_AFTER });
@@ -642,5 +648,7 @@
     opts(id) { const t = cfg.find(x => x.id === id); return t ? Object.assign({}, t.opts || {}) : {}; },
     enabled(id) { const t = cfg.find(x => x.id === id); return !!(t && t.enabled); },
     menuExtra(id, fn) { MENU_EXTRAS[id] = fn; },
+    // forget alert hysteresis (the page calls this when it switches between live and playback)
+    resetAlerts() { if (alertEngine) alertEngine.clear(); },
   };
 })();

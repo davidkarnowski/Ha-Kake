@@ -157,7 +157,7 @@ def test_head_links_shared_css_after_tilestudio_and_before_inline_style(page):
 
 
 def test_tiles_js_loads_before_the_page_script_and_tilestudio_is_booted(page):
-    assert page.index('src="/static/tiles.js"') < page.index(SHARED_SCALES)
+    assert page.index('src="/static/tiles.js"') < page.index('src="/static/playback.js"') < page.index(SHARED_SCALES)
     assert page.index('src="/static/alerts.js"') < page.index('src="/static/tilestudio.js"') < page.index("TileStudio.init();")
     assert page.count("TileStudio.init();") == 1
 

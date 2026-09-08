@@ -147,3 +147,4 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Add another vehicle? | `vehicles/__init__.py` contract docstring; `vehicles/lancer_2009.py` is the minimal example |
 | Simulate the car / drive the cockpit | `docs/SIMULATOR.md`; `python web/app.py --adapter sim`, then `/sim`; the core's interface is `docs/SIMULATOR_CONTRACT.md` |
 | Where is cell pair N in the pack? | `docs/PACK3D.md`; the table is `PACK_LAYOUT` in `vehicles/leaf_ze0.py` (partly assumed — it says which rows) |
+| Replay a recorded afternoon on the dashboard | `docs/PLAYBACK.md`; the Playback button in the header, `?playback=1&from=&to=` for a link; frames come from `Store.frames()` |

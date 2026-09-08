@@ -173,6 +173,12 @@ The Leaf profile, as an example of how far a profile can go:
 | Cell pairs — 96 voltages, 48 modules, min/max/spread, balancing flags | LBC groups 02/06 | 20–30 s |
 | Battery pack — 3D: the pack as it sits under the car, every cell pair a body coloured by voltage (deviation from mean, grid scale, or drop from rest); orbit / zoom, hover for the value, click to pin | LBC groups 02/06 | 20–30 s |
 
+Every one of those tiles also works in **playback**: the header's Playback
+button turns the page into a viewer for what the database recorded — a
+session picker, a strip of SOC and current, a playhead, play / pause / speed
+/ step — and the tiles paint from stored frames through the same code that
+paints them live (`docs/PLAYBACK.md`).
+
 On an old EV the point of the tool is the battery — capacity, state of health,
 internal resistance, the 12 V and insulation:
 
@@ -241,6 +247,7 @@ python web/app.py --adapter ble    # → http://127.0.0.1:5000
 python web/app.py --adapter usb
 python web/app.py --vehicle lancer_2009 --adapter usb
 python web/app.py --no-reader      # dashboard only; run web/reader.py yourself
+python web/app.py --no-reader      # … then press Playback in the header to scrub what the database recorded
 ```
 
 Adapter address: copy `config.local.example.json` to `config.local.json` and
@@ -394,6 +401,12 @@ Being on the bus at all has consequences worth knowing:
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **Playback** (2026-09-08): a Live / Playback switch in the header. Playback
+  replays what the database recorded — pick a session, scrub, play at ½× to
+  60×, drag on the strip to zoom into a stretch — and every tile, the 3D pack
+  included, paints from the stored frame through the same code that paints it
+  live. Alerts stay silent unless asked; `?playback=1&from=&to=` links to a
+  moment — `docs/PLAYBACK.md`.
 - **3D battery pack** (2026-09-08): the pack drawn as it sits under the car,
   96 cell-pair bodies coloured by voltage on three scales, orbit / zoom /
   hover / pin, built from a layout table in the profile (no CAD file) and

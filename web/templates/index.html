@@ -54,6 +54,9 @@
   }
   .sim-badge.on { display: inline-block; }
   .sim-badge:hover { background: #ffb74d; }
+  /* playback mode: same badge shape, the accent colour, links down to the timeline */
+  .sim-badge.playback { background: var(--accent); color: #04121c; }
+  .sim-badge.playback:hover { background: #81d4fa; }
   .adapter-info {
     display: flex;
     align-items: center;
@@ -530,6 +533,8 @@
   </div>
   <div class="header-right">
     <a class="sim-badge" id="sim-badge" href="/sim" title="This run is a simulated car (--adapter sim). Open the cockpit to drive it.">SIMULATED</a>
+    <a class="sim-badge playback" id="playback-badge" href="#timeline" title="Every tile is showing a recorded moment, not the car.">PLAYBACK</a>
+    <button class="tiles-btn" id="mode-btn" title="Switch between the live car and recorded sessions">Playback</button>
     <div class="adapter-info" id="adapter-info" style="display:none">
       <svg id="adapter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
       <span class="adapter-label" id="adapter-label">--</span>
@@ -561,6 +566,29 @@
 
 <!-- Pulse Heartbeat Bar -->
 <div class="pulse-bar" id="pulse-bar"></div>
+
+<!-- Playback timeline: a page-level card above the tile grid (no data-tile, no profile
+     entry, so it exists for every vehicle), shown only in playback mode. -->
+<section class="card timeline" id="timeline" hidden>
+  <div class="tl-head">
+    <select id="tl-session" aria-label="recorded session"><option value="">loading sessions…</option></select>
+    <span class="tl-clock" id="tl-clock">—</span><span class="tl-elapsed" id="tl-elapsed"></span>
+    <label class="tl-alerts" title="Alert rules stay silent during playback unless you ask"><input type="checkbox" id="tl-alerts"> alerts</label>
+    <button class="tiles-btn" id="tl-live">Back to live</button>
+  </div>
+  <canvas id="tl-strip" height="72" aria-label="session strip: state of charge and pack current; drag to zoom in, click to seek"></canvas>
+  <input id="tl-scrub" type="range" min="0" max="0" value="0" aria-label="playhead">
+  <div class="tl-transport">
+    <button data-jump="-60" title="back one minute">−1 min</button><button data-jump="-10" title="back ten seconds">−10 s</button>
+    <button id="tl-stepb" title="previous frame (←)">⟨ frame</button>
+    <button id="tl-play" title="play / pause (space)">▶ Play</button>
+    <button id="tl-stepf" title="next frame (→)">frame ⟩</button>
+    <button data-jump="10" title="forward ten seconds">+10 s</button><button data-jump="60" title="forward one minute">+1 min</button>
+    <span class="tl-speeds" id="tl-speeds"></span><span class="tl-x" id="tl-x">1×</span>
+    <button id="tl-whole" title="show the whole session again">whole session</button>
+    <span class="tl-note" id="tl-note">Pick a session, then drag on the strip to zoom into a stretch of it.</span>
+  </div>
+</section>
 
 <main class="tiles" id="tiles">
   {# Built-in tiles: static markup belonging to whichever vehicle profile
@@ -837,6 +865,7 @@
 <script src="/static/pack_layout.js"></script>
 <script type="module" src="/static/pack3d.js"></script>
 <script src="/static/tiles.js"></script>
+<script src="/static/playback.js"></script>
 <script>
 // Build module tree: 48 modules × 2 cells
 const modGrid = document.getElementById('module-grid');
@@ -899,12 +928,14 @@ function updateDash(data) {
   const s = data.status || 'waiting';
   const lastOk = data.last_ok || data.timestamp;
   const ageSec = lastOk ? (Date.now() - new Date(lastOk).getTime()) / 1000 : null;
-  const stale = s === 'ok' && ageSec != null && ageSec > STALE_AFTER_SEC;
+  // a recorded frame is never stale: its age is the point
+  const stale = !data.playback && s === 'ok' && ageSec != null && ageSec > STALE_AFTER_SEC;
   dot.className = (s === 'ok' && !stale) ? 'ok'
     : (['connecting', 'waiting', 'reconnecting', 'asleep'].includes(s) || stale) ? 'waiting' : 'error';
   const ago = ageSec == null ? '' : ageSec < 90 ? `${Math.round(ageSec)}s ago`
     : ageSec < 5400 ? `${Math.round(ageSec / 60)}m ago` : `${(ageSec / 3600).toFixed(1)}h ago`;
-  if (s === 'ok' && !stale) stxt.textContent = `Updated ${new Date(lastOk).toLocaleTimeString()}`;
+  if (data.playback && s === 'ok') stxt.textContent = `Recorded ${new Date(lastOk).toLocaleString()}`;
+  else if (s === 'ok' && !stale) stxt.textContent = `Updated ${new Date(lastOk).toLocaleTimeString()}`;
   else if (s === 'ok') stxt.textContent = `Stale — last reading ${ago}`;
   else if (s === 'asleep') stxt.textContent = `Car asleep — last reading ${ago || 'n/a'}`;
   else if (s === 'reconnecting') stxt.textContent = `Reconnecting… last reading ${ago || 'n/a'}`;
@@ -923,7 +954,7 @@ function updateDash(data) {
     document.getElementById('adapter-label').textContent = data.adapter_type.toUpperCase();
     const port = data.adapter_port || '';
     const shortPort = port.length > 24 ? '...' + port.slice(-20) : port;
-    document.getElementById('adapter-detail').textContent = shortPort;
+    document.getElementById('adapter-detail').textContent = data.playback ? 'recorded' : shortPort;
   }
 
   if (!data.timestamp) return;  // keep showing the last good reading while reconnecting / asleep
@@ -1368,8 +1399,175 @@ function firePulse() {
   bar.classList.add('fading');
 }
 
+// ── Live / Playback ─────────────────────────────────────────────────────────
+// Playback drives every tile from stored frames (/api/playback/frames) through
+// the same sinks poll() uses — updateTrend, updateDash, updateSparkline,
+// TileStudio.update / history — so no tile knows the difference. The clock is
+// Playback.createTransport (web/static/playback.js). The timeline is a page-level
+// card above the tile grid: no data-tile, no profile entry, so it exists for every
+// vehicle and shows only in this mode. docs/PLAYBACK.md.
+let MODE = 'live', PB = null, SESSIONS = [], pbLast = null, pbUi = '', brush = null;
+const $t = id => document.getElementById(id);
+function isPlayback() { return MODE === 'playback'; }
+
+async function enterPlayback(from, to) {
+  MODE = 'playback'; PB = null;
+  $t('timeline').hidden = false;
+  $t('playback-badge').classList.add('on');
+  $t('mode-btn').classList.add('on'); $t('mode-btn').textContent = 'Live';
+  window.__alertsInPlayback = $t('tl-alerts').checked;
+  if (window.TileStudio && TileStudio.resetAlerts) TileStudio.resetAlerts();
+  await loadSessions();
+  if (from && to) await loadRange(from, to);
+  else if (SESSIONS.length) await loadRange(SESSIONS[0].start_epoch, SESSIONS[0].end_epoch);
+  else drawStrip();
+}
+function exitPlayback() {
+  MODE = 'live'; PB = null; brush = null;
+  $t('timeline').hidden = true;
+  $t('playback-badge').classList.remove('on');
+  $t('mode-btn').classList.remove('on'); $t('mode-btn').textContent = 'Playback';
+  if (window.TileStudio && TileStudio.resetAlerts) TileStudio.resetAlerts();
+  history.replaceState(null, '', location.pathname);
+  poll();
+}
+async function loadSessions() {
+  const sel = $t('tl-session');
+  try { SESSIONS = await (await fetch('/api/sessions')).json(); } catch (e) { SESSIONS = []; }
+  sel.innerHTML = SESSIONS.length ? SESSIONS.map((s, i) => `<option value="${i}">${sessionLabel(s)}</option>`).join('')
+                                  : '<option value="">no recorded sessions yet</option>';
+}
+const fmtSoc = v => v == null ? '–' : (+v).toFixed(0);
+function sessionLabel(s) {
+  const d = new Date(s.started);
+  return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${Playback.fmtDur(s.duration_s)}` +
+    ` · SOC ${fmtSoc(s.soc_start)}→${fmtSoc(s.soc_end)}% · ${s.n} rows${s.cells ? ' · cells' : ''}${s.adapter ? ' · ' + s.adapter : ''}`;
+}
+function selectSessionFor(from, to) {
+  const i = SESSIONS.findIndex(s => s.start_epoch <= from + 1 && s.end_epoch >= to - 1);
+  if (i >= 0) $t('tl-session').value = String(i);
+  return i;
+}
+async function loadRange(from, to) {
+  const wantCells = !!(window.TileStudio && (TileStudio.enabled('cells') || TileStudio.enabled('pack3d')));
+  let r;
+  try { r = await (await fetch(`/api/playback/frames?from=${from}&to=${to}&max=3600&cells=${wantCells ? 1 : 0}`)).json(); }
+  catch (e) { $t('tl-note').textContent = 'Could not load frames.'; return; }
+  if (!isPlayback()) return;                                   // the user left while we fetched
+  brush = null;
+  if (!r.t || !r.t.length) { PB = null; $t('tl-note').textContent = 'No readings in that range.'; drawStrip(); return; }
+  r.records[0].playback_first = true;                          // the 3D pack resets its rest voltages here
+  PB = { from, to, times: r.t, records: r.records, hist: r.hist, cellsAt: new Set(r.cells_at || []),
+         transport: Playback.createTransport(r.t), session: selectSessionFor(from, to) };
+  PB.transport.on(renderFrame);
+  const sc = $t('tl-scrub'); sc.max = Math.max(0, r.t.length - 1); sc.value = 0;
+  history.replaceState(null, '', `?playback=1&from=${from}&to=${to}`);
+  $t('tl-note').textContent = `${r.t.length} frames${wantCells ? ` · ${PB.cellsAt.size} with cells` : ''} · drag on the strip to zoom in, click to seek`;
+  pbUi = ''; syncTransportUi();
+  renderFrame(0);
+}
+function renderFrame(k) {
+  if (!PB || !PB.records[k]) return;
+  const rec = PB.records[k], hist = PB.hist.slice(0, k + 1);
+  updateTrend(hist);
+  updateDash(rec);
+  document.getElementById('sim-badge').classList.toggle('on', !!rec.simulated);
+  updateSparkline(hist);
+  if (window.TileStudio) { TileStudio.update(rec); TileStudio.history(hist); }
+  $t('tl-scrub').value = k;
+  const t = PB.times[k], d = new Date(t * 1000);
+  $t('tl-clock').textContent = `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  $t('tl-elapsed').textContent = `+${Playback.fmtDur(t - PB.times[0])} · frame ${k + 1} / ${PB.times.length}`;
+  drawStrip();
+}
+function syncTransportUi() {
+  if (!PB) return;
+  const s = PB.transport.state(), key = `${s.playing}|${s.speed}`;
+  if (key === pbUi) return;
+  pbUi = key;
+  $t('tl-play').textContent = s.playing ? '❚❚ Pause' : '▶ Play';
+  $t('tl-speeds').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.speed === s.speed));
+  $t('tl-x').textContent = (s.speed === 0.5 ? '½' : s.speed) + '×';
+}
+// the session strip: SOC line, pack current as an area (discharge downward), a tick
+// where cells were read, the brush, the playhead
+function drawStrip() {
+  const c = $t('tl-strip'); if (!c || $t('timeline').hidden) return;
+  const W = c.clientWidth, H = c.clientHeight; if (!W || !H) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  g.font = '10px ui-monospace, Menlo, monospace';
+  if (!PB) { g.fillStyle = '#6b7a99'; g.fillText('no frames loaded', 8, 14); return; }
+  const pad = 6, T0 = PB.times[0], T1 = PB.times[PB.times.length - 1], span = Math.max(1e-6, T1 - T0);
+  const x = t => pad + (W - 2 * pad) * (t - T0) / span;
+  const amps = PB.hist.map(h => h.current_a).filter(v => v != null);
+  const aMax = Math.max(20, ...amps.map(Math.abs));
+  const yA = a => pad + (H - 2 * pad) * (aMax - a) / (2 * aMax);
+  g.strokeStyle = '#1e2a42'; g.lineWidth = 1; g.beginPath(); g.moveTo(pad, yA(0)); g.lineTo(W - pad, yA(0)); g.stroke();
+  let started = false;
+  g.beginPath();
+  PB.hist.forEach((h, i) => { if (h.current_a == null) return; const X = x(PB.times[i]), Y = yA(h.current_a); if (started) g.lineTo(X, Y); else g.moveTo(X, Y); started = true; });
+  if (started) { g.lineTo(x(T1), yA(0)); g.lineTo(x(T0), yA(0)); g.closePath(); g.fillStyle = 'rgba(79,195,247,0.16)'; g.fill(); }
+  started = false;
+  g.beginPath();
+  PB.hist.forEach((h, i) => { if (h.soc == null) return; const X = x(PB.times[i]), Y = pad + (H - 2 * pad) * (1 - h.soc / 100); if (started) g.lineTo(X, Y); else g.moveTo(X, Y); started = true; });
+  g.strokeStyle = '#4caf50'; g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = 'rgba(224,230,240,0.35)';
+  PB.cellsAt.forEach(k => g.fillRect(x(PB.times[k]) - 0.5, H - pad - 3, 1, 3));
+  if (brush) { g.fillStyle = 'rgba(79,195,247,0.18)'; g.fillRect(x(brush[0]), pad, x(brush[1]) - x(brush[0]), H - 2 * pad); }
+  const k = PB.transport.state().k;
+  if (k >= 0) { g.strokeStyle = '#e0e6f0'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x(PB.times[k]), pad); g.lineTo(x(PB.times[k]), H - pad); g.stroke(); }
+  g.fillStyle = '#4caf50'; g.fillText('SOC', pad + 2, 12);
+  g.fillStyle = '#4fc3f7'; g.fillText(`pack A (±${aMax.toFixed(0)})`, pad + 30, 12);
+}
+(function initTimeline() {
+  const sp = $t('tl-speeds');
+  sp.innerHTML = Playback.SPEEDS.map(x => `<button data-speed="${x}" class="${x === 1 ? 'on' : ''}" title="${x}× real time">${x === 0.5 ? '½' : x}×</button>`).join('');
+  sp.addEventListener('click', e => { const b = e.target.closest('button[data-speed]'); if (b && PB) { PB.transport.setSpeed(+b.dataset.speed); syncTransportUi(); } });
+  $t('tl-play').onclick = () => { if (PB) { PB.transport.toggle(); syncTransportUi(); } };
+  $t('tl-stepb').onclick = () => { if (PB) PB.transport.step(-1); };
+  $t('tl-stepf').onclick = () => { if (PB) PB.transport.step(1); };
+  document.querySelectorAll('#timeline [data-jump]').forEach(b => { b.onclick = () => { if (PB) PB.transport.jump(+b.dataset.jump); }; });
+  $t('tl-scrub').addEventListener('input', e => { if (PB) PB.transport.seek(PB.times[+e.target.value]); });
+  $t('tl-session').addEventListener('change', e => { const s = SESSIONS[+e.target.value]; if (s) loadRange(s.start_epoch, s.end_epoch); });
+  $t('tl-whole').onclick = () => { const s = SESSIONS[PB && PB.session >= 0 ? PB.session : 0]; if (s) loadRange(s.start_epoch, s.end_epoch); };
+  $t('tl-live').onclick = exitPlayback;
+  $t('mode-btn').onclick = () => { if (isPlayback()) exitPlayback(); else enterPlayback(); };
+  $t('tl-alerts').addEventListener('change', e => {
+    window.__alertsInPlayback = e.target.checked;
+    if (window.TileStudio && TileStudio.resetAlerts) TileStudio.resetAlerts();
+    if (PB) renderFrame(PB.transport.state().k);
+  });
+  addEventListener('keydown', e => {
+    if (!isPlayback() || !PB || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === ' ') { e.preventDefault(); PB.transport.toggle(); syncTransportUi(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); if (e.shiftKey) PB.transport.jump(10); else PB.transport.step(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); if (e.shiftKey) PB.transport.jump(-10); else PB.transport.step(-1); }
+  });
+  // the strip: click seeks, drag brushes a stretch and zooms into it
+  const strip = $t('tl-strip'); let down = null;
+  const tAt = px => { const r = strip.getBoundingClientRect(); const f = Math.min(1, Math.max(0, (px - r.left - 6) / (r.width - 12)));
+    return PB.times[0] + f * (PB.times[PB.times.length - 1] - PB.times[0]); };
+  strip.addEventListener('pointerdown', e => { if (!PB) return; down = e.clientX; brush = null; strip.setPointerCapture(e.pointerId); });
+  strip.addEventListener('pointermove', e => { if (down == null || !PB) return; if (Math.abs(e.clientX - down) > 4) { brush = [tAt(Math.min(down, e.clientX)), tAt(Math.max(down, e.clientX))]; drawStrip(); } });
+  strip.addEventListener('pointerup', e => { if (down == null || !PB) return; const b = brush; down = null; brush = null;
+    if (b && b[1] - b[0] > 2) loadRange(b[0], b[1]); else { PB.transport.seek(tAt(e.clientX)); drawStrip(); } });
+  if (window.ResizeObserver) new ResizeObserver(() => drawStrip()).observe(strip);
+})();
+// the playback clock: one rAF loop, ticking the transport in real seconds × speed
+function pbLoop(now) {
+  requestAnimationFrame(pbLoop);
+  const dt = pbLast == null ? 0 : (now - pbLast) / 1000; pbLast = now;
+  if (!PB || !isPlayback() || SHOT) return;
+  PB.transport.tick(Math.min(dt, 0.5));
+  syncTransportUi();
+}
+requestAnimationFrame(pbLoop);
+
 let lastTimestamp = null;
 async function poll() {
+  if (isPlayback()) return;            // every tile is being painted from stored frames
   try {
     const [statusResp, histResp] = await Promise.all([
       fetch('/api/status'),
@@ -1399,6 +1597,10 @@ const SHOT = new URLSearchParams(location.search).has('shot');
 if (SHOT) document.documentElement.classList.add('shot');
 poll();
 if (!SHOT) setInterval(poll, 1000);
+// ?playback=1&from=<epoch>&to=<epoch> reopens a recorded moment (a shareable link);
+// with ?shot it renders that first frame once and holds it.
+{ const q = new URLSearchParams(location.search);
+  if (q.has('playback')) enterPlayback(+q.get('from') || 0, +q.get('to') || 0); }
 
 // ── Current zero calibration ──
 document.getElementById('cal-zero').addEventListener('click', async () => {

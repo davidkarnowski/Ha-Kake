@@ -17,6 +17,13 @@ That is what makes "write a profile for your car" an honest invitation. You
 can develop and review a profile with nothing but the repository, and so can
 someone who has never seen the car it is for.
 
+Replay is not playback. Replay re-runs *what the car said* through the reader
+to exercise the stack; **playback** (`docs/PLAYBACK.md`, the Playback button
+in the dashboard header) re-shows *what the dashboard recorded* in its
+database, to study the car. Different questions, deliberately different
+tools — and replay's rows never reach the real database, so a replayed
+session is never something playback could mistake for a drive.
+
 ## Quick start
 
 ```bash

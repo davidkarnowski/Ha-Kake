@@ -182,6 +182,20 @@ and the raw `balancing` list.
 
 ## Dashboard and Tile Studio
 
+**Two page modes.** In *live* mode `poll()` fetches `/api/status` and
+`/api/history` once a second and fans them out to five sinks — `updateTrend`,
+`updateDash`, `updateSparkline`, `TileStudio.update`, `TileStudio.history`.
+In *playback* mode `poll()` stands down and `renderFrame(k)` feeds the same
+five sinks from a window of stored frames (`/api/playback/frames`), so no tile
+knows the difference; the clock is `web/static/playback.js`, a pure transport
+(seek / play / speed / step / jump, node-tested) ticked from one
+`requestAnimationFrame` loop. The timeline is a page-level card above the
+tile grid — no `data-tile`, no profile entry, so it exists for every vehicle —
+shown only in that mode. Recorded frames carry `playback: true`: the status
+dot never calls them stale, the adapter badge says "recorded", and
+`TileStudio.runAlerts` ignores them unless the timeline's alerts box is
+ticked. `docs/PLAYBACK.md`.
+
 `web/templates/index.html` (no framework) is rendered with the active
 profile's chrome: the page title and header subtitle come from `TITLE`, the
 wordmark silhouette from `LOGO` (`leaf_ze0` sets `"leaf"`; a profile without
