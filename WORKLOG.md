@@ -1040,3 +1040,13 @@ one; the owner's checks are `--adapter sim` with `fault.cell_degraded` (one
 red pair on the deviation scale), the real database in Playback (pick an
 afternoon, scrub, every tile follows), and the cell log on USB in the parked
 car (the `lbc02` age staying under a second, rows growing per cycle).
+
+**Same day, after the owner's first browser test** (the pane is there, the
+model is not, in live and playback alike): the page declares the layout with
+a top-level `const PACK`, which every script sees by name but which is *not*
+a `window` property — and the module checked `window.PACK`, found nothing,
+and never built. The spike never met this because it was one script. The
+page now publishes `window.PACK = PACK` and the module accepts either form;
+a test pins both. Also asked for and added: a marker on the strip at the
+playhead — an accent line, a triangle on each edge, the frame's clock time
+in a pill that flips left near the right edge.

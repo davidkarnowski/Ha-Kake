@@ -34,9 +34,13 @@ const colorCache = new Map();
 // ── build once ────────────────────────────────────────────────────────────
 function build(root) {
   const host = root.querySelector('#pack3d');
-  if (!host || !window.PACK || !window.PackLayout || state.built) return;
+  // The page declares the layout with a top-level `const PACK`, which other scripts
+  // see by name but which is NOT a window property; the page also assigns
+  // window.PACK, and this reads whichever is there so a stale page still works.
+  const pack = (typeof window.PACK !== 'undefined' && window.PACK) || (typeof PACK !== 'undefined' ? PACK : null);
+  if (!host || !pack || !window.PackLayout || state.built) return;
   if (!host.clientWidth) return;                       // hidden tile: wait for tiles:applied
-  const PACK = window.PACK, M = PACK.module, C = PACK.case;
+  const PACK = pack, M = PACK.module, C = PACK.case;
   ({ bodies } = PackLayout.bodies(PACK));
   state.host = host; state.note = root.querySelector('#pack3d-note');
 

@@ -172,8 +172,12 @@ def test_importmap_precedes_the_pack3d_module_and_the_page_hands_it_records(page
     assert '"three":"/static/vendor/three/three.module.min.js"' in page
     assert "if (window.Pack3D) Pack3D.render(document, data); else window.__pack3dPending = data;" in page
     assert "const PACK = " in page
+    # a top-level const is not a window property — the module could see nothing and never
+    # built (2026-09-08, the owner's first browser check); the page must publish it
+    assert "window.PACK = PACK;" in page
     js = read(os.path.join(STATIC, "pack3d.js"))
     assert "window.Pack3D = { render, setOpts, dispose };" in js
+    assert "typeof window.PACK !== 'undefined' && window.PACK" in js
     assert 'id="pack3d-labels"' not in read(os.path.join(TEMPLATES, "tiles", "pack3d.html"))  # class, never an id
 
 

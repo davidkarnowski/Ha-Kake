@@ -149,6 +149,14 @@ def test_recorded_frames_are_never_stale_and_alerts_are_gated():
     assert len(re.findall(r"['\"]/api/", ts)) == 3               # still only the DEFAULTS routes
 
 
+def test_strip_marks_the_playhead_with_a_triangle_and_the_clock_time():
+    page = read(INDEX)
+    strip = page[page.index("function drawStrip()"):page.index("(function initTimeline()")]
+    assert "g.moveTo(X - 5, 0); g.lineTo(X + 5, 0); g.lineTo(X, 7);" in strip     # marker on the top edge
+    assert "toLocaleTimeString()" in strip and "measureText(label)" in strip      # the time in a pill
+    assert "X + 8 + tw > W - pad ? X - 8 - tw : X + 8" in strip                   # flips near the right edge
+
+
 def test_timeline_css_lives_in_hakake_only():
     css = read(os.path.join(STATIC, "hakake.css"))
     for sel in (".timeline {", ".tl-transport button.on", "#tl-strip {", ".tiles-btn.on"):

@@ -892,6 +892,7 @@ const CIRC = 2 * Math.PI * 85; // gauge circumference
 const STALE_AFTER_SEC = 90;    // dot turns yellow if no new reading within this
 const LOGO_LEVEL = {{ veh.get('level_key', 'soc') | tojson }};  // state key the wordmark fills with, or null
 const PACK = {{ veh.get('pack') | tojson }};  // the profile's physical pack layout for the 3D tile, or null
+window.PACK = PACK;   // a top-level const is not a window property; the pack3d module reads it from there
 const IDLE_A = 0.6, IDLE_KW = 0.25;  // LBC current sensors wander about 0.5 A around zero; below this is idle
 
 // Power smoothing (EMA)
@@ -1521,8 +1522,19 @@ function drawStrip() {
   g.fillStyle = 'rgba(224,230,240,0.35)';
   PB.cellsAt.forEach(k => g.fillRect(x(PB.times[k]) - 0.5, H - pad - 3, 1, 3));
   if (brush) { g.fillStyle = 'rgba(79,195,247,0.18)'; g.fillRect(x(brush[0]), pad, x(brush[1]) - x(brush[0]), H - 2 * pad); }
+  // the playhead: an accent line, a marker triangle on the top edge, and the frame's
+  // clock time in a pill beside it (flipped to the left near the right edge)
   const k = PB.transport.state().k;
-  if (k >= 0) { g.strokeStyle = '#e0e6f0'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x(PB.times[k]), pad); g.lineTo(x(PB.times[k]), H - pad); g.stroke(); }
+  if (k >= 0) {
+    const X = x(PB.times[k]);
+    g.strokeStyle = '#4fc3f7'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(X, pad); g.lineTo(X, H - pad); g.stroke();
+    g.fillStyle = '#4fc3f7'; g.beginPath(); g.moveTo(X - 5, 0); g.lineTo(X + 5, 0); g.lineTo(X, 7); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(X - 5, H); g.lineTo(X + 5, H); g.lineTo(X, H - 7); g.closePath(); g.fill();
+    const label = new Date(PB.times[k] * 1000).toLocaleTimeString(), tw = g.measureText(label).width + 10;
+    const lx = X + 8 + tw > W - pad ? X - 8 - tw : X + 8;
+    g.fillStyle = 'rgba(10, 14, 23, 0.85)'; g.fillRect(lx, 4, tw, 14);
+    g.fillStyle = '#e0e6f0'; g.fillText(label, lx + 5, 14);
+  }
   g.fillStyle = '#4caf50'; g.fillText('SOC', pad + 2, 12);
   g.fillStyle = '#4fc3f7'; g.fillText(`pack A (±${aMax.toFixed(0)})`, pad + 30, 12);
 }
