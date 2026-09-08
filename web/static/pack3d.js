@@ -21,7 +21,8 @@
 // coloured by its own reading) give it the shape of the real pack. Labels are
 // DOM elements tracked by CSS2DRenderer, so they use the dashboard's own fonts.
 // Clicking a pair pins its module — a glowing box, a bobbing pin and a label —
-// and opens a side pane with both pairs of that module. Pairs are numbered 1–96
+// and opens a side pane with both pairs of that module and the module's own
+// spread and average; clicking a sensor ball does the same for that sensor. Pairs are numbered 1–96
 // on screen, the service manual's count; `cells[i]` and every index here stay 0-based.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -36,7 +37,7 @@ const EDGE_RADIUS = 6;                                   // mm, the real module'
 
 const state = {
   built: false, opts: Object.assign({}, DEFAULT_OPTS), rest: null, playback: false,
-  hover: -1, pinned: -1, last: null, host: null, note: null, pane: null,
+  hover: -1, pinned: -1, hoverSensor: -1, pinnedSensor: -1, last: null, host: null, note: null, pane: null,
   flashing: [],                        // [{i, base, to}] — the lowest → white, the highest → blue, thresholds likewise
   expanded: false, baseH: null,
 };
@@ -151,7 +152,7 @@ function build(root) {
       const m = new THREE.MeshStandardMaterial({ color: 0x8a94a8, emissive: 0x222222, roughness: 0.5 });
       const sp = new THREE.Mesh(g, m); sp.position.set(s.x, s.y, s.z); scene.add(sp);
       const l = mkLabel(s.n, 'sensor'); l.position.set(s.x, s.y + 16, s.z); scene.add(l);
-      return { n: s.n, mesh: sp, label: l };
+      return { n: s.n, where: s.where || '', mesh: sp, label: l, f: null, c: null, css: null };
     });
   }
 
@@ -221,14 +222,24 @@ function paintSensors(data) {
     const v = tf[i];
     if (v == null) { s.label.element.textContent = s.n; s.mesh.material.color.set(0x8a94a8); return; }
     const t = hi - lo < 1 ? 0.5 : (v - lo) / (hi - lo);           // 1 = hottest
-    const c = cssColor(Tiles.cellColor(1 - t, 0, 1));            // cellColor: 0 red … 1 blue
+    const css = Tiles.cellColor(1 - t, 0, 1), c = cssColor(css);  // cellColor: 0 red … 1 blue
     s.mesh.material.color.copy(c); s.mesh.material.emissive.copy(c).multiplyScalar(0.3);
-    s.label.element.textContent = `${s.n} ${v.toFixed(1)} °F · ${((v - 32) * 5 / 9).toFixed(1)} °C`;
+    s.f = v; s.c = (v - 32) * 5 / 9; s.css = css;
+    s.label.element.textContent = `${s.n} ${v.toFixed(1)} °F · ${s.c.toFixed(1)} °C`;
     s.label.element.classList.toggle('hot', vals.length > 1 && v === hi);
   });
+  state.tempMeanF = vals.length ? (state.last.temp_avg_f != null ? state.last.temp_avg_f : vals.reduce((a, b) => a + b, 0) / vals.length) : null;
 }
 function readout(i, cells, f) {
   const note = state.note; if (!note) return;
+  const sj = state.hoverSensor >= 0 ? state.hoverSensor : (i < 0 ? state.pinnedSensor : -1);
+  if (sj >= 0 && sensors[sj]) {
+    const s = sensors[sj]; hoverBox.visible = false;
+    note.innerHTML = s.f == null ? `sensor <b>${s.n}</b> · ${s.where} · no reading yet`
+      : `sensor <b>${s.n}</b> · <b style="color:${s.css}">${s.f.toFixed(1)} °F</b> · ${s.c.toFixed(1)} °C` +
+        (state.tempMeanF != null ? ` · ${sign(s.f - state.tempMeanF)} °F vs pack mean` : '') + ` · ${s.where}` + (state.pinnedSensor === sj ? ' · pinned' : '');
+    return;
+  }
   if (i < 0 || !bodies[i]) {
     hoverBox.visible = false;
     note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a pair, click to pin`;
@@ -242,11 +253,19 @@ function readout(i, cells, f) {
   hoverBox.visible = state.hover === i;
   hoverBox.position.set(b.cx, b.cy, b.cz); hoverBox.scale.set(b.sx + 4, b.sy + 4, b.sz + 4);
 }
-const sign = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(0);
+const sign = (v, d = 0) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4) % 4] || 'th');
 // the pinned module: the marker in the scene and the side pane with both of its pairs
 function paintSelection(cells, f, sc) {
-  const i = state.pinned;
+  const i = state.pinned, sj = state.pinnedSensor;
+  if (sj >= 0 && sensors[sj]) {
+    const s = sensors[sj], pos = s.mesh.position;
+    selBox.visible = selPin.visible = selLabel.visible = true;
+    selBox.position.copy(pos); selBox.scale.set(44, 44, 44);
+    selPin.position.set(pos.x, pos.y + 70, pos.z); selLabel.position.set(pos.x, pos.y + 106, pos.z);
+    selLabel.element.textContent = s.f == null ? `sensor ${s.n}` : `sensor ${s.n} · ${s.f.toFixed(1)} °F`;
+    paintSensorPane(sj); return;
+  }
   if (i < 0 || !bodies[i]) { selBox.visible = selPin.visible = selLabel.visible = false; state.pane.hidden = true; return; }
   const b = bodies[i], md = modules[b.m];
   selBox.visible = selPin.visible = selLabel.visible = true;
@@ -272,30 +291,74 @@ function paintPane(i, cells, f, sc) {
         <span>rank</span><b>${ordinal(rank)} lowest${rank === 1 ? ' ⚑' : rank === cells.length ? ' ▲' : ''}</b>
         <span>balancing</span><b>${bal ? 'yes' : '—'}</b></div></div>`;
   };
+  // the module as a whole: its two pairs' spread and average, ranked among the 48
+  const v0 = cells[b.m * 2], v1 = cells[b.m * 2 + 1], avg = (v0 + v1) / 2, spread = Math.abs(v0 - v1);
+  const modAvgs = modules.map(md => (cells[md.m * 2] + cells[md.m * 2 + 1]) / 2);
+  const modRank = modAvgs.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).findIndex(x => x[1] === b.m) + 1;
+  const modSpreads = modules.map(md => Math.abs(cells[md.m * 2] - cells[md.m * 2 + 1]));
+  const spreadRank = modSpreads.map((v, k) => [v, k]).sort((a, c) => c[0] - a[0]).findIndex(x => x[1] === b.m) + 1;
+  const modHtml = `<div class="pack3d-pane-mod"><div class="k">module ${b.m + 1} — both pairs</div>
+      <div class="two"><div><div class="k">spread</div><div class="v">${spread}<small>mV</small></div></div>
+        <div><div class="k">average</div><div class="v" style="color:${pairCss(avg, f, b.i, sc)}">${avg.toFixed(0)}<small>mV</small></div></div></div>
+      <div class="rows"><span>average vs pack</span><b>${sign(avg - f.mean)} mV</b>
+        <span>average rank</span><b>${ordinal(modRank)} lowest of ${modules.length}</b>
+        <span>spread rank</span><b>${ordinal(spreadRank)} widest of ${modules.length}</b></div></div>`;
   pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${bodies.length / 2}</b><span>${b.loc}</span>
       <button class="pack3d-pane-close" title="unpin">×</button></div>
-    ${pair(b)}${pair(sib)}
+    ${pair(b)}${pair(sib)}${modHtml}
     <div class="pack3d-pane-foot">pack ${f.min}–${f.max} mV · spread ${(f.max - f.min).toFixed(0)} · mean ${f.mean.toFixed(0)}` +
     (b.verify ? ` · <span class="verify" title="${b.verify}">stack order assumed</span>` : '') + `</div>`;
   pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinned = -1; paint(); });
+  pane.hidden = false;
+}
+// a pinned temperature sensor: its reading, large and in its colour, against the other three
+function paintSensorPane(sj) {
+  const pane = state.pane, s = sensors[sj]; if (!pane || !s) return;
+  const withF = sensors.filter(x => x.f != null), order = withF.slice().sort((a, b) => b.f - a.f);
+  const rank = order.indexOf(s) + 1, mean = state.tempMeanF;
+  const spreadF = withF.length > 1 ? Math.max(...withF.map(x => x.f)) - Math.min(...withF.map(x => x.f)) : 0;
+  const main = s.f == null ? `<div class="pack3d-pane-pair on"><div class="k">no reading yet</div></div>`
+    : `<div class="pack3d-pane-pair on" style="border-left-color:${s.css}">
+        <div class="k">reading</div>
+        <div class="v" style="color:${s.css}">${s.f.toFixed(1)}<small>°F</small></div>
+        <div class="rows"><span>celsius</span><b>${s.c.toFixed(1)} °C</b>
+          <span>vs pack mean</span><b>${mean == null ? '—' : sign(s.f - mean, 1) + ' °F'}</b>
+          <span>rank</span><b>${rank === 1 ? 'hottest' : rank === withF.length ? 'coolest' : ordinal(rank) + ' hottest'} of ${withF.length}</b></div></div>`;
+  const others = `<div class="pack3d-pane-mod"><div class="k">all four sensors</div><div class="rows">` +
+    sensors.map(x => `<span>${x.n} <small>${x.where}</small></span><b style="color:${x.css || 'inherit'}">${x.f == null ? '—' : x.f.toFixed(1) + ' °F · ' + x.c.toFixed(1) + ' °C'}</b>`).join('') + `</div></div>`;
+  pane.innerHTML = `<div class="pack3d-pane-head"><b>Sensor ${s.n}</b><span>${s.where}</span>
+      <button class="pack3d-pane-close" title="unpin">×</button></div>${main}${others}
+    <div class="pack3d-pane-foot">pack mean ${mean == null ? '—' : mean.toFixed(1) + ' °F · ' + ((mean - 32) * 5 / 9).toFixed(1) + ' °C'} · spread ${spreadF.toFixed(1)} °F</div>`;
+  pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinnedSensor = -1; paint(); });
   pane.hidden = false;
 }
 
 // ── interaction ──────────────────────────────────────────────────────────
 function hookPointer(host) {
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+  // returns {pair: i} or {sensor: j} or null — the nearest of the bodies and the sensor balls
   const pick = e => {
     const r = renderer.domElement.getBoundingClientRect();
     ptr.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ptr, camera);
-    const h = ray.intersectObjects(groups.map(g => g.mesh), false);
-    if (!h.length) return -1;
+    const h = ray.intersectObjects([...groups.map(g => g.mesh), ...sensors.map(s => s.mesh)], false);
+    if (!h.length) return null;
+    const sj = sensors.findIndex(s => s.mesh === h[0].object);
+    if (sj >= 0) return { sensor: sj };
     const g = groups.find(x => x.mesh === h[0].object);
-    return g ? g.ids[h[0].instanceId] : -1;
+    return g ? { pair: g.ids[h[0].instanceId] } : null;
   };
-  renderer.domElement.addEventListener('pointermove', e => { const i = pick(e); if (i !== state.hover) { state.hover = i; paint(); } });
-  renderer.domElement.addEventListener('pointerleave', () => { state.hover = -1; paint(); });
-  renderer.domElement.addEventListener('click', e => { const i = pick(e); if (i < 0) return; state.pinned = (i === state.pinned) ? -1 : i; paint(); });
+  renderer.domElement.addEventListener('pointermove', e => {
+    const p = pick(e), i = p && p.pair != null ? p.pair : -1, sj = p && p.sensor != null ? p.sensor : -1;
+    if (i !== state.hover || sj !== state.hoverSensor) { state.hover = i; state.hoverSensor = sj; paint(); }
+  });
+  renderer.domElement.addEventListener('pointerleave', () => { state.hover = -1; state.hoverSensor = -1; paint(); });
+  renderer.domElement.addEventListener('click', e => {
+    const p = pick(e); if (!p) return;
+    if (p.sensor != null) { state.pinnedSensor = (p.sensor === state.pinnedSensor) ? -1 : p.sensor; state.pinned = -1; }
+    else { state.pinned = (p.pair === state.pinned) ? -1 : p.pair; state.pinnedSensor = -1; }
+    paint();
+  });
 }
 // the corner tools: auto-rotate, expand to double height (a real gridstack resize,
 // persisted), and help

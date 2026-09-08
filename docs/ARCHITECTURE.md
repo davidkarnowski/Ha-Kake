@@ -233,8 +233,8 @@ constant the template writes, turns it into 96 bodies through the pure
 `Pack3D.render(document, data)` each poll, parking the record in
 `window.__pack3dPending` when the module has not finished loading (module
 scripts are deferred). Tile Studio gives such tiles three small hooks:
-`TileStudio.opts(id)`, `TileStudio.enabled(id)`, and `TileStudio.menuExtra(id, fn)`
-to add tile-specific rows to the ⋯ menu, plus a `tiles:applied` DOM event after
+`TileStudio.opts(id)`, `enabled(id)`, `tile(id)`, `size(id, w, h)`, `setOpt(id, key, value)`,
+and `menuExtra(id, fn)` to add tile-specific rows to the ⋯ menu, plus a `tiles:applied` DOM event after
 every layout change so the tile can re-read its opts and re-measure. See
 `docs/PACK3D.md`.
 `web/static/tilestudio.js` owns everything configurable:

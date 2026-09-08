@@ -1101,3 +1101,15 @@ voltages; every pair under the first breathes white, every pair over the
 second breathes blue, the counts shown on the readout line. The flash
 machinery is now one set of (pair, base colour, target) rather than two fixed
 slots, and the lowest / highest flashes are just its first two entries.
+
+**Fourth round** (same day): the temperature sensors are selectable — hover
+reads one out, click pins it with the same marker a module gets and opens a
+pane with its reading large and in its colour, °C, the difference from the
+pack mean, its rank among the four, where it sits, and all four listed. The
+module pane gained a section under the two pairs: the module's own spread and
+average, large, the average ranked among the 48 and the spread ranked
+widest-first. Cleanup found on the way: the tile drew the sensors from the
+temperature item without declaring it, so with the temperature tile off the
+balls would have gone blank — `lbc04` is now in its items and the sensor
+signals in its alert list; the ARCHITECTURE hook list and the CLAUDE.md §6
+row were behind and are current.

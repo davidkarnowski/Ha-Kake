@@ -73,8 +73,8 @@ TILES = [
      "signals": ["capacity_ah", "soh"]},
     {"id": "cells",       "name": "Cell pairs",             "items": ["lbc02", "lbc06"],
      "signals": ["cell_min", "cell_max", "cell_avg", "cell_spread"]},
-    {"id": "pack3d",      "name": "Battery pack (3D)",      "items": ["lbc02", "lbc06"],
-     "signals": ["cell_min", "cell_max", "cell_avg", "cell_spread"]},
+    {"id": "pack3d",      "name": "Battery pack (3D)",      "items": ["lbc02", "lbc06", "lbc04"],
+     "signals": ["cell_min", "cell_max", "cell_avg", "cell_spread", "temp_avg_f", "temps_f.0", "temps_f.1", "temps_f.2", "temps_f.3"]},
 ]
 DEFAULT_SPAN = {"soc": 4, "health": 5, "temps": 3, "vehicle": 4, "tires": 4, "climate": 4,
                 "body": 4, "power": 12, "history": 12, "degradation": 12, "cells": 12, "pack3d": 12}
@@ -219,10 +219,10 @@ PACK_LAYOUT = [
 # table gives: 1 rear block centre-back, 2 right side under the front right
 # seat, 3 left side under the rear left floor, 4 rear block right end.
 PACK_SENSORS = [
-    {"n": "T1", "x": -770, "y": 131, "z": 0},
-    {"n": "T2", "x": 491,  "y": 172, "z": 431},
-    {"n": "T3", "x": -268, "y": 102, "z": -431},
-    {"n": "T4", "x": -603, "y": 131, "z": 435},
+    {"n": "T1", "x": -770, "y": 131, "z": 0,    "where": "rear block, centre back — usually the hottest"},
+    {"n": "T2", "x": 491,  "y": 172, "z": 431,  "where": "right side, under the front passenger seat"},
+    {"n": "T3", "x": -268, "y": 102, "z": -431, "where": "left side, under the rear driver's footwell"},
+    {"n": "T4", "x": -603, "y": 131, "z": 435,  "where": "rear block, passenger-side end"},
 ]
 
 SIGNALS = {

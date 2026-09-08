@@ -149,5 +149,5 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Adapter won't talk | `elm327.py` header comments, README "Hardware" |
 | Add another vehicle? | `vehicles/__init__.py` contract docstring; `vehicles/lancer_2009.py` is the minimal example |
 | Simulate the car / drive the cockpit | `docs/SIMULATOR.md`; `python web/app.py --adapter sim`, then `/sim`; the core's interface is `docs/SIMULATOR_CONTRACT.md` |
-| Where is cell pair N in the pack? | `docs/PACK3D.md`; the table is `PACK_LAYOUT` in `vehicles/leaf_ze0.py` (partly assumed — it says which rows) |
+| Where is cell pair N in the pack? | `docs/PACK3D.md`; the table is `PACK_LAYOUT` in `vehicles/leaf_ze0.py` (sections verified against the service manual; the order inside a stack is assumed and says so) |
 | Replay a recorded afternoon on the dashboard | `docs/PLAYBACK.md`; the Playback button in the header, `?playback=1&from=&to=` for a link; frames come from `Store.frames()` |

@@ -37,13 +37,18 @@ any other tile setting.
 
 **In the viewport.** The four balls are the pack's temperature sensors
 (T1–T4); each is coloured on the pack's own range — hottest red, coolest
-blue — and labelled with its reading in °F and °C. Hover a pair for its
-readout on the line below; **click a pair** to pin its module — a glowing
-box round the whole module, a pin bobbing above it and a label, so it can
-be found from any angle — and open a side pane with both pairs of that
-module, larger: each voltage in the pair's own colour (the grid's), deviation
+blue — and labelled with its reading in °F and °C. Hover a pair or a sensor
+for its readout on the line below; **click a pair** to pin its module — a
+glowing box round the whole module, a pin bobbing above it and a label, so
+it can be found from any angle — and open a side pane: both pairs of that
+module, larger, each voltage in the pair's own colour (the grid's), deviation
 from the mean, drop from rest, rank in the pack (1st lowest ⚑, highest ▲),
-and whether the BMS is balancing it. The corner tools: `⟳` auto-rotates,
+whether the BMS is balancing it; then the module as a whole — its two pairs'
+spread and average, large, with the average ranked among the 48 modules and
+the spread ranked widest-first. **Click a sensor** for the same treatment:
+its reading large and in its colour, °C, the difference from the pack mean,
+its rank among the four, where it sits, and all four sensors listed. The
+tile polls the temperatures (`lbc04`) for this. The corner tools: `⟳` auto-rotates,
 `⤢` doubles the tile's height (a real resize, remembered with the layout),
 `?` holds the pointer help. The bodies have the rounded edges of the real
 module (6 mm).

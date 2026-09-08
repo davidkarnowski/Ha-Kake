@@ -57,14 +57,15 @@ def test_leaf_declares_a_pack_layout_covering_every_pair_once():
     assert [(g[0], g[1], g[3]) for g in groups] == [(True, False, 2), (True, False, 2), (True, True, 4), (True, True, 4),
                                                     (False, True, 4), (False, True, 4), (False, False, 2), (False, False, 2)]
     assert all(s["verify"] for s in v.PACK_LAYOUT[1:]), "the stack order inside a group is still assumed"
-    assert [s["n"] for s in v.PACK_SENSORS] == ["T1", "T2", "T3", "T4"]
+    assert [s["n"] for s in v.PACK_SENSORS] == ["T1", "T2", "T3", "T4"] and all(s["where"] for s in v.PACK_SENSORS)
 
 
 def test_pack3d_tile_shares_the_cell_grid_items_and_has_a_default_height():
     v = get_vehicle("leaf_ze0")
     tile = next(t for t in v.TILES if t["id"] == "pack3d")
     cells = next(t for t in v.TILES if t["id"] == "cells")
-    assert tile["items"] == cells["items"] and tile["signals"] == cells["signals"]
+    assert set(cells["items"]) < set(tile["items"]) and "lbc04" in tile["items"]      # the sensors need the temperatures
+    assert set(cells["signals"]) < set(tile["signals"]) and "temp_avg_f" in tile["signals"]
     assert v.DEFAULT_SPAN["pack3d"] == 12
     default = next(t for t in v.DEFAULT_TILES if t["id"] == "pack3d")
     assert default["h"] == 12                      # a canvas cannot be auto-measured
@@ -192,6 +193,9 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "slot[i] = { g: groups.length, k }" in js                          # one instanced mesh per body size
     assert 'style="color:${css}"' in js                                        # the pane's voltages in the pair's colour
     assert "selBox" in js and "selPin" in js and "selLabel" in js             # the pinned module's marker
+    assert "function paintSensorPane(sj)" in js and "state.pinnedSensor" in js  # sensors are selectable too
+    assert "...sensors.map(s => s.mesh)" in js                                  # and picked by the raycast
+    assert 'class="pack3d-pane-mod"' in js and "spread rank" in js             # the module's own section
     assert "TileStudio.setOpt('pack3d', 'spin', on)" in js and "auto-rotate" not in js.split("menuExtra('pack3d'")[1]
     with open(os.path.join(ROOT, "web", "templates", "tiles", "pack3d.html")) as f:
         html = f.read()
