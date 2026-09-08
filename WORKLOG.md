@@ -948,3 +948,95 @@ seams; 751 tests, privacy sweep clean. Browser check again the owner's.
 
 **Owner's browser check passed** (same day): the slider, the beat and the
 flash behave as described; merged to `main` and pushed.
+
+### The pack in three dimensions, and the dashboard replaying itself  2026-09-08
+
+Branch `feature/pack3d-playback`, five commits. Three things the owner asked
+for in one breath, because together they answer one question: which cell
+pairs go weak *under load*, and where in the pack are they.
+
+**The 3D pack tile.** The cell grid says which pair is low; the new tile
+says where it sits — the 24-module block on edge under the rear seat, the
+flat stacks either side of the floor — every measured pair its own body,
+coloured by voltage, in a viewport you orbit, zoom and pan; hover reads a
+pair out, click pins it. No CAD file: the geometry is data in the profile
+(`PACK_MODULE`, `PACK_CASE`, `PACK_LAYOUT`, `PACK_SENSORS`), turned into 96
+boxes by a pure `pack_layout.js` (node-tested) and drawn by `pack3d.js` with
+three.js — one instanced mesh, one colour per instance, module outlines,
+terminal studs, a translucent case, DOM labels tracked in 3D. three.js ships
+as ES modules only, so it is vendored under `web/static/vendor/three/` (MIT,
+credited in NOTICE) and the tile is the page's first module script, reached
+through an import map and talking to the classic scripts via `window.Pack3D`.
+Three colour scales from the ⋯ menu: deviation from the pack mean (the
+default — under load every pair sags, this shows who sags more), the grid's
+own absolute scale (`cellColor` moved into `tiles.js` so both agree), and
+drop from the pair's own rest voltage. Tile Studio grew the three hooks a
+self-drawing tile needs (`opts`, `enabled`, `menuExtra`) and a `tiles:applied`
+event. The spike that preceded it had one bug worth recording: a select
+sharing an id with the label layer, so the label renderer resized the select.
+Label layers are classes now, and a test says so.
+
+**Where each pair is — partly assumed.** The three sections and their
+counts are published; a 2013 teardown gives the floor as "2-high packs of 4
+and 4-high packs of 8" per side; one forum post with a 2013+ diagram gives
+the series order rear → driver → passenger. Nobody has published the order
+inside a section, which floor stacks are 2-high front-to-back, or confirmed
+any of it on a 2011–12 car. Every `PACK_LAYOUT` row carries a `verify` note,
+the tile marks such pairs in its readout, `docs/SIGNALS.md` ("Cell order in
+the pack") and `docs/PACK3D.md` say exactly which rows are which, and
+`validate_profile` checks the table covers 0–95 once. The service manual's
+EVB-67 figure settles it; that is a one-figure lookup for the owner.
+
+**Playback.** A Playback button in the header stops the live poll, raises a
+PLAYBACK badge and opens a timeline above the tiles: sessions (gaps of ten
+minutes in the data — the `sessions` table has no epoch and an open row for
+every crash), a strip of SOC and pack current with a tick where cells were
+read, a playhead, ⟨ frame / ▶ / frame ⟩, ±10 s and ±1 min, ½× to 60×, space
+and the arrows; click seeks, drag zooms into a stretch and re-fetches it at
+full resolution. The page keeps one paint path: live `poll()` fans two
+fetches out to five sinks, playback's `renderFrame(k)` feeds the same five
+from `records[k]` and `hist[0..k]`, so no tile has a playback branch — the
+3D pack simply resets its rest voltages at the first frame of a window.
+`Store.frames()` rebuilds the `/api/status` shape from rows (extra bag,
+columns, temperature lists and °F twins from the °C columns, cells joined
+in one query), thins to the last *real* row per bucket — never an average,
+a frame is a state — and marks each `playback: true`; the status dot says
+"Recorded", the adapter badge "recorded", and alerts stay silent unless the
+timeline's box is ticked, the engine forgetting its hysteresis on every mode
+switch. The clock (`playback.js`) lives in the browser on purpose: the reader
+may be live on the car while two browsers scrub two different afternoons.
+`?playback=1&from=&to=` links a moment. Lost on the way back and named as
+such: `adapter_port`, the readings counter, the raw balancing list.
+
+**The cell log.** Cells were stored once per 20 s; an acceleration lasts
+three to eight seconds. `opts.celllog` on the cell grid or the 3D pack is
+the first tile option that changes *how often* rather than *whether*:
+`period_overrides()` puts `lbc02` in the fast lane, `Reader.period()`
+consults it before the profile, and the main loop stores a row for every
+fresh read — a `cells_seq` counter marks freshness, which also stopped the
+sticky cache being written as four identical cell sets between real reads.
+Same read-only request, more often; a CELL LOG badge because it costs
+~1.3 s a cycle on BLE and 96 rows a cycle.
+
+**Also:** the privacy sweep's VIN rule tripped on four 17-digit float
+literals inside three.js (0.15915494309189535 is 1/2π). A real VIN carries
+letters, so the rule now excludes all-digit runs rather than exempting the
+vendor directory; vendored code stays scanned.
+
+Docs in the same commits: README (status, tiles table, API table, repository
+layout, quick start, licence), ARCHITECTURE (tiles, page modes, data model,
+scheduler, vendoring), SIGNALS, ROADMAP, CLAUDE §5/§6, NOTICE, REPLAY (replay
+is not playback), and two new pages, `docs/PACK3D.md` and `docs/PLAYBACK.md`.
+
+790 tests (thirty-nine added: the vendored files and their licence, the
+profile's coverage of 0–95, the geometry and scales from node, the page
+wiring, frames' round-trip fidelity against every key the tiles read,
+last-of-bucket thinning with cells, gap-derived sessions, the routes and
+the demo path list, the transport from node, the timeline outside the grid,
+the alerts gate, the period override on a scripted clock, and every fresh
+cell read stored under the log with unchanged cells stored once without it).
+Privacy sweep clean. Not yet seen in a browser — the assistant cannot open
+one; the owner's checks are `--adapter sim` with `fault.cell_degraded` (one
+red pair on the deviation scale), the real database in Playback (pick an
+afternoon, scrub, every tile follows), and the cell log on USB in the parked
+car (the `lbc02` age staying under a second, rows growing per cycle).
