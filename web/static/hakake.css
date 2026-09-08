@@ -100,3 +100,10 @@ body {
 .tl-x { font: 600 0.85em ui-monospace, Menlo, monospace; color: var(--accent); min-width: 3ch; }
 .tl-note { font-size: 0.75em; color: var(--dim); margin-left: auto; }
 .tiles-btn.on { border-color: var(--accent); color: var(--accent); }
+/* docked: the timeline floats over the page, locked to the bottom (default) or the top */
+.timeline.dock-bottom, .timeline.dock-top { position: fixed; left: 12px; right: 12px; z-index: 60; margin: 0; padding: 10px 16px 10px;
+                                            background: rgba(17, 24, 39, .96); backdrop-filter: blur(6px); }
+.timeline.dock-bottom { bottom: 8px; box-shadow: 0 -10px 30px rgba(0, 0, 0, .55); }
+.timeline.dock-top { top: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .55); }
+.timeline.dock-bottom #tl-strip, .timeline.dock-top #tl-strip { height: 52px; }
+.timeline.dock-bottom .tl-head, .timeline.dock-top .tl-head { margin-bottom: 6px; }

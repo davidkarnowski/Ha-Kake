@@ -96,6 +96,8 @@ html.shot * { transition: none !important; }
 .pack3d-lbl { font: 500 11px/1 ui-monospace, Menlo, monospace; padding: 2px 4px; border-radius: 4px;
               background: rgba(10, 14, 23, .72); color: var(--text); white-space: nowrap; transform: translateY(-14px); }
 .pack3d-lbl.hot { color: var(--red); }
+.pack3d-lbl.high { color: var(--blue); }
+.pack3d-lbl.pin { font: 600 11px/1 ui-monospace, Menlo, monospace; color: #04121c; background: var(--accent); transform: translateY(-10px); }
 .pack3d-lbl.axis { font: 600 10px/1 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); background: none; }
 .pack3d-legend { position: absolute; left: 10px; bottom: 8px; font: 11px ui-monospace, Menlo, monospace; color: var(--dim); }
 .pack3d-legend i { display: block; width: 160px; height: 7px; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 3px; }

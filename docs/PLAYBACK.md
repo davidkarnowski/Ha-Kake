@@ -38,6 +38,10 @@ tiles:
 - **Links** — the URL updates to `?playback=1&from=<epoch>&to=<epoch>` as you
   brush, so a moment can be pasted into the worklog. With `?shot` the page
   renders that first frame once and holds it.
+- **Docked.** The timeline floats, locked to the bottom of the window by
+  default, so any tile — the 3D pack three screens down — can be watched
+  while the transport stays in reach. *Dock top* moves it to the top, *in
+  the page* puts it back above the tiles; the choice is remembered.
 - **Back to live** resumes polling.
 
 Under `--demo` there is one canned session; under `--adapter replay` or

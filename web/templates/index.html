@@ -578,6 +578,7 @@
     <select id="tl-session" aria-label="recorded session"><option value="">loading sessions…</option></select>
     <span class="tl-clock" id="tl-clock">—</span><span class="tl-elapsed" id="tl-elapsed"></span>
     <label class="tl-alerts" title="Alert rules stay silent during playback unless you ask"><input type="checkbox" id="tl-alerts"> alerts</label>
+    <button class="tiles-btn" id="tl-dock" title="Where the timeline sits: locked to the bottom of the window, to the top, or in the page">⤒ dock top</button>
     <button class="tiles-btn" id="tl-live">Back to live</button>
   </div>
   <canvas id="tl-strip" height="72" aria-label="session strip: state of charge and pack current; drag to zoom in, click to seek"></canvas>
@@ -1416,9 +1417,27 @@ let MODE = 'live', PB = null, SESSIONS = [], pbLast = null, pbUi = '', brush = n
 const $t = id => document.getElementById(id);
 function isPlayback() { return MODE === 'playback'; }
 
+// The timeline floats: locked to the bottom of the window by default (or the top, or
+// in the page), so any tile can be watched while the transport stays in reach.
+const DOCKS = ['bottom', 'top', 'inline'];
+function dockMode() { try { const m = localStorage.getItem('hakake-timeline-dock'); return DOCKS.includes(m) ? m : 'bottom'; } catch (e) { return 'bottom'; } }
+function setDock(mode) {
+  const tl = $t('timeline');
+  tl.classList.remove('dock-bottom', 'dock-top');
+  if (mode !== 'inline') tl.classList.add('dock-' + mode);
+  try { localStorage.setItem('hakake-timeline-dock', mode); } catch (e) {}
+  $t('tl-dock').textContent = mode === 'bottom' ? '⤒ dock top' : mode === 'top' ? '⇱ in the page' : '⤓ dock bottom';
+  padForDock(); drawStrip();
+}
+function padForDock() {
+  const tl = $t('timeline'), h = tl.hidden ? 0 : tl.offsetHeight + 16;
+  document.body.style.paddingBottom = !tl.hidden && tl.classList.contains('dock-bottom') ? h + 'px' : '';
+  document.body.style.paddingTop = !tl.hidden && tl.classList.contains('dock-top') ? h + 'px' : '';
+}
 async function enterPlayback(from, to) {
   MODE = 'playback'; PB = null;
   $t('timeline').hidden = false;
+  setDock(dockMode());
   $t('playback-badge').classList.add('on');
   $t('mode-btn').classList.add('on'); $t('mode-btn').textContent = 'Live';
   window.__alertsInPlayback = $t('tl-alerts').checked;
@@ -1431,6 +1450,7 @@ async function enterPlayback(from, to) {
 function exitPlayback() {
   MODE = 'live'; PB = null; brush = null;
   $t('timeline').hidden = true;
+  padForDock();
   $t('playback-badge').classList.remove('on');
   $t('mode-btn').classList.remove('on'); $t('mode-btn').textContent = 'Playback';
   if (window.TileStudio && TileStudio.resetAlerts) TileStudio.resetAlerts();
@@ -1550,6 +1570,8 @@ function drawStrip() {
   $t('tl-session').addEventListener('change', e => { const s = SESSIONS[+e.target.value]; if (s) loadRange(s.start_epoch, s.end_epoch); });
   $t('tl-whole').onclick = () => { const s = SESSIONS[PB && PB.session >= 0 ? PB.session : 0]; if (s) loadRange(s.start_epoch, s.end_epoch); };
   $t('tl-live').onclick = exitPlayback;
+  $t('tl-dock').onclick = () => setDock(DOCKS[(DOCKS.indexOf(dockMode()) + 1) % DOCKS.length]);
+  addEventListener('resize', padForDock);
   $t('mode-btn').onclick = () => { if (isPlayback()) exitPlayback(); else enterPlayback(); };
   $t('tl-alerts').addEventListener('change', e => {
     window.__alertsInPlayback = e.target.checked;

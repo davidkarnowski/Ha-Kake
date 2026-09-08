@@ -651,6 +651,8 @@
     // a tile's current geometry, and a resize that goes through gridstack (so it persists)
     tile(id) { const t = cfg.find(x => x.id === id); return t ? { span: t.span, h: t.h, enabled: !!t.enabled } : null; },
     size(id, w, h) { const t = cfg.find(x => x.id === id); if (t) setSize(t, w, h); },
+    // one tile option set from the tile itself (the 3D pack's rotate button), saved and re-applied
+    setOpt(id, key, value) { const t = cfg.find(x => x.id === id); if (!t) return; t.opts = t.opts || {}; t.opts[key] = value; save(); applied(); },
     // forget alert hysteresis (the page calls this when it switches between live and playback)
     resetAlerts() { if (alertEngine) alertEngine.clear(); },
   };

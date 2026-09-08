@@ -1075,3 +1075,15 @@ stacks inside a footwell or seat group and bottom → top within a stack, and
 the tile's readout now says *(stack order assumed)* rather than *(position
 unverified)*. Cells 53 and 55 — the weakest in February and August — are
 MD27/MD28, under the rear driver's footwell beside the LBC.
+
+**Owner's third round** (same day): the side pane paints each voltage in
+the pair's own colour, the grid's; a pinned module gets a glowing box, a
+bobbing pin and a label, since an edge outline was not enough to find it; the
+highest pair now breathes toward blue as the lowest does toward white; the
+playback timeline floats, locked to the bottom of the window by default (or
+the top, or in the page — remembered), so the transport is in reach from any
+tile; auto-rotate is a `⟳` button on the pane itself, no longer in the menu
+(`TileStudio.setOpt()` is new for that); and the bodies have the real module's
+rounded edges — `RoundedBoxGeometry` vendored, and because a rounded box cannot
+be scaled per instance without distorting its corners, the 96 bodies are now one
+instanced mesh per body size with a slot table from pair to (mesh, instance).

@@ -162,3 +162,14 @@ def test_timeline_css_lives_in_hakake_only():
     for sel in (".timeline {", ".tl-transport button.on", "#tl-strip {", ".tiles-btn.on"):
         assert sel in css, sel
     assert ".tl-" not in read(os.path.join(STATIC, "tiles.css"))
+
+
+def test_timeline_docks_to_the_window_so_playback_can_be_driven_from_any_tile():
+    page = read(INDEX)
+    assert 'id="tl-dock"' in page
+    assert "const DOCKS = ['bottom', 'top', 'inline'];" in page and "function setDock(mode)" in page
+    assert "setDock(dockMode());" in page.split("async function enterPlayback")[1].split("}")[0]   # docked on entry
+    assert "document.body.style.paddingBottom" in page                                          # the page is not covered
+    css = read(os.path.join(STATIC, "hakake.css"))
+    assert ".timeline.dock-bottom, .timeline.dock-top { position: fixed;" in css
+    assert ".timeline.dock-bottom { bottom: 8px;" in css and ".timeline.dock-top { top: 8px;" in css

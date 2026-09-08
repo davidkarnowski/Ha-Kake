@@ -65,7 +65,8 @@ moves it to every cycle and stores every read, for drive logs.
 
 The 3D pack tile places each of the 96 pairs in the car
 (`PACK_LAYOUT` in `vehicles/leaf_ze0.py`, described in `docs/PACK3D.md`).
-Indices here are the dashboard's 0-based pair numbers; LeafSpy shows +1.
+Indices here are the dashboard's 0-based pair numbers; the service manual counts
+the same pairs 1–96 (the tile shows that as № n+1).
 
 - **Verified — the ZE0 service manual, page EVB-20** (November 2010
   edition, April 2011 revision), as quoted by RegGuheert on mynissanleaf,

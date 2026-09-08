@@ -26,7 +26,7 @@ def test_three_is_vendored_with_license():
     never a CDN, because the car has no internet."""
     d = os.path.join(VENDOR, "three")
     assert os.path.getsize(os.path.join(d, "three.module.min.js")) > 400_000
-    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js"):
+    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js", "addons/geometries/RoundedBoxGeometry.js"):
         assert os.path.exists(os.path.join(d, rel)), rel
     with open(os.path.join(d, "LICENSE")) as f:
         assert "MIT" in f.read()
@@ -39,7 +39,7 @@ def test_three_is_vendored_with_license():
 def test_three_addons_parse_as_modules():
     """`node --check` reads .js as CommonJS; the addons are ES modules, so they are
     checked from stdin with --input-type=module. Each must import from 'three' only."""
-    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js"):
+    for rel in ("addons/controls/OrbitControls.js", "addons/renderers/CSS2DRenderer.js", "addons/geometries/RoundedBoxGeometry.js"):
         with open(os.path.join(VENDOR, "three", rel)) as f:
             src = f.read()
         r = subprocess.run(["node", "--input-type=module", "--check"], input=src, capture_output=True, text=True)

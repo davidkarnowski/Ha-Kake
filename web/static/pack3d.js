@@ -11,28 +11,37 @@
 // scripts are deferred, the first record may arrive before this file runs, and
 // updateDash parks it in window.__pack3dPending for us to pick up.
 //
-// Geometry: 48 modules as boxes from the profile's PACK_LAYOUT, each split into
-// two half-slabs (one per measured cell pair) in a single InstancedMesh whose
-// per-instance colour is the pair's voltage on the chosen scale. A translucent
+// Geometry: 48 modules from the profile's PACK_LAYOUT, each split into two
+// half-slabs (one per measured cell pair) with the rounded edges of the real
+// module. A rounded box cannot be scaled per instance without distorting its
+// corners, so there is one InstancedMesh per body size (the flat halves, the
+// on-edge halves) and a slot table maps a pair index to (mesh, instance).
+// Per-instance colour is the pair's voltage on the chosen scale. A translucent
 // case, module outlines, terminal studs and the four temperature sensors (each
 // coloured by its own reading) give it the shape of the real pack. Labels are
 // DOM elements tracked by CSS2DRenderer, so they use the dashboard's own fonts.
-// Clicking a pair pins it and opens a side pane with both pairs of its module.
+// Clicking a pair pins its module — a glowing box, a bobbing pin and a label —
+// and opens a side pane with both pairs of that module.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 const VIEWS = { iso: [1500, 1300, 1700], top: [1, 2600, 1], rear: [-2100, 700, 0], driver: [200, 650, -2300] };
 // scale 'abs' is the cell grid's own colouring, so a pair reads the same colour side by side
 const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true };
-const WHITE = new THREE.Color(0xffffff);
+const WHITE = new THREE.Color(0xffffff), BLUE = new THREE.Color(0x42a5f5), ACCENT = 0x4fc3f7;
+const EDGE_RADIUS = 6;                                   // mm, the real module's rounded edge
 
 const state = {
   built: false, opts: Object.assign({}, DEFAULT_OPTS), rest: null, playback: false,
   hover: -1, pinned: -1, last: null, host: null, note: null, pane: null,
-  flashIdx: -1, flashBase: new THREE.Color(), expanded: false, baseH: null,
+  flashLo: -1, flashHi: -1, loBase: new THREE.Color(), hiBase: new THREE.Color(),
+  expanded: false, baseH: null,
 };
-let renderer, labelRenderer, scene, camera, controls, slabs, caseMat, hiBox, pairLabels, bodies, ro, sensors = [];
+let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLabels, bodies, modules, ro, sensors = [];
+let groups = [], slot = [];                              // groups[g] = {mesh, ids}; slot[i] = {g, k}
+let selBox, selPin, selLabel;                            // the pinned module's marker
 const colorCache = new Map(), tmpColor = new THREE.Color();
 
 // ── build once ────────────────────────────────────────────────────────────
@@ -44,8 +53,8 @@ function build(root) {
   const pack = (typeof window.PACK !== 'undefined' && window.PACK) || (typeof PACK !== 'undefined' ? PACK : null);
   if (!host || !pack || !window.PackLayout || state.built) return;
   if (!host.clientWidth) return;                       // hidden tile: wait for tiles:applied
-  const PACK = pack, M = PACK.module, C = PACK.case;
-  ({ bodies } = PackLayout.bodies(PACK));
+  const PACK = pack, C = PACK.case;
+  ({ bodies, modules } = PackLayout.bodies(PACK));
   state.host = host; state.note = root.querySelector('#pack3d-note'); state.pane = host.querySelector('.pack3d-pane');
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -79,46 +88,59 @@ function build(root) {
   floor.rotation.x = -Math.PI / 2; floor.position.y = -2; scene.add(floor);
   const grid = new THREE.GridHelper(2600, 26, 0x1e2a42, 0x161f33); grid.position.y = -1; scene.add(grid);
 
-  // 96 half-slabs, one instanced mesh, per-instance colour; matte so the colour is the colour
-  slabs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-                                  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 }), bodies.length);
-  {
-    const mat = new THREE.Matrix4(), q = new THREE.Quaternion(), grey = new THREE.Color(0x6b7a99);
-    for (const b of bodies) {
-      mat.compose(new THREE.Vector3(b.cx, b.cy, b.cz), q, new THREE.Vector3(b.sx, b.sy, b.sz));
-      slabs.setMatrixAt(b.i, mat); slabs.setColorAt(b.i, grey);
-    }
+  // 96 rounded half-slabs: one instanced mesh per body size, matte so the colour is the colour
+  const slabMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+  const bySize = new Map();
+  bodies.forEach(b => { const key = `${b.sx}|${b.sy}|${b.sz}`; if (!bySize.has(key)) bySize.set(key, []); bySize.get(key).push(b.i); });
+  groups = []; slot = new Array(bodies.length);
+  const grey = new THREE.Color(0x6b7a99), mat = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+  for (const ids of bySize.values()) {
+    const b0 = bodies[ids[0]];
+    const r = Math.min(EDGE_RADIUS, b0.sx / 2, b0.sy / 2, b0.sz / 2);
+    const mesh = new THREE.InstancedMesh(new RoundedBoxGeometry(b0.sx, b0.sy, b0.sz, 2, r), slabMat, ids.length);
+    ids.forEach((i, k) => {
+      const b = bodies[i];
+      mat.compose(new THREE.Vector3(b.cx, b.cy, b.cz), q, one);
+      mesh.setMatrixAt(k, mat); mesh.setColorAt(k, grey);
+      slot[i] = { g: groups.length, k };
+    });
+    scene.add(mesh);
+    groups.push({ mesh, ids });
   }
-  scene.add(slabs);
 
   // module outlines and terminal studs (terminals up on the rear block, inboard on the flat stacks)
-  const { modules } = PackLayout.bodies(PACK);
-  const modEdge = new THREE.LineBasicMaterial({ color: 0x0a0e17, transparent: true, opacity: 0.55 });
+  const modEdge = new THREE.LineBasicMaterial({ color: 0x0a0e17, transparent: true, opacity: 0.45 });
   const terms = new THREE.InstancedMesh(new THREE.CylinderGeometry(6, 6, 10, 12),
                                         new THREE.MeshStandardMaterial({ color: 0xd8c27a, metalness: 0.8, roughness: 0.35 }), modules.length * 3);
   {
-    const mat = new THREE.Matrix4(); let n = 0;
+    let n = 0;
     for (const md of modules) {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(md.sx, md.sy, md.sz)), modEdge);
       e.position.set(md.cx, md.cy, md.cz); scene.add(e);
       for (let k = -1; k <= 1; k++) {
-        const q = new THREE.Quaternion(); let x, y, z;
+        const qq = new THREE.Quaternion(); let x, y, z;
         if (md.kind === 'edge') { x = md.cx + k * 110; y = md.cy + md.sy / 2 + 5; z = md.cz; }
-        else { x = md.cx + k * 70; y = md.cy; z = md.cz - md.side * (md.sz / 2 + 5); q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2); }
-        mat.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(k === 0 ? 0.6 : 1, 1, k === 0 ? 0.6 : 1));
+        else { x = md.cx + k * 70; y = md.cy; z = md.cz - md.side * (md.sz / 2 + 5); qq.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2); }
+        mat.compose(new THREE.Vector3(x, y, z), qq, new THREE.Vector3(k === 0 ? 0.6 : 1, 1, k === 0 ? 0.6 : 1));
         terms.setMatrixAt(n++, mat);
       }
     }
   }
   scene.add(terms);
 
-  // hover / pin highlight
-  hiBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: 0xffffff }));
-  hiBox.visible = false; scene.add(hiBox);
+  // hover: a thin white edge box round the pair; pinned: a glowing box round the whole
+  // module, a bobbing pin above it and a label — strong enough to find from any angle
+  hoverBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+  hoverBox.visible = false; scene.add(hoverBox);
+  selBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.3, depthWrite: false }));
+  selBox.visible = false; scene.add(selBox);
+  selPin = new THREE.Mesh(new THREE.ConeGeometry(16, 44, 16), new THREE.MeshBasicMaterial({ color: ACCENT }));
+  selPin.rotation.x = Math.PI; selPin.visible = false; scene.add(selPin);
 
   // labels: one per pair (toggled), the car axes, the temperature sensors (each its own material)
   const mkLabel = (text, cls) => { const d = document.createElement('div'); d.className = 'pack3d-lbl' + (cls ? ' ' + cls : ''); d.textContent = text; return new CSS2DObject(d); };
   pairLabels = bodies.map(b => { const l = mkLabel('', ''); l.position.set(b.cx, b.cy + b.sy / 2, b.cz); l.visible = false; scene.add(l); return l; });
+  selLabel = mkLabel('', 'pin'); selLabel.visible = false; scene.add(selLabel);
   for (const [txt, x, z] of [['front', C.L / 2 + 120, 0], ['rear', -C.L / 2 - 120, 0], ['driver side', 0, -C.W / 2 - 140], ['passenger side', 0, C.W / 2 + 140]]) {
     const l = mkLabel(txt, 'axis'); l.position.set(x, 8, z); scene.add(l);
   }
@@ -144,35 +166,41 @@ function build(root) {
   loop();
 }
 
-// ── painting ──────────────────────────────────────────────────────────────
-// the cell grid's colour function, cached by its CSS string so both panels agree exactly
+// ── colours ───────────────────────────────────────────────────────────────
+// the cell grid's colour function, as a CSS string (for text) and a THREE colour (for bodies)
+function pairCss(mv, f, i, sc) {
+  return state.opts.scale === 'abs' ? Tiles.cellColor(mv, f.min, f.max) : Tiles.cellColor(sc.t(mv, f, i, state.rest), 0, 1);
+}
 function cssColor(css) {
   let c = colorCache.get(css);
   if (!c) { c = new THREE.Color().setStyle(css); colorCache.set(css, c); }
   return c;
 }
-function pairColor(mv, f, i, sc) {
-  return state.opts.scale === 'abs' ? cssColor(Tiles.cellColor(mv, f.min, f.max))
-                                    : cssColor(Tiles.cellColor(sc.t(mv, f, i, state.rest), 0, 1));
-}
+function setPairColor(i, c) { const s = slot[i]; groups[s.g].mesh.setColorAt(s.k, c); }
+function flushColors() { for (const g of groups) g.mesh.instanceColor.needsUpdate = true; }
+
+// ── painting ──────────────────────────────────────────────────────────────
 function paint() {
   const data = state.last; if (!state.built || !data) return;
   const cells = data.cells, f = PackLayout.stats(cells), sc = PackLayout.SCALES[state.opts.scale] || PackLayout.SCALES.abs;
-  for (let i = 0; i < bodies.length; i++) slabs.setColorAt(i, pairColor(cells[i], f, i, sc));
-  slabs.instanceColor.needsUpdate = true;
-  state.flashIdx = state.opts.flash ? f.imin : -1;
-  if (state.flashIdx >= 0) state.flashBase.copy(pairColor(cells[f.imin], f, f.imin, sc));
+  for (let i = 0; i < bodies.length; i++) setPairColor(i, cssColor(pairCss(cells[i], f, i, sc)));
+  flushColors();
+  // the lowest pair breathes toward white, the highest toward blue (see loop)
+  state.flashLo = state.opts.flash ? f.imin : -1;
+  state.flashHi = state.opts.flash ? f.imax : -1;
+  if (state.flashLo >= 0) state.loBase.copy(cssColor(pairCss(cells[f.imin], f, f.imin, sc)));
+  if (state.flashHi >= 0) state.hiBase.copy(cssColor(pairCss(cells[f.imax], f, f.imax, sc)));
   const mode = state.opts.labels;
   for (let i = 0; i < bodies.length; i++) {
     const show = mode === 'all' || (mode === 'minmax' && (i === f.imin || i === f.imax)) || i === state.pinned || i === state.hover;
     const l = pairLabels[i]; l.visible = show;
-    if (show) { l.element.textContent = `${i} · ${cells[i]}`; l.element.classList.toggle('hot', i === f.imin); }
+    if (show) { l.element.textContent = `${i} · ${cells[i]}`; l.element.classList.toggle('hot', i === f.imin); l.element.classList.toggle('high', i === f.imax); }
   }
   const ends = state.host.querySelectorAll('.pack3d-legend span');
   if (ends.length === 2) { ends[0].textContent = sc.lo(f); ends[1].textContent = sc.hi(f); }
   paintSensors(data);
   readout(state.hover >= 0 ? state.hover : state.pinned, cells, f);
-  if (state.pinned >= 0) paintPane(state.pinned, cells, f); else state.pane.hidden = true;
+  paintSelection(cells, f, sc);
 }
 // each sensor ball takes the colour of its own reading on the pack's own range
 // (hottest red, coolest blue) and its label carries the value in °F and °C
@@ -194,33 +222,46 @@ function paintSensors(data) {
 function readout(i, cells, f) {
   const note = state.note; if (!note) return;
   if (i < 0 || !bodies[i]) {
-    hiBox.visible = false;
+    hoverBox.visible = false;
     note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin}</b> · highest <b>${f.imax}</b> · hover a pair, click to pin`;
     return;
   }
   const b = bodies[i], dev = cells[i] - f.mean, drop = state.rest ? cells[i] - state.rest[i] : null;
-  note.innerHTML = `pair <b>${i}</b> (LeafSpy ${i + 1}) · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
+  note.innerHTML = `pair <b>${i}</b> (№ ${i + 1}) · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
     (drop == null ? '' : ` · ${sign(drop)} mV from rest`) + ` · module ${b.m + 1} of ${bodies.length / 2} · ${b.loc}` +
     (b.verify ? ` <span class="verify" title="${b.verify}">(stack order assumed)</span>` : '') +
     (state.pinned === i ? ' · pinned' : '');
-  hiBox.visible = true; hiBox.position.set(b.cx, b.cy, b.cz); hiBox.scale.set(b.sx + 4, b.sy + 4, b.sz + 4);
+  hoverBox.visible = state.hover === i;
+  hoverBox.position.set(b.cx, b.cy, b.cz); hoverBox.scale.set(b.sx + 4, b.sy + 4, b.sz + 4);
 }
 const sign = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(0);
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][Math.min(n % 10, 4) % 4] || 'th');
-// the side pane: both pairs of the pinned pair's module, larger, with rank in the pack
-function paintPane(i, cells, f) {
+// the pinned module: the marker in the scene and the side pane with both of its pairs
+function paintSelection(cells, f, sc) {
+  const i = state.pinned;
+  if (i < 0 || !bodies[i]) { selBox.visible = selPin.visible = selLabel.visible = false; state.pane.hidden = true; return; }
+  const b = bodies[i], md = modules[b.m];
+  selBox.visible = selPin.visible = selLabel.visible = true;
+  selBox.position.set(md.cx, md.cy, md.cz); selBox.scale.set(md.sx + 10, md.sy + 10, md.sz + 10);
+  selPin.position.set(md.cx, md.cy + md.sy / 2 + 60, md.cz);
+  selLabel.position.set(md.cx, md.cy + md.sy / 2 + 96, md.cz);
+  selLabel.element.textContent = `module ${b.m + 1} · pairs ${md.m * 2} & ${md.m * 2 + 1}`;
+  paintPane(i, cells, f, sc);
+}
+function paintPane(i, cells, f, sc) {
   const pane = state.pane; if (!pane) return;
   const b = bodies[i], sib = bodies[b.m * 2] === b ? bodies[b.m * 2 + 1] : bodies[b.m * 2];
   const order = cells.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).map(x => x[1]);
   const pair = p => {
     const v = cells[p.i], dev = v - f.mean, drop = state.rest ? v - state.rest[p.i] : null;
     const rank = order.indexOf(p.i) + 1, bal = state.last.balancing && state.last.balancing[p.i];
-    return `<div class="pack3d-pane-pair ${p.i === i ? 'on' : ''}">
-      <div class="k">pair ${p.i} <small>LeafSpy ${p.i + 1}</small></div>
-      <div class="v">${v}<small>mV</small></div>
+    const css = pairCss(v, f, p.i, sc);                           // the pair's own colour, as the grid paints it
+    return `<div class="pack3d-pane-pair ${p.i === i ? 'on' : ''}" style="border-left-color:${css}">
+      <div class="k">pair ${p.i} <small>№ ${p.i + 1}</small></div>
+      <div class="v" style="color:${css}">${v}<small>mV</small></div>
       <div class="rows"><span>vs mean</span><b>${sign(dev)} mV</b>
         <span>from rest</span><b>${drop == null ? '—' : sign(drop) + ' mV'}</b>
-        <span>rank</span><b>${ordinal(rank)} lowest${rank === 1 ? ' ⚑' : ''}</b>
+        <span>rank</span><b>${ordinal(rank)} lowest${rank === 1 ? ' ⚑' : rank === cells.length ? ' ▲' : ''}</b>
         <span>balancing</span><b>${bal ? 'yes' : '—'}</b></div></div>`;
   };
   pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${bodies.length / 2}</b><span>${b.loc}</span>
@@ -239,15 +280,27 @@ function hookPointer(host) {
     const r = renderer.domElement.getBoundingClientRect();
     ptr.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ptr, camera);
-    const h = ray.intersectObject(slabs, false);
-    return h.length ? h[0].instanceId : -1;
+    const h = ray.intersectObjects(groups.map(g => g.mesh), false);
+    if (!h.length) return -1;
+    const g = groups.find(x => x.mesh === h[0].object);
+    return g ? g.ids[h[0].instanceId] : -1;
   };
   renderer.domElement.addEventListener('pointermove', e => { const i = pick(e); if (i !== state.hover) { state.hover = i; paint(); } });
   renderer.domElement.addEventListener('pointerleave', () => { state.hover = -1; paint(); });
   renderer.domElement.addEventListener('click', e => { const i = pick(e); if (i < 0) return; state.pinned = (i === state.pinned) ? -1 : i; paint(); });
 }
-// the corner tools: expand to double height (a real gridstack resize, persisted), and help
+// the corner tools: auto-rotate, expand to double height (a real gridstack resize,
+// persisted), and help
 function hookTools(host) {
+  const spin = host.querySelector('.pack3d-spin');
+  if (spin) {
+    spin.classList.toggle('on', !!state.opts.spin);
+    spin.addEventListener('click', () => {
+      const on = !state.opts.spin;
+      state.opts.spin = on; controls.autoRotate = on; spin.classList.toggle('on', on);
+      if (window.TileStudio && TileStudio.setOpt) TileStudio.setOpt('pack3d', 'spin', on);
+    });
+  }
   const ex = host.querySelector('.pack3d-expand');
   if (ex) ex.addEventListener('click', () => {
     if (!window.TileStudio || !TileStudio.size) return;
@@ -264,6 +317,7 @@ function applyView() {
   const v = VIEWS[state.opts.view] || VIEWS.iso;
   camera.position.set(v[0], v[1], v[2]); controls.target.set(0, 80, 0);
   controls.autoRotate = !!state.opts.spin;
+  const spin = state.host && state.host.querySelector('.pack3d-spin'); if (spin) spin.classList.toggle('on', !!state.opts.spin);
 }
 function resize() {
   const host = state.host; if (!host || !renderer) return;
@@ -274,12 +328,15 @@ function resize() {
 function loop() {
   requestAnimationFrame(loop);
   if (!state.built || document.hidden || !state.host.clientWidth) return;
-  // the lowest pair breathes toward white so it can be found at a glance
-  if (state.flashIdx >= 0) {
-    const p = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 2 * Math.PI * 1.2);
-    slabs.setColorAt(state.flashIdx, tmpColor.copy(state.flashBase).lerp(WHITE, 0.6 * p));
-    slabs.instanceColor.needsUpdate = true;
-  }
+  const now = performance.now() / 1000;
+  // the lowest pair breathes toward white and the highest toward blue, so both can be
+  // found at a glance; the pinned module's box pulses and its pin bobs
+  const p = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI * 1.2);
+  let dirty = false;
+  if (state.flashLo >= 0) { setPairColor(state.flashLo, tmpColor.copy(state.loBase).lerp(WHITE, 0.6 * p)); dirty = true; }
+  if (state.flashHi >= 0) { setPairColor(state.flashHi, tmpColor.copy(state.hiBase).lerp(BLUE, 0.7 * p)); dirty = true; }
+  if (dirty) flushColors();
+  if (selBox.visible) { selBox.material.opacity = 0.18 + 0.22 * p; selPin.position.y += Math.sin(now * 2 * Math.PI * 0.8) * 0.6; }
   controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera);
 }
 
@@ -301,6 +358,7 @@ export function setOpts(o) {
   state.opts.case = PackLayout.clamp(+state.opts.case, 0, 0.6);
   if (caseMat) caseMat.opacity = state.opts.case;
   if (controls) controls.autoRotate = !!state.opts.spin;
+  const spin = state.host && state.host.querySelector('.pack3d-spin'); if (spin) spin.classList.toggle('on', !!state.opts.spin);
   if (state.opts.view !== before) applyView();
   if (state.last) paint();
 }
@@ -313,6 +371,7 @@ export function dispose() {
 window.Pack3D = { render, setOpts, dispose };
 
 // ⋯ menu controls for this tile, persisted in its opts through Tile Studio
+// (auto-rotate lives on the pane itself, not here)
 if (window.TileStudio && TileStudio.menuExtra) {
   TileStudio.menuExtra('pack3d', (box, o, commit) => {
     const sel = (key, entries) => `<select data-k="${key}">${entries.map(([v, l]) => `<option value="${v}" ${(o[key] ?? DEFAULT_OPTS[key]) == v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
@@ -322,8 +381,7 @@ if (window.TileStudio && TileStudio.menuExtra) {
       <div class="row"><label>Values</label>${sel('labels', [['minmax', 'lowest and highest pair'], ['hover', 'hover only'], ['all', 'every pair']])}</div>
       <div class="row"><label>Case</label><input type="range" data-k="case" min="0" max="60" value="${Math.round((o.case ?? DEFAULT_OPTS.case) * 100)}"> <span style="color:var(--dim)">opacity</span></div>
       <div class="row seg">${Object.keys(VIEWS).map(v => `<button data-view="${v}" class="${(o.view || DEFAULT_OPTS.view) === v ? 'on' : ''}">${v}</button>`).join('')}<span style="color:var(--dim)">view</span></div>
-      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest pair</label></div>
-      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="spin" ${on('spin')}> auto-rotate</label></div>`;
+      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest pair white and the highest blue</label></div>`;
     box.querySelectorAll('select[data-k]').forEach(s => s.addEventListener('change', () => { o[s.dataset.k] = s.value; commit(); }));
     box.querySelector('input[data-k="case"]').addEventListener('input', e => { o.case = +e.target.value / 100; setOpts(o); });
     box.querySelector('input[data-k="case"]').addEventListener('change', commit);

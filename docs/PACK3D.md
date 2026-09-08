@@ -28,18 +28,22 @@ it follows the recording; under `--demo` it shows the demo frame.
 
 Other options: *Values* (label the lowest and highest pair, hover only, or
 every pair), *Case* opacity, a view preset (iso, top, rear block, driver
-side), *flash the lowest pair* (it breathes toward white so it can be found
-at a glance; on by default), auto-rotate. All of it persists in the tile's
-`opts` like any other tile setting.
+side), and *flash* — the lowest pair breathes toward white and the highest
+toward blue so both can be found at a glance (on by default). All of it
+persists in the tile's `opts` like any other tile setting.
 
 **In the viewport.** The four balls are the pack's temperature sensors
 (T1–T4); each is coloured on the pack's own range — hottest red, coolest
 blue — and labelled with its reading in °F and °C. Hover a pair for its
-readout on the line below; **click a pair** to pin it and open a side pane
-with both pairs of that module, larger: voltage, deviation from the mean,
-drop from rest, rank in the pack (1st lowest is flagged), and whether the
-BMS is balancing it. The `⤢` button doubles the tile's height (a real
-resize, remembered with the layout); `?` holds the pointer help.
+readout on the line below; **click a pair** to pin its module — a glowing
+box round the whole module, a pin bobbing above it and a label, so it can
+be found from any angle — and open a side pane with both pairs of that
+module, larger: each voltage in the pair's own colour (the grid's), deviation
+from the mean, drop from rest, rank in the pack (1st lowest ⚑, highest ▲),
+and whether the BMS is balancing it. The corner tools: `⟳` auto-rotates,
+`⤢` doubles the tile's height (a real resize, remembered with the layout),
+`?` holds the pointer help. The bodies have the rounded edges of the real
+module (6 mm).
 
 ## How the model is built
 
@@ -63,8 +67,8 @@ script, reached through an import map that points at the vendored copy in
 
 ## Where each cell pair is — and how sure we are
 
-Indices are the dashboard's 0-based cell-pair numbers. LeafSpy shows the same
-pair as index + 1. The section-level layout is **verified against the ZE0
+Indices are the dashboard's 0-based cell-pair numbers; the service manual (and
+third-party apps) count the same pairs 1–96, which the tile shows as № n+1. The section-level layout is **verified against the ZE0
 service manual, page EVB-20** (quoted by RegGuheert on mynissanleaf,
 2013-04-29, for the 2011–2012 car; the full quote is in `docs/SIGNALS.md`,
 "Cell order in the pack"): module n holds cells 2n−1 and 2n, and the modules
