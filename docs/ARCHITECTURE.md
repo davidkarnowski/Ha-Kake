@@ -126,6 +126,16 @@ things about the USB path are worth knowing because they cost real time:
   chip left fast is found again by `_recover_baud()`. `HAKAKE_SERIAL_BAUD`
   overrides the target (`off` stays at 38400). 230400 and 500000 negotiate on
   the clone tested but drop bytes, so they are opt-in, not the default.
+- **The flow-control pace is per transport.** `ATFCSD 30 00 <STmin>` asks the
+  ECU to leave *STmin* between the frames of a multi-frame answer, and it is
+  the pace of every long read — the LBC's 29-frame cell answer above all. Each
+  transport class carries an `STMIN`: `0x05` on USB serial (probed on the car
+  2026-09-09, 20 of 20 reads intact at 5 ms and at 0 ms, the cell read
+  1.18 s → 0.36 s), `0x20` (32 ms) on BLE, whose 20-byte notification chunks
+  need it, and on replay and sim, whose fixtures were recorded with it.
+  `configure_uds()` and `set_uds_target()` read the attribute and fall back to
+  `0x20` for a transport that says nothing. What remains of the cell read
+  (0.36 s at STmin 0) is the ECU's own pacing, not ours.
 
 `tools/bench_transport.py` is the measuring stick: it times round-trips at
 several baud rates, compares the blocking read against the old polling loop,
@@ -366,4 +376,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 800 tests at the time of writing.
+that must stay green. 802 tests at the time of writing.

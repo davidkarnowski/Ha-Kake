@@ -71,6 +71,17 @@ BLE_NAME = _cfg.get("ble_name") or "OBDBLE"
 BLE_FFE1 = "0000ffe1-0000-1000-8000-00805f9b34fb"
 
 
+# ISO-TP flow control: the separation time (ms, hex) we ask an ECU to leave between
+# consecutive frames of a multi-frame answer (ATFCSD 30 00 <STmin>). It is the pace of
+# every long read — the LBC's 29-frame cell-voltage answer above all. 0x20 (32 ms) is
+# what the BLE link was decoded with and what its 20-byte notification chunks need.
+# The serial link takes 0x05: probed on the car 2026-09-09 (USB ELM327 v1.5 clone,
+# pack charging), 20 of 20 reads intact at 5 ms and at 0 ms, the cell read 1.18 s →
+# 0.36 s and group 01 0.26 s → 0.13 s; 5 keeps a margin over 0 for the same result.
+STMIN_SAFE = "20"
+STMIN_SERIAL = "05"
+
+
 class BleELM:
     """ELM327 over BLE (bleak)."""
 
@@ -79,6 +90,7 @@ class BleELM:
     # The reference transport: the `est` numbers in the vehicle profiles were
     # timed over this link, so its cost multiplier is 1.0 by definition.
     SPEED = 1.0
+    STMIN = STMIN_SAFE
 
     def __init__(self, address=BLE_ADDR, characteristic=BLE_FFE1):
         self.address = address
@@ -230,6 +242,7 @@ class SerialELM:
     # returning full frames could not be timed, and over-packing a cycle is
     # worse than under-packing it.
     SPEED = 0.1
+    STMIN = STMIN_SERIAL
 
     # SimSerialELM turns this off: a pseudo-terminal has no wire rate to
     # negotiate, and the simulator does not implement ATBRD.
@@ -547,7 +560,7 @@ async def configure_uds(elm, tx, rx):
     await elm.send("ATZ", wait=1.5)
     for cmd in ("ATE0", "ATL1", "ATH1", "ATS1", "ATSP6",
                 f"ATSH {tx}", f"ATCRA {rx}", "ATCAF1", f"ATFCSH {tx}",
-                "ATFCSD 30 00 20", "ATFCSM1"):
+                f"ATFCSD 30 00 {getattr(elm, 'STMIN', STMIN_SAFE)}", "ATFCSM1"):
         await elm.send(cmd, wait=0)
 
 
@@ -571,7 +584,7 @@ async def set_uds_target(elm, tx, rx, full=False):
     await elm.send(f"ATCRA {rx}", wait=0)
     await elm.send(f"ATFCSH {tx}", wait=0)
     if full:
-        await elm.send("ATFCSD 30 00 20", wait=0)
+        await elm.send(f"ATFCSD 30 00 {getattr(elm, 'STMIN', STMIN_SAFE)}", wait=0)
         await elm.send("ATFCSM1", wait=0)
 
 

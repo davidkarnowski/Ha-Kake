@@ -218,3 +218,36 @@ def test_a_faster_transport_packs_more_into_one_cycle(leaf_profile, tmp_store):
     usb_cost = sum(r.estimate(i) for i in slow_uds)
     assert ble_cost > r.budget          # over BLE they cannot all fit
     assert usb_cost < r.budget          # over USB they comfortably do
+
+
+# ── ISO-TP separation time per wire ──
+
+def test_serial_asks_for_a_5_ms_separation_and_ble_keeps_32():
+    """Probed on the car 2026-09-09: the USB clone returns the 29-frame cell answer intact
+    at 5 ms (1.18 s → 0.36 s); the BLE link's notification chunks need the 32 ms it was
+    decoded with. The replay and simulator transports keep 32 so their fixtures match."""
+    import elm327
+    assert elm327.SerialELM.STMIN == "05" and elm327.STMIN_SERIAL == "05"
+    assert elm327.BleELM.STMIN == "20" and elm327.STMIN_SAFE == "20"
+    for cls in (elm327.ReplayELM, elm327.SimELM):
+        assert getattr(cls, "STMIN", "20") == "20", cls.__name__
+
+
+def test_configure_uds_sends_the_transport_s_separation_time():
+    import asyncio
+    import elm327
+
+    class Fake:
+        STMIN = "05"
+        def __init__(self): self.sent = []
+        async def send(self, cmd, wait=0.3, timeout=8.0): self.sent.append(cmd); return ["OK"]
+
+    fake = Fake()
+    asyncio.run(elm327.configure_uds(fake, "79B", "7BB"))
+    assert "ATFCSD 30 00 05" in fake.sent and "ATFCSD 30 00 20" not in fake.sent
+    slow = Fake(); slow.STMIN = "20"
+    asyncio.run(elm327.set_uds_target(slow, "744", "764", full=True))
+    assert "ATFCSD 30 00 20" in slow.sent
+    bare = Fake(); del Fake.STMIN
+    asyncio.run(elm327.configure_uds(bare, "79B", "7BB"))
+    assert "ATFCSD 30 00 20" in bare.sent            # a transport that says nothing gets the safe value

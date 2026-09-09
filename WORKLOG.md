@@ -1179,3 +1179,39 @@ module pane, playback, flags, the docked timeline): `feature/pack3d-playback`
 fast-forwarded to `main` and pushed, nineteen commits, 800 tests, privacy
 sweep clean. Still to see in the car: the cell log's cadence over USB, and
 flags dropped during a real pull.
+
+### The cycle on USB, and the flow-control pace  2026-09-09
+
+Branch `main` (a transport tuning, verified on the car before it landed).
+
+**What the cycle was.** USB adapter, cell log armed, eighteen items: a
+median 3.0 s cycle (p10 2.3, p90 3.6). The last cycle's timing said where
+it went — the cell read (group 02) 1.18 s, five passive captures at
+0.22–0.24 s each 1.16 s, group 01 0.35 s, HVAC group 10 0.30 s. Neither big
+share was the adapter: a USB round-trip is 5–10 ms.
+
+**The cell read was paced by our own flow control.** `ATFCSD 30 00 20`
+asks the ECU to leave 32 ms between the frames of a multi-frame answer;
+29 frames at 32 ms is 0.93 s of the 1.18. A probe with the reader paused
+and the pack charging (`research/probe_stmin.py`, read-only: 0x21 reads,
+five each, at 38400 and again at 115200):
+
+| STmin | group 02 (29 frames) | group 01 (6 frames) | errors |
+|---|---|---|---|
+| 32 ms | 1.18 s | 0.26 s | 0 / 5 |
+| 16 ms | 0.65 s | 0.18 s | 0 / 5 |
+| 5 ms | 0.37 s | 0.14 s | 0 / 5 |
+| 0 ms | 0.37 s | 0.14 s | 0 / 5 |
+
+Every read returned the same 29 frames and 464 hex characters. The faster
+wire changed nothing worth having (0.36 → 0.35 s at 0 ms), so the remaining
+floor is the ECU's own pacing, not ours. The separation time is now a
+per-transport attribute: `STMIN` 05 on the serial link, 20 on BLE — whose
+20-byte notification chunks are why 32 ms was chosen in February — and on
+the replay and simulator transports, whose fixtures pin it. Tests cover the
+attribute and the command sent.
+
+**The passive captures wait their full dwell.** Each `ATMA` runs for its
+whole 0.2 s even when the frame it wants arrived in the first 20 ms; five
+of them a cycle is 1.16 s for perhaps 0.1 s of useful listening. Returning
+on the first clean frame is the next change, with its own probe.

@@ -24,7 +24,7 @@ aggregated — a column in its `HISTORY_COLS`. See `ADDING_SIGNALS.md`.
 |---|---|
 | Protocol | `ATSP6` — ISO 15765-4 CAN, 11-bit, 500 kbit/s (Car-CAN, OBD pins 6/14) |
 | Standard OBD-II PIDs | Not implemented by the Leaf (`0100` → `NO DATA`) |
-| UDS to the LBC | `ATSH 79B` / `ATCRA 7BB` / `ATCAF1` / `ATFCSH 79B` / `ATFCSD 30 00 20` / `ATFCSM1` — the VCM bridges Car-CAN ↔ EV-CAN for these |
+| UDS to the LBC | `ATSH 79B` / `ATCRA 7BB` / `ATCAF1` / `ATFCSH 79B` / `ATFCSD 30 00 20` (BLE; `30 00 05` over USB — probed 2026-09-09, the 29-frame cell answer intact at 5 ms and 0 ms, 1.18 s → 0.36 s) / `ATFCSM1` — the VCM bridges Car-CAN ↔ EV-CAN for these |
 | Passive sniffing | **must use `ATCAF0`**; with `ATCAF1` most raw frames print as `<DATA ERROR` |
 | Buffer | Unfiltered `ATMA` overflows (`BUFFER FULL`) within ~24 frames; always filter with `ATCRA` |
 | EV-CAN (pins 12/13) | Not reachable with the standard 6/14 pinout — `0x1DB`, `0x55B`, `0x5BC`, `0x54C`, `0x54F` etc. are not visible; see "Not reachable without EV-CAN" for the re-pinned-cable route |
