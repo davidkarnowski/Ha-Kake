@@ -47,7 +47,7 @@ let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLab
 let MODES = [PackLayout ? PackLayout.DEFAULT_MODE : null];   // the profile's value modes (PACK_MODES), or the Leaf default
 let groups = [], slot = [];                              // groups[g] = {mesh, ids}; slot[i] = {g, k}
 let selBox, selPin, selLabel;                            // the pinned module's marker
-let needsRender = true, onScreen = true, lastTick = 0;    // render on demand: see loop()
+let needsRender = true, onScreen = true;                  // render on demand: see loop()
 const colorCache = new Map(), tmpColor = new THREE.Color();
 
 // ── build once ────────────────────────────────────────────────────────────
@@ -424,18 +424,19 @@ function resize() {
   camera.aspect = w / h; camera.updateProjectionMatrix();
   needsRender = true;
 }
-// Render on demand, not sixty times a second: a frame is drawn when something changed
-// (a new record, a hover, a resize, the camera moving or damping, auto-rotate), and the
-// breathing of flashed values and the pinned marker tick at 20 fps. Nothing is drawn
-// while the tile is scrolled out of view or the tab is hidden. The page's own timers —
-// the 1 s poll, the alert repeats — keep their beat that way.
+// Render on demand. A frame is drawn when something changed — a new record, a hover, a
+// resize, the camera moving or damping, auto-rotate — and, while a value is breathing or
+// a marker is pinned, at the display's full rate so the animation is smooth. The DOM
+// labels are the expensive part of a frame and they only move with the camera or a
+// repaint, so they are redrawn only then. Nothing is drawn while the tile is scrolled
+// out of view or the tab is hidden; the page's timers keep their beat that way.
 function loop() {
   requestAnimationFrame(loop);
   if (!state.built || document.hidden || !onScreen || !state.host.clientWidth) return;
-  const nowMs = performance.now(), now = nowMs / 1000;
-  let draw = needsRender || controls.update();            // update() is true while the camera moves
-  if ((state.flashing.length || selBox.visible) && nowMs - lastTick >= 50) {
-    lastTick = nowMs;
+  const now = performance.now() / 1000;
+  const moving = controls.update();                       // true while the camera moves
+  const animating = state.flashing.length > 0 || selBox.visible;
+  if (animating) {
     // the lowest value breathes toward white and the highest toward blue, so both can be
     // found at a glance; the pinned marker's box pulses and its pin bobs
     const p = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI * 1.2);
@@ -443,11 +444,12 @@ function loop() {
     for (const x of state.flashing) { setPairColor(x.i, tmpColor.copy(x.base).lerp(x.to, 0.65 * p)); dirty = true; }
     if (dirty) flushColors();
     if (selBox.visible) { selBox.material.opacity = 0.18 + 0.22 * p; selPin.position.y += Math.sin(now * 2 * Math.PI * 0.8) * 0.6; }
-    draw = true;
   }
-  if (!draw) return;
+  if (!(needsRender || moving || animating)) return;
+  const labels = needsRender || moving;
   needsRender = false;
-  renderer.render(scene, camera); labelRenderer.render(scene, camera);
+  renderer.render(scene, camera);
+  if (labels) labelRenderer.render(scene, camera);
 }
 
 // ── public surface ───────────────────────────────────────────────────────

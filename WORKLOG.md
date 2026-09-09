@@ -1155,3 +1155,10 @@ moved — it renders on demand now (a new record, a hover, a resize, the
 camera moving, auto-rotate), the flashes and the pinned marker tick at
 20 fps, and nothing is drawn while the tile is scrolled out of view or the
 tab is hidden, which hands the main thread back to the page's timers.
+
+**Smooth again** (same evening): the 20 fps tick made the breathing lowest
+pair twitch. While a value breathes or a marker is pinned the tile now
+animates at the display's full rate, and the saving comes from the right
+place: the DOM labels — the expensive part of a frame — are redrawn only
+when the camera or the data moved. Idle, scrolled away or in a hidden tab,
+nothing is drawn.

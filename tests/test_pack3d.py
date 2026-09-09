@@ -241,8 +241,9 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert 'style="color:${css}"' in js                                        # the pane's voltages in the pair's colour
     assert "selBox" in js and "selPin" in js and "selLabel" in js             # the pinned module's marker
     # render on demand (a new record, hover, resize, camera motion, a 20 fps flash tick), never a blind 60 fps
-    assert "let draw = needsRender || controls.update();" in js and "nowMs - lastTick >= 50" in js
-    assert "new IntersectionObserver(" in js and "if (!draw) return;" in js
+    assert "const animating = state.flashing.length > 0 || selBox.visible;" in js   # full rate while breathing
+    assert "if (labels) labelRenderer.render(scene, camera);" in js                  # labels only when they moved
+    assert "new IntersectionObserver(" in js and "if (!(needsRender || moving || animating)) return;" in js
     assert "function paintSensorPane(sj)" in js and "state.pinnedSensor" in js  # sensors are selectable too
     assert "...sensors.map(s => s.mesh)" in js                                  # and picked by the raycast
     assert 'class="pack3d-pane-mod"' in js and "spread rank" in js             # the module's own section
