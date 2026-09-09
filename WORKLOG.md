@@ -1350,3 +1350,18 @@ is clickable, the 3 / 5 / 10-sample settings show): `feature/usb-stmin`,
 and pushed, four commits, 940 tests, privacy sweep clean. Still to see in the
 car: a recorded session with raw current stored; the CANable's arrival
 checklist and phase (a) on the board; the MQTT bridge on a Pi.
+
+### MQTT: plain, on the LAN; Tailscale or a VPN beyond it  2026-09-09
+
+Branch `bug/mqtt-no-auth`. The owner's call: the MQTT configuration had
+gone too far. The broker runs plain MQTT — no username, no password, no
+TLS — and lives on the car's LAN; to use it from anywhere else the Pi and
+the laptop join a Tailscale tailnet or a private VPN, which authenticates
+and encrypts the whole path with nothing to configure in Ha-Kake. The
+`username` / `password` / `tls` keys are gone from the reader's `mqtt`
+block, the bridge's config and both example files; the clients are built
+plain; the Mosquitto snippet in `bridge/README.md` is `allow_anonymous
+true` on a LAN listener; SECURITY.md, `docs/MQTT.md` and the gauge examples
+say the same. A test pins it: auth keys in config are ignored, never
+applied. The read-only whitelist is unchanged — it never was the thing
+protecting the broker; the private network is.

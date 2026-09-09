@@ -147,7 +147,7 @@ mosquitto_sub -h <pi> -t 'hakake/leaf/car/rx/+' -v            # frames
 
 | Key | Default | Meaning |
 |---|---|---|
-| `host`, `port`, `tls`, `username`, `password` | `127.0.0.1`, `1883`, `false`, `""`, `""` | the broker; a broker on the Pi itself needs nothing else |
+| `host`, `port` | `127.0.0.1`, `1883` | the broker, plain MQTT; a broker on the Pi itself needs nothing else |
 | `prefix` | `hakake/leaf` | the topic root shared with the reader's `mqtt.prefix` |
 | `bus` | `car` | `car` or `ev` — which bus this Pi is wired to; part of every topic |
 | `interface`, `channel` | `socketcan`, `can0` | python-can interface and channel; `slcan` + `/dev/ttyACM0` as a slow fallback |
@@ -165,34 +165,33 @@ for that profile, not a default of the bridge. Every command-line flag
 (`--host`, `--bus`, `--ids 421,358`, `--batch-ms 50`, `--listen-only`,
 `--stats 10`) overrides the file.
 
-## Mosquitto and security
+## Mosquitto and the network
 
 The bridge is a second process on a safety-relevant bus, and the broker is the
-only door to it. Keep it on the car's LAN or behind a VPN, never on the
-internet. A minimal `/etc/mosquitto/conf.d/hakake.conf`:
+only door to it. The broker runs **plain MQTT, no credentials, no TLS** — the
+owner's decision: the protection is the network, not a password. Keep the
+broker on the car's own LAN (the Pi's WiFi hotspot, or the car's network) and
+bind it there. To reach it from anywhere else, put the Pi and the laptop on a
+**Tailscale tailnet or a private VPN** — that authenticates both ends and
+encrypts the whole path, with nothing to configure in Ha-Kake, and it is the
+recommended way to use the bridge beyond the car. Never expose the broker to
+the internet directly.
+
+A minimal `/etc/mosquitto/conf.d/hakake.conf` for a broker on the Pi:
 
 ```
 listener 1883
-allow_anonymous false
-password_file /etc/mosquitto/passwd
+allow_anonymous true
 ```
 
-```bash
-sudo mosquitto_passwd -c /etc/mosquitto/passwd hakake     # prompts for a password
-sudo systemctl restart mosquitto
-```
+For a WebSocket listener (browser gauges), add `listener 9001` and
+`protocol websockets` to the same file. Then `sudo systemctl restart mosquitto`.
 
-Put the same username and password in the bridge's `config.json` and in the
-reader's `config.local.json` (`mqtt.username` / `mqtt.password`). Both files
-are machine-local: the reader's is gitignored, and the Pi's lives only on the
-Pi. For a WebSocket listener (browser gauges), add `listener 9001` and
-`protocol websockets` to the same file — still LAN-only.
-
-What the whitelist protects against is a *well-meaning* client sending
-something other than a read. It does not make the broker safe to expose:
-anyone who can publish to `tx/uds` can keep ECUs awake by polling, which on a
-first-generation Leaf is a flat 12 V battery. Credentials and a private
-network are the actual protection.
+What the read-only whitelist protects against is a *well-meaning* client
+sending something other than a read. It does not make the broker safe to
+expose: anyone who can publish to `tx/uds` can keep ECUs awake by polling,
+which on a first-generation Leaf is a flat 12 V battery. The private network
+is the actual protection.
 
 ## Testing without a Pi
 

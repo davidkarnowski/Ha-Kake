@@ -28,7 +28,7 @@ whose service byte is outside ``READ_SERVICES``; the bridge enforces the same
 set on the bus side. There is no other way onto the wire from here.
 
 No vehicle is named in this file. Ids are strings the profile hands over.
-Machine specifics (broker host, credentials) come from ``config.local.json``
+Machine specifics (the broker host) come from ``config.local.json``
 (gitignored) or ``HAKAKE_MQTT_*``; none belong in code, fixtures or docs.
 """
 
@@ -53,9 +53,6 @@ CONNECT_TIMEOUT = 10.0               # seconds to wait for CONNACK in start()
 DEFAULTS = {
     "host": "",
     "port": 1883,
-    "tls": False,
-    "username": "",
-    "password": "",
     "prefix": "hakake/leaf",
     "bus": "car",
     "subscribe": "auto",
@@ -83,16 +80,13 @@ def mqtt_config(raw=None, path=LOCAL_CONFIG):
         raw = _read_local_config(path).get("mqtt") or {}
     cfg = dict(DEFAULTS)
     cfg.update({k: v for k, v in raw.items() if k in DEFAULTS})
-    for key in ("host", "prefix", "bus", "username", "password"):
+    for key in ("host", "prefix", "bus"):
         v = env(f"HAKAKE_MQTT_{key.upper()}")
         if v:
             cfg[key] = v
     port = env("HAKAKE_MQTT_PORT")
     if port:
         cfg["port"] = int(port)
-    tls = env("HAKAKE_MQTT_TLS")
-    if tls:
-        cfg["tls"] = tls.lower() not in ("0", "no", "false")
     cfg["host"] = str(cfg["host"] or "").strip()
     cfg["port"] = int(cfg["port"] or 1883)
     cfg["prefix"] = str(cfg["prefix"] or DEFAULTS["prefix"]).strip("/")
@@ -224,10 +218,10 @@ def paho_client(client_id):
 
 
 def _configure_client(client, cfg):
-    if cfg.get("username"):
-        client.username_pw_set(cfg["username"], cfg.get("password") or None)
-    if cfg.get("tls"):
-        client.tls_set()
+    """Plain MQTT, no credentials, no TLS — by the owner's decision (2026-09-09).
+    The broker lives on the car's LAN; beyond it, reach it over Tailscale or a
+    private VPN, which authenticates and encrypts the whole path (docs/MQTT.md §5)."""
+    return client
 
 
 def _loads(payload):

@@ -9,9 +9,6 @@
   "mqtt": {
     "host": "",
     "port": 1883,
-    "tls": false,
-    "username": "",
-    "password": "",
     "prefix": "hakake/leaf",
     "bus": "car",
     "subscribe": "auto",

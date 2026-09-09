@@ -59,9 +59,10 @@ only its read requests*. The bridge enforces the same whitelist as the reader
 brought up `listen-only on` as well). The reader refuses the same set before
 publishing. Neither end trusts the other. The whitelist does not make the
 broker safe to expose: anyone who can publish to `tx/uds` can keep ECUs awake
-by polling — so the broker is **LAN or VPN only, with credentials**, which
-live in `config.local.json` on the laptop and in the bridge's own config on the
-Pi, never in the repository. The dashboard still binds 127.0.0.1; publishing
+by polling — so the broker is **LAN only, plain MQTT without credentials or
+TLS by design, and reached from anywhere else over Tailscale or a private
+VPN**, which authenticates and encrypts the whole path; the broker is never
+exposed to the internet directly. The dashboard still binds 127.0.0.1; publishing
 the decoded record to `<prefix>/state` is outbound only and carries no way
 back to the car. Reviewed 2026-09-09; not yet exercised against a real
 broker, Pi or car.

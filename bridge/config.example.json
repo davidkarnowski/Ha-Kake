@@ -1,9 +1,6 @@
 {
   "host": "127.0.0.1",
   "port": 1883,
-  "tls": false,
-  "username": "",
-  "password": "",
   "prefix": "hakake/leaf",
   "bus": "car",
   "interface": "socketcan",

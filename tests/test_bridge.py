@@ -429,5 +429,5 @@ def test_no_vehicle_and_no_secrets_in_the_bridge_tree():
         assert home_mac not in text and home_linux not in text.replace(home_linux + "pi", "")
     with open(os.path.join(tree, "config.example.json")) as f:
         ex = json.load(f)
-    assert ex["password"] == "" and ex["host"] in ("", "127.0.0.1")
+    assert ex["host"] in ("", "127.0.0.1") and not {"username", "password", "tls"} & set(ex)
     assert set(ex) <= set(hb.DEFAULTS)

@@ -60,9 +60,6 @@ MAX_UDS_TIMEOUT = 10.0
 DEFAULTS = {
     "host": "127.0.0.1",
     "port": 1883,
-    "tls": False,
-    "username": "",
-    "password": "",
     "prefix": "hakake/leaf",
     "bus": "car",                # which bus the wiring reaches; never guessed
     "interface": "socketcan",    # python-can interface: socketcan | slcan | gs_usb | virtual
@@ -323,12 +320,9 @@ class Bridge:
 
     def make_client(self):
         import paho.mqtt.client as mqtt
-        c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"hakake-bridge-{os.getpid()}")
-        if self.cfg.get("username"):
-            c.username_pw_set(self.cfg["username"], self.cfg.get("password") or None)
-        if self.cfg.get("tls"):
-            c.tls_set()
-        return c
+        # Plain MQTT: no credentials, no TLS (owner's decision, 2026-09-09). The
+        # broker is LAN-only; beyond the LAN the path is Tailscale or a private VPN.
+        return mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"hakake-bridge-{os.getpid()}")
 
     def attach_client(self, client):
         self.client = client

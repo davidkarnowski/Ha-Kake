@@ -340,8 +340,11 @@ guards, and neither trusts the other:
 The whitelist is the whole allowed set; widening it is a change to
 `SECURITY.md` and a documented review, not a config option. What the list
 does *not* do is make a broker safe to expose: whoever can publish to
-`tx/uds` can keep ECUs awake by polling. Keep the broker on the car's LAN or
-behind a VPN, with credentials (`bridge/README.md`).
+`tx/uds` can keep ECUs awake by polling. The broker runs plain MQTT — no
+credentials, no TLS, by design — so it lives on the car's LAN only, and beyond
+the LAN the path is a **Tailscale tailnet or a private VPN**, which
+authenticates and encrypts end to end with nothing to configure here
+(`bridge/README.md`). Never expose it to the internet directly.
 
 ## 6. Versioning
 
@@ -363,8 +366,7 @@ topic of the bridge that publishes them.
 
 `mosquitto_sub`/`mosquitto_pub` ship with Mosquitto (`apt install
 mosquitto-clients`, `brew install mosquitto`). `<broker>` is your Pi or
-wherever the broker runs; add `-u user -P password` when the broker wants
-them.
+wherever the broker runs — plain MQTT, so nothing else to pass.
 
 ```bash
 # Is the bridge alive? Retained: you get an answer immediately, even if it is offline.
@@ -432,7 +434,6 @@ def on_message(client, userdata, msg):
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect, client.on_message = on_connect, on_message
-# client.username_pw_set("user", "password")           # if the broker wants credentials
 client.connect(BROKER, 1883, keepalive=30)
 client.loop_forever()
 ```
@@ -451,7 +452,7 @@ CDN; pin the version you tested.
 <p>State of charge: <b id="soc">–</b> %</p>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
 <script>
-  const client = mqtt.connect("ws://BROKER:9001");        // add {username, password} if needed
+  const client = mqtt.connect("ws://BROKER:9001");        // plain MQTT over WebSockets, LAN or tailnet
   client.on("connect", () => client.subscribe("hakake/leaf/signal/soc"));
   client.on("message", (topic, payload) => {
     document.getElementById("soc").textContent = JSON.parse(payload.toString());
@@ -520,8 +521,8 @@ negligible: one record plus the changed signals per cycle.
 override it):
 
 ```json
-{"mqtt": {"host": "", "port": 1883, "tls": false, "username": "", "password": "",
-          "prefix": "hakake/leaf", "bus": "car", "subscribe": "auto", "batch": false}}
+{"mqtt": {"host": "", "port": 1883, "prefix": "hakake/leaf", "bus": "car",
+          "subscribe": "auto", "batch": false}}
 ```
 
 - With `host` set, **any** reader publishes `state` and `signal/*`.
@@ -534,7 +535,7 @@ override it):
   `batch: true` subscribes to `rx/_batch` (whole bus) instead of per-id topics.
 
 **Bridge side**: `bridge/README.md` — install on a Raspberry Pi, `ip link`
-bring-up, Mosquitto with credentials, the systemd unit, sizing for a Pi
+bring-up, Mosquitto on the LAN (Tailscale or a VPN beyond it), the systemd unit, sizing for a Pi
 Zero 2 W.
 
 **Reader hook**: the reader calls `mqttsource.publish_state(record)` once per

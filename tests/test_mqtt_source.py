@@ -158,7 +158,7 @@ async def started(cfg=None, ids=None):
 # ── config ───────────────────────────────────────────────────────────────
 
 def test_config_defaults_and_normalisation(monkeypatch):
-    for k in ("HOST", "PORT", "PREFIX", "BUS", "USERNAME", "PASSWORD", "TLS"):
+    for k in ("HOST", "PORT", "PREFIX", "BUS"):
         monkeypatch.delenv(f"HAKAKE_MQTT_{k}", raising=False)
     cfg = ms.mqtt_config({})
     assert cfg["host"] == "" and cfg["port"] == 1883 and cfg["subscribe"] == "auto"
@@ -173,9 +173,8 @@ def test_config_defaults_and_normalisation(monkeypatch):
 def test_env_overrides_file(monkeypatch):
     monkeypatch.setenv("HAKAKE_MQTT_HOST", "envhost")
     monkeypatch.setenv("HAKAKE_MQTT_PORT", "1884")
-    monkeypatch.setenv("HAKAKE_MQTT_TLS", "yes")
     cfg = ms.mqtt_config({"host": "filehost", "port": 1883})
-    assert cfg["host"] == "envhost" and cfg["port"] == 1884 and cfg["tls"] is True
+    assert cfg["host"] == "envhost" and cfg["port"] == 1884
 
 
 def test_config_file_is_read_when_no_block_given(tmp_path, monkeypatch):
@@ -191,7 +190,9 @@ def test_example_config_carries_the_mqtt_block():
     with open(os.path.join(ROOT, "config.local.example.json")) as f:
         ex = json.load(f)
     assert set(ms.DEFAULTS) <= set(ex["mqtt"])
-    assert ex["mqtt"]["host"] == "" and ex["mqtt"]["password"] == ""
+    assert ex["mqtt"]["host"] == ""
+    for k in ("username", "password", "tls"):
+        assert k not in ex["mqtt"], "plain MQTT: no credentials or TLS keys (owner's decision 2026-09-09)"
 
 
 def test_topics_tree():
@@ -283,10 +284,14 @@ def test_unconfigured_source_refuses_to_start():
         run(src.start(lambda *a: None))
 
 
-def test_credentials_and_tls_reach_the_client():
+def test_plain_mqtt_no_credentials_no_tls():
+    """Owner's decision 2026-09-09: the broker is LAN-only plain MQTT; beyond the LAN
+    the path is Tailscale or a private VPN. Auth keys are ignored, never applied."""
     src, client = make_source({"username": "u", "password": "p", "tls": True})
     run(src.start(lambda *a: None, connect_timeout=1.0))
-    assert client.auth == ("u", "p") and client.tls is True
+    assert client.auth is None and client.tls is False
+    for k in ("username", "password", "tls"):
+        assert k not in ms.DEFAULTS
 
 
 def test_frames_in_on_frame_out():
