@@ -1173,3 +1173,9 @@ the flags, ARCHITECTURE's page-modes paragraph the docked timeline and the
 pulls, PACK3D the stud placement, and ROADMAP a section distilling the
 extended-CAN research (throttle, brake and 12 V, regen torque, motor power,
 steering, climate power — all on Car-CAN, all walkable parked).
+
+**Owner's browser check passed** (same evening — the pack, the sensors, the
+module pane, playback, flags, the docked timeline): `feature/pack3d-playback`
+fast-forwarded to `main` and pushed, nineteen commits, 800 tests, privacy
+sweep clean. Still to see in the car: the cell log's cadence over USB, and
+flags dropped during a real pull.
