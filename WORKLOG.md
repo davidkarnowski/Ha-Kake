@@ -1343,3 +1343,10 @@ source currents as first-class columns.
 
 Not checked in a browser: the ⋯ menu select and the clickable label. The
 tests cover the policy and the API; the page needs the owner's eye.
+
+**Owner's browser check passed** (same evening — the power tile's smoothing
+is clickable, the 3 / 5 / 10-sample settings show): `feature/usb-stmin`,
+`feature/can-transport` and `bug/raw-current-stored` fast-forwarded to `main`
+and pushed, four commits, 940 tests, privacy sweep clean. Still to see in the
+car: a recorded session with raw current stored; the CANable's arrival
+checklist and phase (a) on the board; the MQTT bridge on a Pi.
