@@ -1143,3 +1143,15 @@ collect the published shape, find the numbering in the service manual, write
 the table with `verify` notes, spike, wire, verify on the car — the mapping
 modes, a Prius sketch and a checklist. Node tests cover a 28-module grouped
 row and a four-slice stack on the same geometry code.
+
+**Chimes off the beat** (same evening, the owner's report: a 1 s repeat
+plays for a few seconds, then skips one and drifts). Two causes, both on the
+page. Alert rules were evaluated only when a poll landed, and a 1 s repeat
+judged on a poll that arrives every 1.0–1.3 s skips a beat whenever the
+interval falls short; Tile Studio now re-runs the pure engine on the last
+record four times a second, so a repeat lands within a quarter second of its
+time. And the 3D tile drew sixty frames a second whether or not anything
+moved — it renders on demand now (a new record, a hover, a resize, the
+camera moving, auto-rotate), the flashes and the pinned marker tick at
+20 fps, and nothing is drawn while the tile is scrolled out of view or the
+tab is hidden, which hands the main thread back to the page's timers.

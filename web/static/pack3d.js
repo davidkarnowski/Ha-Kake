@@ -47,6 +47,7 @@ let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLab
 let MODES = [PackLayout ? PackLayout.DEFAULT_MODE : null];   // the profile's value modes (PACK_MODES), or the Leaf default
 let groups = [], slot = [];                              // groups[g] = {mesh, ids}; slot[i] = {g, k}
 let selBox, selPin, selLabel;                            // the pinned module's marker
+let needsRender = true, onScreen = true, lastTick = 0;    // render on demand: see loop()
 const colorCache = new Map(), tmpColor = new THREE.Color();
 
 // ── build once ────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ function build(root) {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.set(0, 80, 0);
   controls.autoRotateSpeed = 0.6;
+  controls.addEventListener('change', () => { needsRender = true; });
 
   // Lit so a top face shows its plain colour: a white hemisphere at π (three.js's
   // physical units) gives the top ≈ albedo, a weak low sun shapes the sides. That
@@ -167,6 +169,8 @@ function build(root) {
   hookPointer(host);
   hookTools(host);
   ro = new ResizeObserver(resize); ro.observe(host);
+  // scrolled out of view → no frames at all; the page's timers get the main thread back
+  if (window.IntersectionObserver) new IntersectionObserver(es => { onScreen = es.some(e => e.isIntersecting); if (onScreen) needsRender = true; }).observe(host);
   resize(); applyView();
   state.built = true;
   loop();
@@ -223,6 +227,7 @@ function paint() {
   paintSensors(data);
   readout(state.hover >= 0 ? state.hover : state.pinned, cells, f);
   paintSelection(cells, f, sc);
+  needsRender = true;
 }
 // each sensor ball takes the colour of its own reading on the pack's own range
 // (hottest red, coolest blue) and its label carries the value in °F and °C
@@ -417,19 +422,32 @@ function resize() {
   const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h); labelRenderer.setSize(w, h);
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  needsRender = true;
 }
+// Render on demand, not sixty times a second: a frame is drawn when something changed
+// (a new record, a hover, a resize, the camera moving or damping, auto-rotate), and the
+// breathing of flashed values and the pinned marker tick at 20 fps. Nothing is drawn
+// while the tile is scrolled out of view or the tab is hidden. The page's own timers —
+// the 1 s poll, the alert repeats — keep their beat that way.
 function loop() {
   requestAnimationFrame(loop);
-  if (!state.built || document.hidden || !state.host.clientWidth) return;
-  const now = performance.now() / 1000;
-  // the lowest pair breathes toward white and the highest toward blue, so both can be
-  // found at a glance; the pinned module's box pulses and its pin bobs
-  const p = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI * 1.2);
-  let dirty = false;
-  for (const x of state.flashing) { setPairColor(x.i, tmpColor.copy(x.base).lerp(x.to, 0.65 * p)); dirty = true; }
-  if (dirty) flushColors();
-  if (selBox.visible) { selBox.material.opacity = 0.18 + 0.22 * p; selPin.position.y += Math.sin(now * 2 * Math.PI * 0.8) * 0.6; }
-  controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera);
+  if (!state.built || document.hidden || !onScreen || !state.host.clientWidth) return;
+  const nowMs = performance.now(), now = nowMs / 1000;
+  let draw = needsRender || controls.update();            // update() is true while the camera moves
+  if ((state.flashing.length || selBox.visible) && nowMs - lastTick >= 50) {
+    lastTick = nowMs;
+    // the lowest value breathes toward white and the highest toward blue, so both can be
+    // found at a glance; the pinned marker's box pulses and its pin bobs
+    const p = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI * 1.2);
+    let dirty = false;
+    for (const x of state.flashing) { setPairColor(x.i, tmpColor.copy(x.base).lerp(x.to, 0.65 * p)); dirty = true; }
+    if (dirty) flushColors();
+    if (selBox.visible) { selBox.material.opacity = 0.18 + 0.22 * p; selPin.position.y += Math.sin(now * 2 * Math.PI * 0.8) * 0.6; }
+    draw = true;
+  }
+  if (!draw) return;
+  needsRender = false;
+  renderer.render(scene, camera); labelRenderer.render(scene, camera);
 }
 
 // ── public surface ───────────────────────────────────────────────────────

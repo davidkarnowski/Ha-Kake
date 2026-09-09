@@ -259,3 +259,10 @@ def test_alert_rules_survive_saved_layouts_and_the_cockpit_store(api):
     assert api.get("/api/tiles").get_json()["tiles"][0]["opts"]["alerts"][0]["min"] == 20.0
     sim = api.put("/api/sim/tiles", json={"tiles": [{"id": "vehicle", "opts": {"alerts": RULES[:3]}}]}).get_json()
     assert [r["signal"] for r in sim["tiles"][0]["opts"]["alerts"]] == ["soc", "door_any"]
+
+
+def test_repeats_are_re_evaluated_on_their_own_beat():
+    """A 1 s repeat judged only when a poll lands skipped and slid (owner, 2026-09-08);
+    Tile Studio re-runs the pure engine on the last record four times a second."""
+    src = read(TILESTUDIO_JS)
+    assert "setInterval(() => {" in src and "runAlerts(lastData);" in src and "}, 250);" in src

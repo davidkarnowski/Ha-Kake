@@ -77,6 +77,14 @@
   // built-in tile the list its profile declared (served as tile_signals).
   // Text signals cannot be thresholded, so they never appear.
   const alertEngine = window.Alerts ? Alerts.createEngine() : null;
+  // Repeats keep an even beat. Evaluating only when a poll lands meant a 1 s repeat was
+  // judged on a poll that arrives every 1.0–1.3 s: a beat skipped, the next one late.
+  // Re-evaluating the last record a few times a second costs nothing (the engine is
+  // pure) and lands each repeat within a quarter second of its time.
+  setInterval(() => {
+    if (!alertEngine || !lastData) return;
+    if (cfg.some(t => t.enabled && t.opts && Array.isArray(t.opts.alerts) && t.opts.alerts.length)) runAlerts(lastData);
+  }, 250);
   const repLabel = v => `every ${v} s`;
   function candidateSignals(t) {
     const keys = t.kind === 'signal' ? [t.signal] : (REG.tile_signals[t.id] || []);
