@@ -42,6 +42,18 @@ tiles:
   default, so any tile — the 3D pack three screens down — can be watched
   while the transport stays in reach. *Dock top* moves it to the top, *in
   the page* puts it back above the tiles; the choice is remembered.
+- **Flags.** `⚑ Flag` in the header (or the `f` key) drops a bookmark on a
+  moment — live, that is *now*, so a passenger can mark "pull from the
+  light" as it happens; in playback it is the playhead. Flags are yellow
+  triangles on the strip with a dotted line; the `⚑ jump to…` list seeks to
+  one, `✕` removes the selected one. They live in `web/bookmarks.json`
+  (gitignored, per machine, stamped with the vehicle).
+- **Auto-detected pulls** show as hollow orange triangles: every run of rows
+  with pack current below −40 A in the loaded window
+  (`/api/bookmarks/auto?amps=`). At the default 5 s store period a pull is
+  usually one row — its peak, with that row's cells, but no rise or
+  recovery — so they mark *where* to look rather than replay the shape;
+  with the cell log armed and USB the rows come every cycle.
 - **Back to live** resumes polling.
 
 Under `--demo` there is one canned session; under `--adapter replay` or

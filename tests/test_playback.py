@@ -155,6 +155,10 @@ def test_strip_marks_the_playhead_with_a_triangle_and_the_clock_time():
     assert "g.moveTo(X - 5, 0); g.lineTo(X + 5, 0); g.lineTo(X, 7);" in strip     # marker on the top edge
     assert "toLocaleTimeString()" in strip and "measureText(label)" in strip      # the time in a pill
     assert "X + 8 + tw > W - pad ? X - 8 - tw : X + 8" in strip                   # flips near the right edge
+    assert "g.fillText(la, W - pad - wa - 2, H - 10);" in strip                    # legend bottom-right, clear of the pill
+    init = page[page.index("(function initTimeline()"):page.index("function pbLoop(now)")]
+    assert "dragMode = nearPlayhead(e) ? 'scrub' : 'brush'" in init                 # the playhead is grabbable
+    assert "strip.style.cursor = nearPlayhead(e) ? 'ew-resize' : 'crosshair'" in init
 
 
 def test_timeline_css_lives_in_hakake_only():
@@ -173,3 +177,13 @@ def test_timeline_docks_to_the_window_so_playback_can_be_driven_from_any_tile():
     css = read(os.path.join(STATIC, "hakake.css"))
     assert ".timeline.dock-bottom, .timeline.dock-top { position: fixed;" in css
     assert ".timeline.dock-bottom { bottom: 8px;" in css and ".timeline.dock-top { top: 8px;" in css
+
+
+def test_flags_are_offered_in_both_modes_and_drawn_on_the_strip():
+    page = read(INDEX)
+    assert 'id="flag-btn"' in page and 'id="tl-flags"' in page and 'id="tl-unflag"' in page
+    assert "async function flagNow()" in page and "if (isPlayback() && PB) body.t = PB.times[PB.transport.state().k];" in page
+    assert "async function loadFlags(from, to)" in page and "loadFlags(from, to);" in page.split("function renderFrame(k)")[0]
+    strip = page[page.index("function drawStrip()"):page.index("(function initTimeline()")]
+    assert "[[FLAGS.auto, false], [FLAGS.user, true]]" in strip and "g.setLineDash([3, 3])" in strip
+    assert "else if (e.key === 'f') { e.preventDefault(); flagNow(); }" in page

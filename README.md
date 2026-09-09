@@ -344,6 +344,8 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `GET /api/playback/frames?from=&to=&max=3600&cells=0` | stored readings in an epoch range as playback frames: `records` in the `/api/status` shape, `hist` in the `/api/history` shape, `cells_at`; thinned to the last real row per bucket, never averaged |
 | `GET/PUT /api/tiles` | tile order, enabled, span, type, options (including each tile's `opts.alerts` rules), user tiles (drives what the reader polls) |
 | `GET /api/signals` | signal registry, colour scales, tile types, items, tile defaults, which signals each built-in tile shows (`tile_signals`) |
+| `GET /api/bookmarks?from&to`, `PUT /api/bookmarks {t?, label?}`, `DELETE /api/bookmarks?t=` | timeline flags in `web/bookmarks.json` (gitignored); `t` defaults to now |
+| `GET /api/bookmarks/auto?from&to&amps=40` | discharge pulls found in the readings (runs below −amps A), as candidate flags |
 | `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored) |
 | `GET/PUT/DELETE /api/calibration` | per-car offsets (`zero_current`) in `web/calibration.json` (gitignored) |
 | `GET /sim` | the simulator cockpit page (always renders; shows the launch commands when nothing is simulated) |

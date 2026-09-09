@@ -60,6 +60,9 @@ web/calibration.json.tmp
 # Named tile layouts (personal)
 web/layouts.json
 web/layouts.json.tmp
+# Timeline flags (personal)
+web/bookmarks.json
+web/bookmarks.json.tmp
 
 # Simulator mode (--adapter sim) writes here, never to the real store/state.
 # `hakake_sim.py --generate` defaults to web/sim_history.db and writes a

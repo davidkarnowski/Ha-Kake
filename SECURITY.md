@@ -38,9 +38,11 @@ Even so:
 - Parsing of adapter output (`leaf_decoders.py`, `elm327.py`) on malformed or
   hostile input.
 - The writing APIs (`PUT /api/tiles`, `PUT /api/sim/tiles`,
-  `PUT/DELETE /api/calibration`, `PUT/DELETE/POST /api/layouts/…`) touching
+  `PUT/DELETE /api/calibration`, `PUT/DELETE/POST /api/layouts/…`,
+  `PUT/DELETE /api/bookmarks`) touching
   anything other than their own JSON files (`web/tiles.json`,
-  `web/sim_tiles.json`, `web/calibration.json`, `web/layouts.json`).
+  `web/sim_tiles.json`, `web/calibration.json`, `web/layouts.json`,
+  `web/bookmarks.json`).
 - The simulator's control API (`hakake_sim.py`, `127.0.0.1` only, no
   authentication) reaching anything but the in-memory model — it can put a
   fault on a dashboard someone is reading, and it must never be exposed.

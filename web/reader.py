@@ -80,6 +80,8 @@ def sim_db(vehicle=None):
 def sim_state(vehicle=None):
     return os.path.join(DIR, f"sim_{vehicle or VEHICLE.NAME}_state.json")
 LAYOUTS_FILE = os.path.join(DIR, "layouts.json")     # named tile layouts (gitignored)
+BOOKMARKS_FILE = os.path.join(DIR, "bookmarks.json") # timeline flags (gitignored)
+BOOKMARK_LABEL_MAX = 80
 # The simulator cockpit (/sim) keeps its own arrangement here (gitignored).
 # It is not web/tiles.json because that store is vehicle-shaped: _clean_tile()
 # drops any id the active profile's TILES does not declare, and the cockpit's
@@ -409,6 +411,58 @@ def period_overrides(tiles_cfg):
         if (t.get("opts") or {}).get(CELLLOG_OPT) and CELLLOG_ITEM in builtin[t["id"]]["items"]:
             out[CELLLOG_ITEM] = 0
     return out
+
+
+# ── timeline bookmarks ────────────────────────────────────────────────────
+# A flag the owner drops on a moment — "start of the pull" — kept in
+# web/bookmarks.json like the other per-machine files, so playback can jump
+# to it. Each is {t: epoch seconds, label, kind: "user", vehicle}.
+
+def _clean_bookmark(b):
+    if not isinstance(b, dict):
+        return None
+    try:
+        t = float(b.get("t"))
+    except (TypeError, ValueError):
+        return None
+    if not (0 < t < 4e9):
+        return None
+    label = str(b.get("label") or "")[:BOOKMARK_LABEL_MAX].strip()
+    return {"t": round(t, 3), "label": label, "kind": "user",
+            "vehicle": str(b.get("vehicle") or (VEHICLE.NAME if VEHICLE else ""))}
+
+
+def load_bookmarks():
+    try:
+        with open(BOOKMARKS_FILE) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    items = data.get("bookmarks", []) if isinstance(data, dict) else []
+    out = [c for c in (_clean_bookmark(b) for b in items) if c]
+    return sorted(out, key=lambda b: b["t"])
+
+
+def save_bookmarks(items):
+    out = sorted([c for c in (_clean_bookmark(b) for b in items) if c], key=lambda b: b["t"])
+    tmp = BOOKMARKS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"bookmarks": out}, f, indent=1)
+    os.replace(tmp, BOOKMARKS_FILE)
+    return out
+
+
+def add_bookmark(t, label=""):
+    items = load_bookmarks()
+    items.append({"t": t, "label": label})
+    return save_bookmarks(items)
+
+
+def delete_bookmark(t):
+    items = load_bookmarks()
+    keep = [b for b in items if abs(b["t"] - float(t)) > 0.0005]
+    save_bookmarks(keep)
+    return len(keep) < len(items)
 
 
 def load_calibration():

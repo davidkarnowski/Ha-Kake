@@ -539,6 +539,7 @@
     <a class="sim-badge playback" id="playback-badge" href="#timeline" title="Every tile is showing a recorded moment, not the car.">PLAYBACK</a>
     <span class="sim-badge celllog" id="celllog-badge" title="The reader is polling the cell voltages every cycle and storing every read — the ⋯ menu of the cell grid or the 3D pack turns it off.">CELL LOG</span>
     <button class="tiles-btn" id="mode-btn" title="Switch between the live car and recorded sessions">Playback</button>
+    <button class="tiles-btn" id="flag-btn" title="Flag this moment on the timeline — live: now; playback: the playhead (key: f)">⚑ Flag</button>
     <div class="adapter-info" id="adapter-info" style="display:none">
       <svg id="adapter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
       <span class="adapter-label" id="adapter-label">--</span>
@@ -578,6 +579,7 @@
     <select id="tl-session" aria-label="recorded session"><option value="">loading sessions…</option></select>
     <span class="tl-clock" id="tl-clock">—</span><span class="tl-elapsed" id="tl-elapsed"></span>
     <label class="tl-alerts" title="Alert rules stay silent during playback unless you ask"><input type="checkbox" id="tl-alerts"> alerts</label>
+    <select id="tl-flags" aria-label="jump to a flag"><option value="">⚑ jump to…</option></select><button class="tiles-btn" id="tl-unflag" title="remove the selected flag">✕</button>
     <button class="tiles-btn" id="tl-dock" title="Where the timeline sits: locked to the bottom of the window, to the top, or in the page">⤒ dock top</button>
     <button class="tiles-btn" id="tl-live">Back to live</button>
   </div>
@@ -1475,6 +1477,27 @@ function selectSessionFor(from, to) {
   if (i >= 0) $t('tl-session').value = String(i);
   return i;
 }
+// flags: the owner's bookmarks and the auto-detected pulls in the loaded window
+let FLAGS = { user: [], auto: [] };
+async function loadFlags(from, to) {
+  try {
+    const [u, a] = await Promise.all([fetch(`/api/bookmarks?from=${from}&to=${to}`), fetch(`/api/bookmarks/auto?from=${from}&to=${to}`)]);
+    FLAGS = { user: (await u.json()).bookmarks || [], auto: (await a.json()).pulls || [] };
+  } catch (e) { FLAGS = { user: [], auto: [] }; }
+  const sel = $t('tl-flags');
+  const opt = (f, k) => `<option value="${f.t}">${k === 'auto' ? '◇ ' : '⚑ '}${new Date(f.t * 1000).toLocaleTimeString()}${f.label ? ' · ' + f.label : ''}</option>`;
+  sel.innerHTML = '<option value="">⚑ jump to…</option>' + FLAGS.user.map(f => opt(f, 'user')).join('') + FLAGS.auto.map(f => opt(f, 'auto')).join('');
+  drawStrip();
+}
+async function flagNow() {
+  const label = prompt('Label for this flag (optional — e.g. "pull from the light")', '');
+  if (label === null) return;
+  const body = { label };
+  if (isPlayback() && PB) body.t = PB.times[PB.transport.state().k];
+  try { await fetch('/api/bookmarks', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { return; }
+  if (isPlayback() && PB) loadFlags(PB.from, PB.to);
+  else { const b = $t('flag-btn'); b.textContent = '⚑ Flagged'; setTimeout(() => { b.textContent = '⚑ Flag'; }, 1500); }
+}
 async function loadRange(from, to) {
   const wantCells = !!(window.TileStudio && (TileStudio.enabled('cells') || TileStudio.enabled('pack3d')));
   let r;
@@ -1492,6 +1515,7 @@ async function loadRange(from, to) {
   $t('tl-note').textContent = `${r.t.length} frames${wantCells ? ` · ${PB.cellsAt.size} with cells` : ''} · drag on the strip to zoom in, click to seek`;
   pbUi = ''; syncTransportUi();
   renderFrame(0);
+  loadFlags(from, to);
 }
 function renderFrame(k) {
   if (!PB || !PB.records[k]) return;
@@ -1543,6 +1567,17 @@ function drawStrip() {
   g.fillStyle = 'rgba(224,230,240,0.35)';
   PB.cellsAt.forEach(k => g.fillRect(x(PB.times[k]) - 0.5, H - pad - 3, 1, 3));
   if (brush) { g.fillStyle = 'rgba(79,195,247,0.18)'; g.fillRect(x(brush[0]), pad, x(brush[1]) - x(brush[0]), H - 2 * pad); }
+  // flags: the owner's (filled, yellow) and auto-detected pulls (hollow, orange), a line each
+  for (const [list, fill] of [[FLAGS.auto, false], [FLAGS.user, true]]) {
+    for (const fl of list) {
+      if (fl.t < T0 || fl.t > T1) continue;
+      const X = x(fl.t);
+      g.strokeStyle = fill ? '#ffca28' : '#ff9800'; g.lineWidth = 1; g.setLineDash([3, 3]);
+      g.beginPath(); g.moveTo(X, 9); g.lineTo(X, H - pad); g.stroke(); g.setLineDash([]);
+      g.beginPath(); g.moveTo(X - 5, 1); g.lineTo(X + 5, 1); g.lineTo(X, 9); g.closePath();
+      if (fill) { g.fillStyle = '#ffca28'; g.fill(); } else { g.strokeStyle = '#ff9800'; g.stroke(); }
+    }
+  }
   // the playhead: an accent line, a marker triangle on the top edge, and the frame's
   // clock time in a pill beside it (flipped to the left near the right edge)
   const k = PB.transport.state().k;
@@ -1550,14 +1585,17 @@ function drawStrip() {
     const X = x(PB.times[k]);
     g.strokeStyle = '#4fc3f7'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(X, pad); g.lineTo(X, H - pad); g.stroke();
     g.fillStyle = '#4fc3f7'; g.beginPath(); g.moveTo(X - 5, 0); g.lineTo(X + 5, 0); g.lineTo(X, 7); g.closePath(); g.fill();
+    g.fillRect(X - 3, 0, 6, H);                                   // a grab handle the width of a finger's edge
     g.beginPath(); g.moveTo(X - 5, H); g.lineTo(X + 5, H); g.lineTo(X, H - 7); g.closePath(); g.fill();
     const label = new Date(PB.times[k] * 1000).toLocaleTimeString(), tw = g.measureText(label).width + 10;
     const lx = X + 8 + tw > W - pad ? X - 8 - tw : X + 8;
     g.fillStyle = 'rgba(10, 14, 23, 0.85)'; g.fillRect(lx, 4, tw, 14);
     g.fillStyle = '#e0e6f0'; g.fillText(label, lx + 5, 14);
   }
-  g.fillStyle = '#4caf50'; g.fillText('SOC', pad + 2, 12);
-  g.fillStyle = '#4fc3f7'; g.fillText(`pack A (±${aMax.toFixed(0)})`, pad + 30, 12);
+  // legend bottom-right, clear of the playhead pill at the top and the cell ticks at the bottom-left
+  const la = `pack A (±${aMax.toFixed(0)})`, wa = g.measureText(la).width, ws = g.measureText('SOC').width;
+  g.fillStyle = '#4fc3f7'; g.fillText(la, W - pad - wa - 2, H - 10);
+  g.fillStyle = '#4caf50'; g.fillText('SOC', W - pad - wa - ws - 12, H - 10);
 }
 (function initTimeline() {
   const sp = $t('tl-speeds');
@@ -1571,6 +1609,11 @@ function drawStrip() {
   $t('tl-session').addEventListener('change', e => { const s = SESSIONS[+e.target.value]; if (s) loadRange(s.start_epoch, s.end_epoch); });
   $t('tl-whole').onclick = () => { const s = SESSIONS[PB && PB.session >= 0 ? PB.session : 0]; if (s) loadRange(s.start_epoch, s.end_epoch); };
   $t('tl-live').onclick = exitPlayback;
+  $t('flag-btn').onclick = flagNow;
+  $t('tl-flags').addEventListener('change', e => { const t = +e.target.value; if (t && PB) PB.transport.seek(t); });
+  $t('tl-unflag').onclick = async () => { const t = +$t('tl-flags').value; if (!t || !PB) return;
+    if (!FLAGS.user.some(f => f.t === t)) { $t('tl-note').textContent = 'Auto-detected pulls cannot be removed; flag your own with ⚑.'; return; }
+    try { await fetch(`/api/bookmarks?t=${t}`, { method: 'DELETE' }); } catch (e) { return; } loadFlags(PB.from, PB.to); };
   $t('tl-dock').onclick = () => setDock(DOCKS[(DOCKS.indexOf(dockMode()) + 1) % DOCKS.length]);
   addEventListener('resize', padForDock);
   $t('mode-btn').onclick = () => { if (isPlayback()) exitPlayback(); else enterPlayback(); };
@@ -1582,16 +1625,27 @@ function drawStrip() {
   addEventListener('keydown', e => {
     if (!isPlayback() || !PB || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
     if (e.key === ' ') { e.preventDefault(); PB.transport.toggle(); syncTransportUi(); }
+    else if (e.key === 'f') { e.preventDefault(); flagNow(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); if (e.shiftKey) PB.transport.jump(10); else PB.transport.step(1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); if (e.shiftKey) PB.transport.jump(-10); else PB.transport.step(-1); }
   });
   // the strip: click seeks, drag brushes a stretch and zooms into it
-  const strip = $t('tl-strip'); let down = null;
+  const strip = $t('tl-strip'); let down = null, dragMode = null;
   const tAt = px => { const r = strip.getBoundingClientRect(); const f = Math.min(1, Math.max(0, (px - r.left - 6) / (r.width - 12)));
     return PB.times[0] + f * (PB.times[PB.times.length - 1] - PB.times[0]); };
-  strip.addEventListener('pointerdown', e => { if (!PB) return; down = e.clientX; brush = null; strip.setPointerCapture(e.pointerId); });
-  strip.addEventListener('pointermove', e => { if (down == null || !PB) return; if (Math.abs(e.clientX - down) > 4) { brush = [tAt(Math.min(down, e.clientX)), tAt(Math.max(down, e.clientX))]; drawStrip(); } });
-  strip.addEventListener('pointerup', e => { if (down == null || !PB) return; const b = brush; down = null; brush = null;
+  const playheadX = () => { const r = strip.getBoundingClientRect(), k = PB.transport.state().k, T0 = PB.times[0], T1 = PB.times[PB.times.length - 1];
+    return r.left + 6 + (r.width - 12) * ((PB.times[k] - T0) / Math.max(1e-6, T1 - T0)); };
+  const nearPlayhead = e => Math.abs(e.clientX - playheadX()) <= 9;
+  strip.addEventListener('pointerdown', e => { if (!PB) return; down = e.clientX; brush = null; strip.setPointerCapture(e.pointerId);
+    dragMode = nearPlayhead(e) ? 'scrub' : 'brush'; if (dragMode === 'scrub') PB.transport.seek(tAt(e.clientX)); });
+  strip.addEventListener('pointermove', e => {
+    if (!PB) return;
+    if (down == null) { strip.style.cursor = nearPlayhead(e) ? 'ew-resize' : 'crosshair'; return; }
+    if (dragMode === 'scrub') { PB.transport.seek(tAt(e.clientX)); drawStrip(); return; }
+    if (Math.abs(e.clientX - down) > 4) { brush = [tAt(Math.min(down, e.clientX)), tAt(Math.max(down, e.clientX))]; drawStrip(); }
+  });
+  strip.addEventListener('pointerup', e => { if (down == null || !PB) return; const b = brush, m = dragMode; down = null; brush = null; dragMode = null;
+    if (m === 'scrub') { drawStrip(); return; }
     if (b && b[1] - b[0] > 2) loadRange(b[0], b[1]); else { PB.transport.seek(tAt(e.clientX)); drawStrip(); } });
   if (window.ResizeObserver) new ResizeObserver(() => drawStrip()).observe(strip);
 })();

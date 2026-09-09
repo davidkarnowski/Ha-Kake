@@ -14,6 +14,8 @@ API:
   /api/sessions                  recorded sessions (gaps in the data), newest first
   /api/playback/frames?from=&to= stored readings in an epoch range as playback frames
                                  (&max=3600 thins to the last row per bucket; &cells=1 joins cells)
+  /api/bookmarks                 GET ?from&to / PUT {t,label} / DELETE ?t — timeline flags (web/bookmarks.json)
+  /api/bookmarks/auto?from=&to=  discharge pulls found in the readings, as candidate flags
   /api/tiles                     GET/PUT tile layout (drives what the reader polls)
   /api/signals                   signal registry, colour scales, tile types
   /api/layouts[/<name>[/load]]   named layouts (save / load / delete)
@@ -339,6 +341,58 @@ def api_cells():
         return jsonify(_demo("cells.json", []))
     limit = min(request.args.get("limit", 30, type=int), 500)
     return jsonify(store().cell_history(limit=limit))
+
+
+# ── timeline bookmarks: flags the owner drops on a moment (docs/PLAYBACK.md) ──
+
+def _mine(items):
+    return [b for b in items if b.get("vehicle") in ("", reader.VEHICLE.NAME)]
+
+
+@app.route("/api/bookmarks", methods=["GET", "PUT", "DELETE"])
+def api_bookmarks():
+    """GET ?from&to lists flags (epoch seconds); PUT {t?, label?} adds one (t defaults
+    to now); DELETE ?t= removes one. Kept in web/bookmarks.json, gitignored."""
+    if DEMO:
+        if request.method != "GET":
+            return jsonify({"error": "demo mode is read-only"}), 403
+        return jsonify({"bookmarks": _demo("bookmarks.json", [])})
+    if request.method == "PUT":
+        body = request.get_json(silent=True) or {}
+        t = body.get("t")
+        try:
+            t = float(t) if t is not None else time.time()
+        except (TypeError, ValueError):
+            return jsonify({"error": "t must be epoch seconds"}), 400
+        items = reader.add_bookmark(t, body.get("label", ""))
+        return jsonify({"bookmarks": _mine(items), "added": round(t, 3)})
+    if request.method == "DELETE":
+        t = request.args.get("t", type=float)
+        if t is None:
+            return jsonify({"error": "t is required"}), 400
+        return jsonify({"deleted": reader.delete_bookmark(t)})
+    t0 = request.args.get("from", type=float)
+    t1 = request.args.get("to", type=float)
+    items = _mine(reader.load_bookmarks())
+    if t0 is not None:
+        items = [b for b in items if b["t"] >= t0]
+    if t1 is not None:
+        items = [b for b in items if b["t"] <= t1]
+    return jsonify({"bookmarks": items})
+
+
+@app.route("/api/bookmarks/auto")
+def api_bookmarks_auto():
+    """Discharge pulls found in the readings (runs below -amps A, default 40),
+    as candidate flags for the timeline."""
+    if DEMO:
+        return jsonify({"pulls": _demo("pulls.json", []), "amps": 40})
+    t0 = request.args.get("from", type=float)
+    t1 = request.args.get("to", type=float)
+    if t0 is None or t1 is None or t1 < t0:
+        return jsonify({"error": "from and to are required epoch seconds, from <= to"}), 400
+    amps = min(max(request.args.get("amps", 40.0, type=float), 5.0), 500.0)
+    return jsonify({"pulls": store().pulls(t0, t1, amps=amps), "amps": amps})
 
 
 # ── playback: the dashboard replaying what it recorded (docs/PLAYBACK.md) ──

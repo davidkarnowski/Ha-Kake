@@ -575,6 +575,36 @@ CREATE TABLE IF NOT EXISTS readings (
         out.reverse()
         return out
 
+    def pulls(self, t_from, t_to, amps=40.0, min_gap_s=8.0):
+        """Discharge pulls in a range, for the timeline's auto flags: runs of rows
+        with current_a below -amps, merged when closer than min_gap_s. Each is
+        {t, t_end, t_peak, duration_s, n, peak_a, peak_kw, speed_mph, label, kind: "auto"}.
+        At the default 5 s store period a pull is often a single row — the peak
+        lands in the data, the rise and recovery do not — so `n` says how much of
+        its shape there is to scrub through."""
+        vf, a = self._vfilter()
+        rows = self.conn.execute(
+            f"""SELECT ts_epoch, current_a, power_kw, speed_mph FROM readings
+                WHERE {vf} AND ts_epoch BETWEEN ? AND ? AND current_a IS NOT NULL ORDER BY ts_epoch""",
+            a + [t_from, t_to]).fetchall()
+        out, cur = [], None
+        for te, i, kw, mph in rows:
+            if i >= -amps:
+                continue
+            if cur and te - cur["t_end"] <= min_gap_s:
+                cur["t_end"] = te
+                cur["n"] += 1
+            else:
+                cur = {"t": te, "t_end": te, "t_peak": te, "n": 1, "peak_a": i, "peak_kw": kw, "speed_mph": mph}
+                out.append(cur)
+            if i < cur["peak_a"]:
+                cur.update(peak_a=i, peak_kw=kw, speed_mph=mph, t_peak=te)
+        for p in out:
+            p["duration_s"] = round(p["t_end"] - p["t"], 1)
+            p["label"] = f"pull {p['peak_a']:.0f} A" + (f" · {p['speed_mph']:.0f} mph" if p.get("speed_mph") is not None else "")
+            p["kind"] = "auto"
+        return out
+
     # ── migration ────────────────────────────────────────────────────────
 
     def migrate_legacy(self, history_json=None, jsonl_path=None, state_json=None):

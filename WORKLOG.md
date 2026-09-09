@@ -1113,3 +1113,19 @@ temperature item without declaring it, so with the temperature tile off the
 balls would have gone blank — `lbc04` is now in its items and the sensor
 signals in its alert list; the ARCHITECTURE hook list and the CLAUDE.md §6
 row were behind and are current.
+
+**Timeline, fifth round** (same day): the strip's legend sat under the
+playhead's time pill at frame 0 — it lives bottom-right now; the playhead
+is grabbable (press within a few pixels of it and drag to scrub, anywhere
+else drags the zoom brush, the cursor says which). And **flags**: `⚑ Flag`
+in the header (or `f`) drops a bookmark on *now* while live — a passenger
+marking "pull from the light" as it happens — or on the playhead in
+playback; yellow triangles on the strip, a `⚑ jump to…` list, `✕` to remove;
+`web/bookmarks.json` (gitignored, stamped with the vehicle) behind
+`GET/PUT/DELETE /api/bookmarks`. **Auto-detected pulls** (`/api/bookmarks/auto`,
+runs of pack current below −40 A, merged within 8 s) show as hollow orange
+triangles. The owner's last twenty minutes, read from the database: 102 rows
+at ~4.2 s, every one with cells (the cell log was armed), six pulls, each a
+single row — peaks of −271, −267, −264 A (−89 kW at 54 mph). The peak lands
+in the data with that row's cells; the rise and recovery do not, at this
+cadence — USB for drive days.

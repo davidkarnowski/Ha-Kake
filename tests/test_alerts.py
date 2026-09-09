@@ -204,7 +204,7 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(webapp, "DEMO", None)
     for attr, name in (("STATE_FILE", "state.json"), ("TILES_FILE", "tiles.json"),
                        ("CALIB_FILE", "calibration.json"), ("LAYOUTS_FILE", "layouts.json"),
-                       ("SIM_TILES_FILE", "sim_tiles.json"), ("PAUSE_FILE", "reader.pause")):
+                       ("SIM_TILES_FILE", "sim_tiles.json"), ("PAUSE_FILE", "reader.pause"), ("BOOKMARKS_FILE", "bookmarks.json")):
         monkeypatch.setattr(rd, attr, str(tmp_path / name))
     store = Store(str(tmp_path / "api.db"))
     monkeypatch.setattr(webapp, "store", lambda: store)

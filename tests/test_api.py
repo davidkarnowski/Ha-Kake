@@ -34,7 +34,7 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(webapp, "DEMO", None)
     for attr, name in (("STATE_FILE", "state.json"), ("TILES_FILE", "tiles.json"),
                        ("CALIB_FILE", "calibration.json"), ("LAYOUTS_FILE", "layouts.json"),
-                       ("PAUSE_FILE", "reader.pause")):
+                       ("PAUSE_FILE", "reader.pause"), ("BOOKMARKS_FILE", "bookmarks.json")):
         monkeypatch.setattr(rd, attr, str(tmp_path / name))
     store = Store(str(tmp_path / "api.db"))
     monkeypatch.setattr(webapp, "store", lambda: store)
@@ -292,7 +292,8 @@ def test_demo_mode_never_opens_the_database(demo):
     store — /api/health, /api/cells, /api/layouts, /api/calibration."""
     for path in ("/api/status", "/api/history", "/api/health", "/api/cells",
                  "/api/signals", "/api/tiles", "/api/layouts", "/api/calibration",
-                 "/api/sessions", "/api/playback/frames?from=0&to=1"):
+                 "/api/sessions", "/api/playback/frames?from=0&to=1",
+                 "/api/bookmarks", "/api/bookmarks/auto?from=0&to=1"):
         assert demo.get(path).status_code == 200, path
 
 
@@ -385,3 +386,44 @@ def test_tiles_put_keeps_the_cell_log_option(api):
     out = {t["id"]: t for t in api.put("/api/tiles", json=body).get_json()["tiles"]}
     assert out["cells"]["opts"]["celllog"] is True
     assert rd.period_overrides(rd.load_tiles()) == {"lbc02": 0}
+
+
+# ── timeline bookmarks ───────────────────────────────────────────────────
+
+def test_bookmarks_put_get_delete(api):
+    assert api.get("/api/bookmarks").get_json() == {"bookmarks": []}
+    r = api.put("/api/bookmarks", json={"t": 1700000000.5, "label": "  pull from the light  "}).get_json()
+    assert r["added"] == 1700000000.5 and r["bookmarks"][0]["label"] == "pull from the light"
+    assert r["bookmarks"][0]["kind"] == "user" and r["bookmarks"][0]["vehicle"] == "leaf_ze0"
+    before = dt.datetime.now(dt.timezone.utc).timestamp()
+    now = api.put("/api/bookmarks", json={"label": "x" * 200}).get_json()          # t defaults to now, label clipped
+    assert now["added"] >= before - 1 and len([b for b in now["bookmarks"] if b["label"] == "x" * 80]) == 1
+    assert (api.tmp / "bookmarks.json").exists()
+    assert len(api.get("/api/bookmarks?from=1699999999&to=1700000001").get_json()["bookmarks"]) == 1
+    assert api.put("/api/bookmarks", json={"t": "nope"}).status_code == 400
+    assert api.delete("/api/bookmarks").status_code == 400
+    assert api.delete("/api/bookmarks?t=1700000000.5").get_json() == {"deleted": True}
+    assert api.delete("/api/bookmarks?t=1700000000.5").get_json() == {"deleted": False}
+    assert len(api.get("/api/bookmarks").get_json()["bookmarks"]) == 1
+
+
+def test_bookmarks_auto_finds_discharge_pulls(api):
+    t0 = dt.datetime(2026, 9, 8, 22, 0, tzinfo=dt.timezone.utc)
+    amps = [-2, -60, -90, -70, -3, -2, -2, -2, -2, -2, -55, -1]                     # two pulls, 5 s apart
+    for i, a in enumerate(amps):
+        api.store.insert_reading({"current_a": a, "power_kw": a * 0.36, "speed_mph": 10 + i}, ts=t0 + dt.timedelta(seconds=5 * i))
+    e0 = t0.timestamp()
+    body = api.get(f"/api/bookmarks/auto?from={e0}&to={e0 + 60}").get_json()
+    p = body["pulls"]
+    assert body["amps"] == 40 and len(p) == 2
+    assert p[0]["n"] == 3 and p[0]["peak_a"] == -90 and p[0]["duration_s"] == 10 and p[0]["kind"] == "auto"
+    assert p[0]["t_peak"] == e0 + 10 and p[0]["speed_mph"] == 12 and p[0]["label"].startswith("pull -90 A")
+    assert p[1]["n"] == 1 and p[1]["peak_a"] == -55
+    assert len(api.get(f"/api/bookmarks/auto?from={e0}&to={e0 + 60}&amps=80").get_json()["pulls"]) == 1
+    assert api.get("/api/bookmarks/auto").status_code == 400
+
+
+def test_demo_bookmarks_are_canned_and_read_only(demo):
+    assert demo.get("/api/bookmarks").get_json() == {"bookmarks": []}
+    assert demo.put("/api/bookmarks", json={"t": 1}).status_code == 403
+    assert demo.get("/api/bookmarks/auto?from=0&to=1").get_json()["pulls"] == []
