@@ -231,3 +231,31 @@ gitignored — it describes the owner's own car and driving).
 Safety: the dashboard is a passenger's tool. Anything above walking pace
 needs a second person running the laptop, and acceleration or braking runs
 belong in an empty lot, not in traffic.
+
+
+## Extended CAN inputs — research done 2026-09-08, walks pending
+
+A research pass (memo in `research/`, gitignored, with verbatim byte
+definitions and a walker plan per signal) found that most of the "what is the
+car doing" set is already broadcast on **Car-CAN**, reachable with the
+adapter as it is, and walkable in a parked car with `calibrate_input.py`:
+
+- throttle `0x180` (byte 5, × 0.5 %), brake pedal `0x292` (byte 6) with a
+  **12 V voltage in byte 3**, applied regen torque `0x1D5`, target braking
+  force `0x1CB`, ZE0-only brake pressures `0x1CA`, motor power in `0x260`
+  (0.05 kW, with two limit fields matching the 53 kW / 5 kW the project has
+  seen), steering angle `0x002` (÷ 10 °, signed; three independent sources),
+  climate kW / aux / eco in `0x510`;
+- the DBC places the fan / vent / intake / setpoint frames `0x54A` / `0x54B`
+  on Car-CAN too, contradicting SIGNALS.md's "needs the re-pinned cable" —
+  one `ATCRA 54B` capture settles it.
+
+Needs the EV-CAN cable: the 10 ms set (`0x1DB` pack current and voltage,
+`0x1DA` torque and rpm, `0x1D4` torque request — the load behind a cell sag
+in playback — `0x1DC` limits) and the ZE0 charger frames; with the cable in,
+every Car-CAN body signal and the HVAC amp go quiet. Not found anywhere: a
+Leaf yaw-rate frame, 12 V current (the VCM answers this project NRC `0x80`;
+parked under the read-only rule), a ZE0 DC-DC status. Suggested order: the
+`pedals` walk (throttle, brake, 12 V), a `steer` walk, `0x260` power against
+the LBC's own, `0x54B`, then `0x1D5` / `0x1CB` during a regen coast in an
+empty lot with a passenger on the laptop.

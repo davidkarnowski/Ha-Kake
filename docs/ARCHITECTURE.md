@@ -207,7 +207,10 @@ tile grid â€” no `data-tile`, no profile entry, so it exists for every vehicle â
 shown only in that mode. Recorded frames carry `playback: true`: the status
 dot never calls them stale, the adapter badge says "recorded", and
 `TileStudio.runAlerts` ignores them unless the timeline's alerts box is
-ticked. `docs/PLAYBACK.md`.
+ticked. The timeline docks to the window, carries the owner's flags
+(`web/bookmarks.json`, `/api/bookmarks`) and the auto-detected discharge
+pulls (`Store.pulls()`, `/api/bookmarks/auto`), and its playhead is grabbable.
+`docs/PLAYBACK.md`.
 
 `web/templates/index.html` (no framework) is rendered with the active
 profile's chrome: the page title and header subtitle come from `TITLE`, the

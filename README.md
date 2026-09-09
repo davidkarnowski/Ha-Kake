@@ -408,6 +408,10 @@ Being on the bus at all has consequences worth knowing:
   moves the cell-voltage read into every cycle and stores every fresh read
   (a CELL LOG badge says so) — the same read-only request, more often — so a
   logged drive plays back pair by pair through an acceleration.
+- **Timeline flags** (2026-09-08): `⚑ Flag` marks a moment — live, *now*, so a
+  passenger can mark "pull from the light" as it happens; in playback, the
+  playhead — and the strip shows auto-detected discharge pulls as hollow
+  flags to jump to. `web/bookmarks.json`, `/api/bookmarks`.
 - **Playback** (2026-09-08): a Live / Playback switch in the header. Playback
   replays what the database recorded — pick a session, scrub, play at ½× to
   60×, drag on the strip to zoom into a stretch — and every tile, the 3D pack

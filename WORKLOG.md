@@ -1162,3 +1162,14 @@ animates at the display's full rate, and the saving comes from the right
 place: the DOM labels — the expensive part of a frame — are redrawn only
 when the camera or the data moved. Idle, scrolled away or in a hidden tab,
 nothing is drawn.
+
+**Studs on the short end** (same evening, the owner's eye): the gen1 module
+is one design throughout — both studs and the sense tap on one 223 mm end —
+and the rear block had them drawn along its long top edge. Standing on edge
+a module is 223 mm tall, so its short end faces forward; the studs now point
+down the bus-bar channel toward the floor stacks. The flat stacks already
+had theirs on a short end, inboard. Docs caught up: README's status carries
+the flags, ARCHITECTURE's page-modes paragraph the docked timeline and the
+pulls, PACK3D the stud placement, and ROADMAP a section distilling the
+extended-CAN research (throttle, brake and 12 V, regen torque, motor power,
+steering, climate power — all on Car-CAN, all walkable parked).

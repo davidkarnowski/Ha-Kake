@@ -116,7 +116,10 @@ function build(root) {
     groups.push({ mesh, ids });
   }
 
-  // module outlines and terminal studs (terminals up on the rear block, inboard on the flat stacks)
+  // module outlines and terminal studs. The gen1 module is one design throughout: both
+  // studs and the sense tap sit on one SHORT (223 mm) end. Lying flat, that end faces
+  // inboard toward the bus-bar channel; standing on edge in the rear block, the module is
+  // 223 mm tall and its short end faces forward, so the studs point at the front of the car.
   const modEdge = new THREE.LineBasicMaterial({ color: 0x0a0e17, transparent: true, opacity: 0.45 });
   const terms = new THREE.InstancedMesh(new THREE.CylinderGeometry(6, 6, 10, 12),
                                         new THREE.MeshStandardMaterial({ color: 0xd8c27a, metalness: 0.8, roughness: 0.35 }), modules.length * 3);
@@ -127,7 +130,7 @@ function build(root) {
       e.position.set(md.cx, md.cy, md.cz); scene.add(e);
       for (let k = -1; k <= 1; k++) {
         const qq = new THREE.Quaternion(); let x, y, z;
-        if (md.kind === 'edge') { x = md.cx + k * 110; y = md.cy + md.sy / 2 + 5; z = md.cz; }
+        if (md.kind === 'edge') { x = md.cx + md.sx / 2 + 5; y = md.cy + k * 75; z = md.cz; qq.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2); }
         else { x = md.cx + k * 70; y = md.cy; z = md.cz - md.side * (md.sz / 2 + 5); qq.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2); }
         mat.compose(new THREE.Vector3(x, y, z), qq, new THREE.Vector3(k === 0 ? 0.6 : 1, 1, k === 0 ? 0.6 : 1));
         terms.setMatrixAt(n++, mat);

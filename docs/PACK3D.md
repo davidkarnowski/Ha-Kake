@@ -71,7 +71,11 @@ translucent case, DOM labels tracked in 3D.
 Each module is drawn as **two half-slabs split through its thickness**, one
 per measured pair, because that is how the 2s2p module is built: the two
 series pairs are stacked through it. The first pair of a module sits on the
-upper (or, in the rear block, the passenger-side) half.
+upper (or, in the rear block, the passenger-side) half. The studs are drawn
+on one **short** end of every module, as the real gen1 module has them —
+inboard on the flat stacks, facing forward on the rear block, where a module
+standing on edge is 223 mm tall and its short end looks down the bus-bar
+channel.
 
 three.js ships as ES modules only, so `pack3d.js` is the page's one module
 script, reached through an import map that points at the vendored copy in
