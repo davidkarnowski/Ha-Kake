@@ -336,3 +336,20 @@ the module pane without the fold). gridstack already supports a column count
 per breakpoint (`columnOpts`), so the mechanics are a responsive column set
 plus a per-mode layout name; the work is deciding which tiles grow and how
 their art scales. Nothing in the reader or the API changes.
+
+## To do: stored values are the reported values; derivations are stamped (2026-09-09)
+
+Audit of 2026-09-09: nothing between the adapter and the database smooths for
+readability — the charts' `/api/history` averages per time bucket **on read**,
+playback keeps the last real row per bucket, and the page draws what the API
+returns. One thing is not raw: the Leaf's `apply_policy` rewrites `current_a`
+before storage (the group-05 / sensor-2 fusion with a learned offset, the
+user's zero calibration, the positive-while-discharging clamp) and derives
+`power_kw` from it, so the `current_a` column holds a *derived* value. The raw
+readings (`current_raw_a`, `hv_current1_a`, `hv_current2_a`, `g05_current_a`,
+the learned offset) are kept in the row's `extra` JSON — nothing is lost, but
+they are second-class. The rule going forward, folded into the provenance
+lane: **every source's value is stored as reported, as a first-class column
+where it has a trend; a canonical key that is derived says so** (`<key>_src`
+naming the policy, the inputs kept), and any smoothing for readability lives
+in the page or the read-side API, never in a stored value.
