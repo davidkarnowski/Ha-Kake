@@ -66,7 +66,7 @@ TILES = [
                  "hvac_ac_on", "hvac_compressor_rpm", "hvac_heater_level", "hvac_on", "hvac_fan_on",
                  "hvac_fan_speed", "hvac_blower_v"]},
     {"id": "power",       "name": "Power monitor",          "items": ["lbc01", "lbc05"],
-     "signals": ["power_kw", "current_a", "pack_v"]},
+     "signals": ["power_kw", "current_a", "pack_v", "power_adj_kw", "current_adj_a"]},
     {"id": "history",     "name": "SOC history",            "items": ["lbc01"],
      "signals": ["soc"]},
     {"id": "degradation", "name": "Capacity degradation",   "items": ["lbc01"],
@@ -238,6 +238,10 @@ SIGNALS = {
     "pack_v":           {"label": "Pack voltage",    "unit": "V",   "min": 300, "max": 410, "dec": 1, "item": "lbc01", "hist": "pack_v",       "color": "good-high"},
     "current_a":        {"label": "Pack current",    "unit": "A",   "min": -150, "max": 150, "dec": 1, "item": "lbc01", "hist": "current_a",   "color": "diverge"},
     "power_kw":         {"label": "Power",           "unit": "kW",  "min": -10, "max": 10,  "dec": 2, "item": "lbc01", "hist": "power_kw",     "color": "diverge"},
+    # Derived by apply_policy (fusion offset, zero calibration, discharge clamp) — what the
+    # power tile shows; the raw `current_a` / `power_kw` above are what the database keeps.
+    "current_adj_a":    {"label": "Pack current (adjusted)", "unit": "A",  "min": -150, "max": 150, "dec": 1, "item": "lbc01", "color": "diverge"},
+    "power_adj_kw":     {"label": "Power (adjusted)",        "unit": "kW", "min": -10,  "max": 10,  "dec": 2, "item": "lbc01", "color": "diverge"},
     "capacity_ah":      {"label": "Capacity",        "unit": "Ah",  "min": 0,   "max": 66,  "dec": 2, "item": "lbc01", "hist": "capacity_ah",  "color": "good-high"},
     "soh":              {"label": "SOH",             "unit": "%",   "min": 0,   "max": 100, "dec": 1, "item": "lbc01", "hist": "soh",          "color": "good-high"},
     "hx":               {"label": "HX",              "unit": "",    "min": 0,   "max": 100, "dec": 2, "item": "lbc01", "hist": "hx",           "color": "good-high"},
@@ -364,7 +368,13 @@ def apply_policy(cache, calib, state):
     cur = c.get("current_a")
     if cur is None:
         return
-    c["current_raw_a"] = cur
+    # Rule (2026-09-09, the owner's): the stored value is the value the car
+    # reported. `current_a` and `power_kw` stay exactly as decode() left them;
+    # everything this policy derives goes under its own key (`current_adj_a`,
+    # `power_adj_kw`, `current_adj_src`). The dashboard shows the adjusted
+    # value when it is there; the database keeps the raw one first-class.
+    c["current_raw_a"] = cur          # alias of current_a, kept for the calibration endpoint
+    src = []
     g05 = c.get("g05_current_a")
     s2 = c.get("hv_current2_a")
     if g05 is not None and s2 is not None and g05 != state.get("last_g05"):
@@ -384,15 +394,23 @@ def apply_policy(cache, calib, state):
     if s2 is not None and state.get("s2_offset") is not None and cur == s2:
         cur = round(s2 + state["s2_offset"], 3)
         c["current_fused"] = True
+        src.append("s2+g05_offset")
+    else:
+        c["current_fused"] = False
+        src.append("s2" if cur == s2 else "g05")
     c["s2_offset_a"] = state.get("s2_offset")
     c["s2_offset_stale"] = bool(state.get("s2_offset_stale"))
     off = float(calib.get("current_offset_a", 0.0) or 0.0)
     c["current_offset_a"] = off
-    cur = round(cur - off, 3)
+    if off:
+        cur = round(cur - off, 3)
+        src.append("zero_cal")
     if "discharging" not in c:
         c["discharging"] = cur < 0
     if c["discharging"] and cur > 0:
         cur = 0.0
-    c["current_a"] = cur
+        src.append("clamp")
+    c["current_adj_a"] = cur
+    c["current_adj_src"] = "+".join(src)
     if c.get("pack_v"):
-        c["power_kw"] = round(c["pack_v"] * cur / 1000.0, 3)
+        c["power_adj_kw"] = round(c["pack_v"] * cur / 1000.0, 3)

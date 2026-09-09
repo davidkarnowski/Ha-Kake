@@ -83,7 +83,7 @@ It prints one line per profile and exits non-zero on a problem:
 
 ```
 lancer_2009: OK (2009 Mitsubishi Lancer ES, 19 items, 20 signals, 18 history columns)
-leaf_ze0: OK (2012 Nissan Leaf (ZE0), 18 items, 59 signals, 33 history columns)
+leaf_ze0: OK (2012 Nissan Leaf (ZE0), 18 items, 61 signals, 33 history columns)
 ```
 
 It returns the *whole* list of problems rather than raising on the first, so
@@ -218,7 +218,7 @@ asleep every time a slow cycle comes around.
 |---|---|---|
 | `HISTORY_COLS` | `dict` column → spec | Which record keys get **real, indexed SQLite columns** instead of riding in the `extra` JSON bag. Anything not listed here is stored forever but cannot be charted or aggregated. `web/store.py` builds the schema, the insert, `history()` and `daily_health()` from this — a profile never edits the store. |
 | `EXTRA_SKIP` | `tuple` of record keys | Keys never worth putting in `extra` at all: raw dumps, lists already stored as columns. The Leaf skips `("temps", "temps_c", "temps_f", "temps_raw", "balancing", "readings")`. |
-| `apply_policy(cache, calib, state)` | callable | Per-vehicle sensor policy, run every cycle after decode: fusion, calibration, sign correction. `state` is a dict the profile owns and the reader carries between cycles. The Leaf uses it to apply a zero-current offset and take current *direction* from the BMS discharge flag rather than the sensor's sign. |
+| `apply_policy(cache, calib, state)` | callable | Per-vehicle sensor policy, run every cycle after decode: fusion, calibration, sign correction. `state` is a dict the profile owns and the reader carries between cycles. **It may add keys but must never change a value `decode()` reported** — the database stores what the car said; a derived value gets its own key (`tests/test_policy_raw.py` checks every profile). The Leaf derives `current_adj_a` / `power_adj_kw` (zero-current offset, sensor fusion, direction from the BMS discharge flag) and leaves `current_a` / `power_kw` raw. |
 | `DB_FILE` | `str` | A database file of this profile's own, in `web/`. Unset is the normal case: every profile shares `web/leaf_battery.db` and rows are separated by the `vehicle` column. |
 | `LOGO` | `str` | Header wordmark art. `"leaf"` gives the leaf silhouette; anything else — including omitting it — gives a neutral dial. The mark fills with the first level-ish signal your registry declares (`soc`, then `fuel_pct`), or stays static if you declare neither. |
 

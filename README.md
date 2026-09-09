@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-937%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
+![status](https://img.shields.io/badge/tests-940%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 > ### ⚠️ Active development
 >
@@ -77,7 +77,7 @@ Two profiles ship:
 
 | Profile | Car | How it was built |
 |---|---|---|
-| `leaf_ze0` | 2011–2012 Nissan Leaf (ZE0) | Largely reverse engineered: 18 items, 59 signals, 33 history columns |
+| `leaf_ze0` | 2011–2012 Nissan Leaf (ZE0) | Largely reverse engineered: 18 items, 61 signals, 33 history columns |
 | `lancer_2009` | 2009 Mitsubishi Lancer ES | Standard SAE J1979 mode-01 PIDs — **no reverse engineering at all**: 19 items, 20 signals, 18 history columns, in 255 lines |
 
 ```bash
@@ -247,7 +247,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 937 offline tests, no car needed
+pytest -q                          # 940 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -428,6 +428,12 @@ Being on the bus at all has consequences worth knowing:
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **Stored values are the reported values** (2026-09-09): the Leaf's current
+  policy no longer rewrites `current_a` / `power_kw` before a row is written;
+  its fusion offset, zero calibration and discharge clamp land in
+  `current_adj_a` / `power_adj_kw` (with `current_adj_src` naming the steps),
+  the power tile shows the adjusted value, and its smoothing is a display-only
+  choice in the tile's ⋯ menu. A test holds every profile to the rule.
 - **MQTT ingestion and a public stream** (2026-09-09): a Pi bridge (`bridge/`)
   mirrors CAN frames to a broker as JSON and runs the reader's read requests
   on its behalf, with the read-only whitelist enforced on both ends;
@@ -463,7 +469,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 937 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 940 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

@@ -181,6 +181,13 @@ as of 2026-09-09 tested on a virtual bus only, not on the board or the car.
 
 ## Data model
 
+**Stored values are the values the car reported.** A profile's `apply_policy()`
+may add derived keys (the Leaf's `current_adj_a` / `power_adj_kw`: sensor
+fusion, zero calibration, the discharge clamp) but never changes a key
+`decode()` produced, and `tests/test_policy_raw.py` checks every profile.
+Smoothing for readability lives in the page (the power tile's ⋯ menu, display
+only) or in the read-side `history()` averaging — never in a stored row.
+
 The vehicle profile's `decode()` turns raw ELM327 lines into one flat record
 (the Leaf's via `leaf_decoders.py`). `web/store.py` persists a row per
 `STORE_PERIOD` (5 s) to `readings`, per-cell rows to `cells`, sessions to
@@ -413,4 +420,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 937 tests at the time of writing.
+that must stay green. 940 tests at the time of writing.

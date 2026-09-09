@@ -31,6 +31,9 @@ A profile is a module in this package exporting:
                    no primary item was polled this cycle.
   apply_policy(cache, calib, state)   optional — per-vehicle sensor policy
                    (fusion, calibration); `state` is a dict the profile owns.
+                   It may ADD keys; it must never change a value decode()
+                   reported — the database keeps what the car said, and a
+                   derived value lives under its own key (tests enforce it).
 
 History columns (optional, but needed for anything graphable)
 -------------------------------------------------------------

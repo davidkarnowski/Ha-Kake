@@ -1302,3 +1302,44 @@ if a measurement ever pins the bridge on a small board, a Rust bridge
 speaking the same topics changes nothing on the laptop.
 
 937 tests, privacy sweep clean. Not merged, not pushed.
+
+### Stored values are the reported values  2026-09-09
+
+Branch `bug/raw-current-stored` (on `feature/can-transport`). The owner
+noticed the power tile's "5-sample EMA" label, could not change it, and
+asked the real question: is anything smoothed before it is stored? The
+rule, in the owner's words: smoothing for readability is cosmetic, on the
+dashboard only; the database keeps the most raw and accurate values the
+car reported, always.
+
+**The audit.** The read path was clean — `/api/history` averages per time
+bucket on read for the charts, playback keeps the last real row per bucket
+and never averages, the page draws what the API returns, and the tile's
+EMA lives entirely in the page. One stored column was not raw: the Leaf's
+`apply_policy` rewrote `current_a` before the row was written (the
+group-05 / sensor-2 fusion with a learned offset, the zero calibration, the
+positive-while-discharging clamp) and derived `power_kw` from it; the raw
+readings survived only in the row's `extra` JSON.
+
+**The change.** `apply_policy` now derives instead of overwriting:
+`current_a` and `power_kw` stay exactly what `decode()` produced (sensor 2
+when group 01 was read, else group 05) and that is what the `readings`
+columns hold; the fusion, calibration and clamp land in `current_adj_a` /
+`power_adj_kw`, with `current_adj_src` naming the steps applied
+(`s2+g05_offset+zero_cal+clamp`). The power tile shows the adjusted value,
+so idle still reads −0.9 A rather than the sensor's dead zone and "zero
+now" still visibly works; its EMA is now a setting — off / 3 / 5 / 10
+samples — in the tile's ⋯ menu and on the label itself, persisted in the
+tile's opts, and labelled display-only. The two derived keys are registry
+signals (61 now) and alertable from the tile. Old rows keep their derived
+`current_a`; the page falls back to it when no adjusted key is present.
+
+**The rule is enforced, not just written.** `tests/test_policy_raw.py`
+runs the session fixture through every profile that has a policy, three
+cycles with a calibration offset set, and fails if any key `decode()`
+produced changed; the contract docstring, ADDING_A_VEHICLE, ARCHITECTURE
+and SIGNALS say the same. Still to do in the provenance lane: the raw
+source currents as first-class columns.
+
+Not checked in a browser: the ⋯ menu select and the clickable label. The
+tests cover the policy and the API; the page needs the owner's eye.

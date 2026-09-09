@@ -748,7 +748,7 @@
       </div>
       <div class="power-detail-row">
         <span class="power-detail-label">Smoothing</span>
-        <span class="power-detail-value" style="font-size:0.85em; color:var(--dim)">5-sample EMA</span>
+        <span class="power-detail-value" style="font-size:0.85em; color:var(--dim)"><a id="power-smooth" title="Display smoothing only — the database stores the raw reading. Click to change; also in the tile's ⋯ menu." style="color:var(--accent); cursor:pointer">5-sample EMA</a></span>
       </div>
       <div class="power-detail-row">
         <span class="power-detail-label">Zero offset</span>
@@ -899,10 +899,40 @@ const PACK = {{ veh.get('pack') | tojson }};  // the profile's physical pack lay
 window.PACK = PACK;   // a top-level const is not a window property; the pack3d module reads it from there
 const IDLE_A = 0.6, IDLE_KW = 0.25;  // LBC current sensors wander about 0.5 A around zero; below this is idle
 
-// Power smoothing (EMA)
+// Power smoothing (EMA) — DISPLAY ONLY. The reader stores the reported current and
+// power raw (`current_a`, `power_kw`); the tile shows the profile's adjusted value
+// (`current_adj_a`, `power_adj_kw`: fusion offset, zero calibration, discharge
+// clamp) when it is there, smoothed here by a setting in the tile's ⋯ menu.
 let smoothedPower = null;
 let smoothedCurrent = null;
-const emaAlpha = 0.4; // 0.4 = moderate smoothing (~5 sample window)
+const EMA_STEPS = [['off', 1.0, 'off'], ['3', 0.6, '3-sample EMA'], ['5', 0.4, '5-sample EMA'], ['10', 0.2, '10-sample EMA']];
+let emaAlpha = 0.4;   // '5'
+function applyPowerSmoothing(o) {
+  const step = EMA_STEPS.find(s => s[0] === String((o || {}).ema ?? '5')) || EMA_STEPS[2];
+  emaAlpha = step[1];
+  if (emaAlpha >= 1) smoothedPower = smoothedCurrent = null;
+  const el = document.getElementById('power-smooth'); if (el) el.textContent = step[2];
+}
+window.powerMenu = function (box, o, commit) {
+  const h = document.createElement('h5'); h.textContent = 'Smoothing — display only';
+  const row = document.createElement('div'); row.className = 'row';
+  const opts = EMA_STEPS.map(s => `<option value="${s[0]}" ${String(o.ema ?? '5') === s[0] ? 'selected' : ''}>${s[2]}</option>`).join('');
+  row.innerHTML = `<label style="min-width:0">gauge and current <select id="tm-ema">${opts}</select></label>`;
+  const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
+  why.textContent = 'Cosmetic. The database always stores the raw reading the car reported.';
+  row.querySelector('#tm-ema').addEventListener('change', e => { o.ema = e.target.value; commit(); });
+  box.append(h, row, why);
+};
+document.addEventListener('tiles:applied', () => { if (window.TileStudio) applyPowerSmoothing(TileStudio.opts('power')); });
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('power-smooth');
+  if (el) el.addEventListener('click', () => {
+    const cur = String((window.TileStudio ? TileStudio.opts('power') : {}).ema ?? '5');
+    const i = EMA_STEPS.findIndex(s => s[0] === cur);
+    const next = EMA_STEPS[(i + 1) % EMA_STEPS.length][0];
+    if (window.TileStudio && TileStudio.setOpt) TileStudio.setOpt('power', 'ema', next); else applyPowerSmoothing({ ema: next });
+  });
+});
 
 // SOC trend drives power state: 'charging', 'discharging', 'stable'
 let socTrend = 'stable';
@@ -1090,10 +1120,11 @@ function updateDash(data) {
   if (window.Pack3D) Pack3D.render(document, data); else window.__pack3dPending = data;
 
   // Power monitor gauge
-  if (data.power_kw != null) {
-    // Apply EMA smoothing
-    const rawPower = data.power_kw;
-    const rawCurrent = data.current_a || 0;
+  if (data.power_kw != null || data.power_adj_kw != null) {
+    // The adjusted value when the profile derives one, else the raw reading;
+    // then the display-only EMA (alpha 1 = off)
+    const rawPower = data.power_adj_kw ?? data.power_kw;
+    const rawCurrent = (data.current_adj_a ?? data.current_a) || 0;
     smoothedPower = smoothedPower === null ? rawPower : smoothedPower * (1 - emaAlpha) + rawPower * emaAlpha;
     smoothedCurrent = smoothedCurrent === null ? rawCurrent : smoothedCurrent * (1 - emaAlpha) + rawCurrent * emaAlpha;
 
@@ -1788,6 +1819,6 @@ if (!SHOT) setInterval(pollHealth, 60000);
 <script src="/static/alerts.js"></script>
 <script src="/static/vendor/gridstack-all.js"></script>
 <script src="/static/tilestudio.js"></script>
-<script>TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init();</script>
+<script>TileStudio.menuExtra('power', powerMenu); TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init(); applyPowerSmoothing(TileStudio.opts('power'));</script>
 </body>
 </html>

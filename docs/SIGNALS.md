@@ -177,7 +177,17 @@ error. Over this drive the fused `current_a` strays from sensor 2 by a median
 5.9 A, p90 23.6 A, worst 41.1 A while moving; the `discharging and cur > 0 →
 0.0` clamp then zeroes many driving rows outright. The offset should only be
 learned while |group 05| is comfortably inside the band and the two reads are
-close. Open; not fixed in this pass.
+close. Fixed 2026-09-03 (the learn band and delta limit in `apply_policy`).
+
+**Stored values are the reported values (2026-09-09).** `apply_policy()` no
+longer rewrites `current_a` or `power_kw`: they stay exactly what `decode()`
+produced (sensor 2 when group 01 was read, else group 05; power from that and
+`pack_v`) and that is what the database keeps. Everything the policy derives —
+the fusion offset, the zero calibration, the positive-while-discharging clamp —
+lands in `current_adj_a` / `power_adj_kw`, with `current_adj_src` naming the
+steps (`s2+g05_offset+zero_cal+clamp`), and the power tile shows the adjusted
+value with a *display-only* smoothing chosen in its ⋯ menu. A profile's policy
+may add keys; it may never change a reported one (`tests/test_policy_raw.py`).
 
 Also open, from the same drive: group-01 sensor 1 reads a median **1.358×**
 sensor 2 under load (p10 1.294, p90 1.429, n = 48 above 15 A), and it is

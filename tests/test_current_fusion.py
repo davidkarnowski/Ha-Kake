@@ -30,6 +30,8 @@ def test_offset_is_learned_from_a_believable_sample():
     assert state["s2_offset"] == pytest.approx(-1.18 - -1.27)
     assert c["s2_offset_stale"] is False
     assert c["current_fused"] is True
+    assert c["current_a"] == -1.27, "the reported current must never be rewritten"
+    assert c["current_adj_a"] == pytest.approx(-1.18) and "s2+g05_offset" in c["current_adj_src"]
 
 
 def test_a_wrapped_sample_never_becomes_the_offset():
@@ -71,5 +73,6 @@ def test_driving_current_is_not_zeroed_by_the_discharging_clamp():
     leaf.apply_policy(_cache(-1.27, -1.18), {}, state)
     c = _cache(-60.54, -15.53)                               # peak of the drive
     leaf.apply_policy(c, {}, state)
-    assert c["current_a"] < -55.0
-    assert c["power_kw"] < -20.0
+    assert c["current_adj_a"] < -55.0
+    assert c["power_adj_kw"] < -20.0
+    assert c["current_a"] == c["current_raw_a"]                  # reported value untouched

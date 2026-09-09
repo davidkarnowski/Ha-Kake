@@ -352,4 +352,11 @@ they are second-class. The rule going forward, folded into the provenance
 lane: **every source's value is stored as reported, as a first-class column
 where it has a trend; a canonical key that is derived says so** (`<key>_src`
 naming the policy, the inputs kept), and any smoothing for readability lives
-in the page or the read-side API, never in a stored value.
+in the page or the read-side API, never in a stored value. **Done the same
+day** for the Leaf's current: `apply_policy` now derives `current_adj_a` /
+`power_adj_kw` (+ `current_adj_src`) and leaves `current_a` / `power_kw` as
+reported; the power tile shows the adjusted value and its EMA is a display-only
+setting in the tile's ⋯ menu (off / 3 / 5 / 10); `tests/test_policy_raw.py`
+holds every profile to the rule. Still to do in the provenance lane: the raw
+source currents (`hv_current1_a`, `hv_current2_a`, `g05_current_a`) as
+first-class columns.

@@ -170,20 +170,23 @@ def test_next_due_and_empty_cycles(r, tmp_path):
 
 
 def test_current_policy_clamps_offset_noise_while_discharging(r):
+    """The clamp lands on the derived key; the reported current is stored untouched."""
     r.cache.update({"current_a": 0.21, "pack_v": 381.3, "discharging": True})
     r.apply_policy()
-    assert r.cache["current_a"] == 0.0 and r.cache["power_kw"] == 0.0
-    assert r.cache["current_raw_a"] == 0.21
+    assert r.cache["current_adj_a"] == 0.0 and r.cache["power_adj_kw"] == 0.0
+    assert r.cache["current_a"] == 0.21 and r.cache["current_raw_a"] == 0.21
+    assert "clamp" in r.cache["current_adj_src"]
     r.cache.update({"current_a": -1.5})
     r.apply_policy()
-    assert r.cache["current_a"] == -1.5 and r.cache["power_kw"] < 0
+    assert r.cache["current_adj_a"] == -1.5 and r.cache["power_adj_kw"] < 0
+    assert r.cache["current_a"] == -1.5
 
 
 def test_current_policy_without_flag_uses_sign(r):
     r.cache.clear()
     r.cache.update({"current_a": 2.0, "pack_v": 380.0})
     r.apply_policy()
-    assert r.cache["discharging"] is False and r.cache["power_kw"] > 0
+    assert r.cache["discharging"] is False and r.cache["power_adj_kw"] > 0
 
 
 def test_current_offset_calibration(r, tmp_path, monkeypatch):
@@ -192,12 +195,12 @@ def test_current_offset_calibration(r, tmp_path, monkeypatch):
     r.cache.update({"current_a": 0.33, "pack_v": 381.0})
     r.apply_policy()
     assert r.cache["current_offset_a"] == 0.3
-    assert r.cache["current_a"] == pytest.approx(0.03)
-    assert r.cache["current_raw_a"] == 0.33
+    assert r.cache["current_adj_a"] == pytest.approx(0.03)      # the calibration lands on the derived key
+    assert r.cache["current_a"] == 0.33 and r.cache["current_raw_a"] == 0.33   # the reported value is untouched
     rd.save_calibration({})
     r.cache.update({"current_a": 0.33})
     r.apply_policy()
-    assert r.cache["current_a"] == 0.33
+    assert r.cache["current_a"] == 0.33 and r.cache["current_adj_a"] == 0.33
 
 
 def test_sensor_fusion_learns_group05_offset(r):
@@ -205,12 +208,13 @@ def test_sensor_fusion_learns_group05_offset(r):
     r.cache.update({"hv_current2_a": 0.3, "g05_current_a": -0.96, "current_a": 0.3, "pack_v": 380.0, "discharging": True})
     r.apply_policy()
     assert r.cache["s2_offset_a"] == pytest.approx(-1.26)
-    assert r.cache["current_a"] == pytest.approx(-0.96)
-    assert r.cache["power_kw"] < 0
+    assert r.cache["current_adj_a"] == pytest.approx(-0.96)
+    assert r.cache["current_a"] == 0.3                          # stored as reported
+    assert r.cache["power_adj_kw"] < 0
     # next cycle: only sensor 2 refreshed (group 05 stale) → offset carried
     r.cache.update({"hv_current2_a": -1.5, "current_a": -1.5})
     r.apply_policy()
-    assert r.cache["current_a"] == pytest.approx(-2.76)
+    assert r.cache["current_adj_a"] == pytest.approx(-2.76) and r.cache["current_a"] == -1.5
     # fresh group 05 agreeing with sensor 2 under load pulls the offset back toward 0
     r.cache.update({"hv_current2_a": -1.5, "g05_current_a": -1.55, "current_a": -1.5})
     r.apply_policy()
