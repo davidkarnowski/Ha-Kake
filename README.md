@@ -193,6 +193,13 @@ this is how you spot a pack going bad:
 
 ![96 cell pairs across 48 modules; weakest flagged](docs/img/cell-pairs.png)
 
+…and the same 96 pairs where they sit in the car — the rear block on edge
+under the rear seat, the flat stacks under the seats and footwells — each
+pair a body coloured on the grid's own scale, the four temperature sensors
+labelled, a click opening the module's two pairs with their rank in the pack:
+
+![The battery pack in 3D — 48 modules, 96 cell pairs coloured by voltage, module 28 pinned with its two pairs, spread and average](docs/img/pack3d.jpg)
+
 The body and climate are decoded too — doors, locks, every exterior light, and
 the HVAC amplifier (cabin/ambient/evaporator, A/C compressor rpm, setpoint, fan):
 

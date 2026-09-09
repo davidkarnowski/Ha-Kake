@@ -7,6 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 > Tile **Battery pack — 3D** in the tiles menu. Leaf profile only.
 
+![The pack in 3D on a real 2012 Leaf: the rear block on edge, the floor stacks, sensors labelled, module 28 pinned](img/pack3d.jpg)
+
 The cell-pair grid tells you *which* pair is low. This tile tells you *where*
 it is: the pack drawn as it sits under the car — the tall block under the rear
 seat, the flat stacks on either side of the floor — with every one of the 96
