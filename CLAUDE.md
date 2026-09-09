@@ -42,7 +42,10 @@ Any task delegated to a sub-agent is run with **active logging by that agent
 into a markdown file**, so the work can be resumed and re-contextualised after
 a token limit, rate limit or disconnection. On 2026-09-03 three concurrent
 agents were killed mid-flight by a session limit; recovery was possible only
-because the working tree happened to be inspected first. Logs make it routine.
+because the working tree happened to be inspected first. Logs make it routine. It happened again on
+2026-09-08: a research agent was cut off after writing its memo but before logging
+it, and the next session had to discover the memo by hand. Every sub-agent brief
+carries the log rule, without exception.
 
 - **Path:** `research/agent-logs/<task-slug>-<YYYYMMDD>.md` (gitignored,
   survives the session). The orchestrator names the path in the brief.
@@ -152,3 +155,5 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Where is cell pair N in the pack? | `docs/PACK3D.md`; the table is `PACK_LAYOUT` in `vehicles/leaf_ze0.py` (sections verified against the service manual; the order inside a stack is assumed and says so) |
 | Draw another car's pack in 3D | `docs/PACK3D_GUIDE.md`: `PACK_*` in the profile (`split` / `group` / modes), the method, the checklist |
 | Replay a recorded afternoon on the dashboard | `docs/PLAYBACK.md`; the Playback button in the header, `?playback=1&from=&to=` for a link; frames come from `Store.frames()` |
+| Use a native CAN adapter / CANable | `docs/CAN_TRANSPORT.md`: arrival checklist, wiring (termination jumper OFF), `can_*` config keys, `--adapter can`, the ELM-command mapping, listen-only on EV-CAN; the façade is `cantransport.py` |
+| Ingest a remote car over MQTT / build a gauge on the stream | `docs/MQTT.md` (the public wire protocol: topics, JSON schemas, `mosquitto_sub` examples, a Python and a browser gauge), `bridge/README.md` (the Raspberry Pi side); `--adapter mqtt`, `mqttsource.py`, the `mqtt` block in `config.local.json` |

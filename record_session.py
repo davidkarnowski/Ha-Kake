@@ -20,6 +20,11 @@ Two ways to get one:
       ./venv/bin/python record_session.py --derive
       ./venv/bin/python record_session.py --derive --vehicle leaf_ze0
 
+  Convert a captured MQTT stream (docs/MQTT.md) — a drive recorded on the bridge
+  with nothing on the laptop — into a fixture (no hardware):
+      mosquitto_sub -h <broker> -t 'hakake/leaf/car/#' -F '{"topic":"%t","payload":%p}' > drive.jsonl
+      ./venv/bin/python record_session.py --from-mqtt drive.jsonl --vehicle leaf_ze0 --out drive.json
+
 The recorder polls exactly what the active profile declares (ITEMS/TARGETS),
 using the same transport helpers as the reader, and writes every line
 verbatim. It never fabricates or interpolates: an item the car did not answer
@@ -232,6 +237,138 @@ def derive(names=None, out_dir=None, log=print):
     return written
 
 
+# ── conversion of a captured MQTT stream ─────────────────────────────────
+#
+# The bridge's rx/<ID> stream (docs/MQTT.md) is a session fixture once it is
+# grouped by time: every payload's `id` + `d` is the ELM line, byte for byte.
+# A tx/uds request followed by its ack turns the response frames captured in
+# between into a "uds" entry (keyed by request header and command, as the
+# recorder writes them); every other frame is "passive". Times become offsets
+# from the first frame — an epoch timestamp identifies the day a car was
+# driven, and fixtures are published.
+
+def read_mqtt_stream(path):
+    """Yield (topic, payload) from a JSON-lines capture, one message per line.
+
+    A line is `{"topic": ..., "payload": {...}}`; `payload` may also be the
+    JSON text itself (what `mosquitto_sub -F` writes). Lines that are not
+    JSON, or whose payload is not, are skipped — a capture is often cut off
+    mid-line.
+    """
+    with open(path) as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(msg, dict) or "topic" not in msg:
+                continue
+            payload = msg.get("payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+            yield str(msg["topic"]), payload
+
+
+def mqtt_stream_events(path):
+    """The stream as (t, kind, ...) events in capture order:
+    ("frame", t, id_hex, line), ("req", payload), ("ack", req, payload)."""
+    from mqttsource import parse_frame, expand_batch, frame_line     # lazy: keeps elm327 free of it
+    last_t = 0.0
+    for topic, payload in read_mqtt_stream(path):
+        tail = topic.rsplit("/", 1)[-1]
+        if "/tx/uds/" in topic and isinstance(payload, dict):
+            yield ("ack", tail, payload)
+        elif topic.endswith("/tx/uds") and isinstance(payload, dict):
+            yield ("req", last_t, payload)
+        elif topic.endswith("/rx/_batch"):
+            try:
+                frames = expand_batch(payload)
+            except (ValueError, TypeError):
+                continue
+            for t, id_hex, data, _ in frames:
+                last_t = t
+                yield ("frame", t, id_hex, frame_line(id_hex, data))
+        elif "/rx/" in topic:
+            try:
+                t, id_hex, data, _ = parse_frame(payload, topic_id=tail)
+            except (ValueError, TypeError):
+                continue
+            last_t = t
+            yield ("frame", t, id_hex, frame_line(id_hex, data))
+
+
+def from_mqtt(path, out=None, vehicle=None, period=1.0, notes="", log=print):
+    """Build a replay fixture from a captured `rx/#` (and optionally `tx/uds`) stream."""
+    vehicle = get_vehicle(vehicle)
+    period = max(0.05, float(period or 1.0))
+    passive = []                    # (t, id_hex, line)
+    uds = []                        # (t, tx, cmd, [lines])
+    pending = {}                    # req → {"tx", "rx", "cmd", "t", "lines"}
+    for ev in mqtt_stream_events(path):
+        if ev[0] == "frame":
+            _, t, id_hex, line = ev
+            owner = next((r for r in reversed(list(pending.values())) if r["rx"] == id_hex), None)
+            if owner is not None:
+                owner["lines"].append(line)
+                if owner["t"] is None:
+                    owner["t"] = t
+            else:
+                passive.append((t, id_hex, line))
+        elif ev[0] == "req":
+            _, t, p = ev
+            try:
+                cmd = "".join(str(p.get("data", "")).split()).upper()
+                pending[str(p.get("req"))] = {"tx": str(p["tx"]).upper(), "rx": str(p["rx"]).upper(),
+                                              "cmd": cmd, "t": None, "lines": [], "t_req": t}
+            except (KeyError, AttributeError):
+                continue
+        elif ev[0] == "ack":
+            _, req, p = ev
+            r = pending.pop(req, None)
+            if r and r["lines"] and p.get("ok", True):
+                uds.append((r["t"] if r["t"] is not None else r["t_req"], r["tx"], r["cmd"], r["lines"]))
+    for r in pending.values():          # cut off before the ack: keep what was captured
+        if r["lines"]:
+            uds.append((r["t"] if r["t"] is not None else r["t_req"], r["tx"], r["cmd"], r["lines"]))
+    times = [t for t, _, _ in passive] + [t for t, _, _, _ in uds]
+    if not times:
+        raise ValueError(f"{path}: no CAN frames in the stream (nothing under rx/)")
+    t0 = min(times)
+
+    def bucket(t):
+        return round(int((t - t0) / period) * period, 3)
+
+    frames = {}
+    for t, id_hex, line in passive:
+        fr = frames.setdefault(bucket(t), {"t": bucket(t), "uds": {}, "passive": {}})
+        fr["passive"].setdefault(id_hex, []).append(line)
+    for t, tx, cmd, lines in uds:
+        fr = frames.setdefault(bucket(t), {"t": bucket(t), "uds": {}, "passive": {}})
+        fr["uds"].setdefault(tx, {})[cmd] = list(lines)
+    ordered = [frames[k] for k in sorted(frames)]
+
+    doc = new_doc(vehicle, adapter="hakake-bridge (mqtt)",
+                  source=[f"{os.path.basename(path)} — rx/# stream captured over MQTT "
+                          f"(docs/MQTT.md), converted by record_session.py --from-mqtt"],
+                  notes=notes or ("Converted from a captured MQTT stream: every line is a frame the "
+                                  "bridge mirrored, byte for byte; timestamps are offsets from the "
+                                  "first frame, grouped into %.3g s timeline frames. UDS answers are "
+                                  "the rx frames captured between a tx/uds request and its ack." % period))
+    doc["frames"] = ordered
+    out = out or default_out(vehicle.NAME)
+    write_fixture(out, doc)
+    load_replay_fixture(out)                                   # validate what we just wrote
+    log(f"Wrote {len(ordered)} frame(s) ({len(passive)} passive lines, {len(uds)} UDS answers) to {out}")
+    log("Check it for private data before sharing:  python scripts/privacy_sweep.py")
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Record (or derive) a Ha-Kake replay session fixture")
     ap.add_argument("--derive", action="store_true",
@@ -247,10 +384,18 @@ def main(argv=None):
     ap.add_argument("--adapter", choices=["auto", "usb", "ble"], default="auto")
     ap.add_argument("--out", default=None, help="output path (default: tests/fixtures/session_<vehicle>.json)")
     ap.add_argument("--notes", default="", help="free-text note stored in the fixture")
+    ap.add_argument("--from-mqtt", metavar="JSONL", default=None,
+                    help="convert a captured MQTT stream (one {topic,payload} JSON object per line, "
+                         "see docs/MQTT.md) into a fixture; no hardware")
+    ap.add_argument("--bucket", type=float, default=1.0,
+                    help="--from-mqtt: seconds per timeline frame (default: 1.0)")
     args = ap.parse_args(argv)
     args.adapter = None if args.adapter == "auto" else args.adapter
     if args.derive:
         derive([args.vehicle] if args.vehicle else None)
+        return 0
+    if args.from_mqtt:
+        from_mqtt(args.from_mqtt, args.out, vehicle=args.vehicle, period=args.bucket, notes=args.notes)
         return 0
     asyncio.run(record_live(args))
     return 0

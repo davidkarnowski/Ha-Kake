@@ -32,6 +32,8 @@ Usage:
   python reader.py --adapter ble      # force BLE
   python reader.py --adapter replay   # no car: play back a recorded session
   python reader.py --adapter sim      # no car: run against the vehicle simulator
+  python reader.py --adapter can      # a native USB-CAN adapter (CANable); config names the bus
+  python reader.py --adapter mqtt     # frames from a bridge through an MQTT broker
   python reader.py --interval 1       # minimum seconds per cycle (default 0.5)
   python reader.py --budget 1.5       # seconds of slow-lane work per cycle
   python reader.py --vehicle lancer_2009   # a different vehicle profile
@@ -48,6 +50,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from elm327 import detect_adapter, set_uds_target, passive_capture  # noqa: E402
 from store import Store, utc_now_iso, ev_norm                       # noqa: E402
+import mqttsource            # <prefix>/state + signal/<key> for gauges; no-op without mqtt.host  # noqa: E402
 from vehicles import get_vehicle                                    # noqa: E402
 import signals                                                      # noqa: E402
 
@@ -565,6 +568,7 @@ class Reader:
         self.prev_watch = {}          # last-seen state of each watched signal (for events)
         self.policy_state = {}            # vehicle-owned state for apply_policy (e.g. Leaf sensor fusion)
         self.speed = 1.0                  # transport cost multiplier; see estimate()
+        self.passive_instant = False      # PASSIVE_INSTANT on the transport: ATMA has no dwell
 
     # ── config ───────────────────────────────────────────────────────────
 
@@ -622,6 +626,7 @@ class Reader:
         elif "message" in rec:
             del rec["message"]
         write_state(rec)
+        mqttsource.publish_state(rec)   # docs/MQTT.md §3.6: once per cycle and on every status change
 
     # ── scheduling ───────────────────────────────────────────────────────
 
@@ -638,11 +643,14 @@ class Reader:
 
         A passive capture is the exception: ATMA runs for a wall-clock `secs`
         no matter how fast the link is, so only the per-command overhead
-        scales.
+        scales — unless the transport declares `PASSIVE_INSTANT` (a native
+        CAN controller answers ATMA from a table of frames it already
+        holds), in which case the dwell is gone and only the overhead is left.
         """
         it = ITEMS[i]
         if TARGETS[it["kind"]] is None and "est" not in it:
-            return it["secs"] + 0.25 * self.speed
+            dwell = 0.0 if self.passive_instant else it["secs"]
+            return dwell + 0.25 * self.speed
         est = it["est"] if "est" in it else 0.35
         return est * self.speed
 
@@ -792,6 +800,7 @@ class Reader:
                 await configure_vehicle(elm)
                 self.target = None
                 self.speed = float(getattr(elm, "SPEED", 1.0) or 1.0)
+                self.passive_instant = bool(getattr(elm, "PASSIVE_INSTANT", False))
                 self.session_id = self.store.start_session(elm.adapter_type)
                 self.refresh_items()
                 self.log(f"[reader] configured {elm.adapter_name} via {elm.adapter_type}; "
@@ -880,6 +889,11 @@ class Reader:
             # the dashboard can always be traced back to what generated it.
             if getattr(elm, "simulated", False):
                 rec.update(elm.marker() if hasattr(elm, "marker") else {"simulated": True})
+            elif hasattr(elm, "marker"):
+                # Any other transport with something to say about itself — the
+                # native CAN façade stamps which bus it is on and whether it
+                # could transmit (`can_bus`, `listen_only`).
+                rec.update(elm.marker())
             # A row every STORE_PERIOD, plus one for every fresh cell read while the
             # cell log is armed. The cache is sticky, so cells that have not been
             # re-read since the last row are left out of it: one cell set per read,
@@ -924,7 +938,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--interval", type=float, default=0.5, help="Minimum seconds per cycle (default: 0.5)")
     ap.add_argument("--budget", type=float, default=1.5, help="Slow-lane seconds per cycle (default: 1.5)")
-    ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim"], default="auto")
+    ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim", "can", "mqtt"], default="auto")
     ap.add_argument("--fast", action="store_true", help="Fast-lane primary item only (ignores tiles)")
     ap.add_argument("--vehicle", default=None, help="Vehicle profile in vehicles/ (default: leaf_ze0 or config.local.json)")
     ap.add_argument("--fixture", default=None, help="Replay session fixture (--adapter replay)")

@@ -29,6 +29,22 @@ which reads the `HAKAKE_*` variables with the older `LEAF_*` names as silent
 fallbacks) live in `util.py` at the repo root; `leaf_decoders.py` re-exports the
 temperature pair for its long-standing callers.
 
+**`bridge/hakake_bridge.py`** — optional, and the one exception to "the reader
+is the only process that talks to the car": a bridge on a Raspberry Pi at the
+car's OBD port talks to the bus *on the reader's behalf*. It mirrors CAN frames
+to an MQTT broker as `<prefix>/<bus>/rx/<ID>` messages (or 50 ms batches),
+runs the reader's ISO-TP read requests from `tx/uds` through `can-isotp` and
+acks them, and publishes a retained `status` with a Last Will. It accepts only
+the read services `SECURITY.md` allows — enforced on the Pi, not just in the
+reader — and `--listen-only` refuses every request. The reader ingests it with
+`--adapter mqtt` (`mqttsource.py` → the `CanFacade` in the Transport section),
+never by auto-detect. Independently of the adapter, a reader with `mqtt`
+configured publishes its decoded record to `<prefix>/state` and each value to
+`<prefix>/signal/<key>`, retained, so a gauge on the LAN needs one topic and no
+Python. Protocol: `docs/MQTT.md`; Pi install and sizing: `bridge/README.md`.
+Both are tested in-process (fake broker, python-can virtual bus) and, as of
+2026-09-09, on nothing real.
+
 ## Vehicle profiles
 
 Everything vehicle-specific lives in one module per vehicle under
@@ -106,7 +122,8 @@ USB the passive dwell is the cycle time; nothing else is close.**
 ## Transport
 
 `elm327.py` presents one `send(cmd)` coroutine over four back ends: BLE
-(bleak), USB serial (pyserial), a recorded session, and a running model. Two
+(bleak), USB serial (pyserial), a recorded session, and a running model — and
+`cantransport.py` adds a fifth that is not an ELM327 at all (below). Two
 things about the USB path are worth knowing because they cost real time:
 
 - **The answer ends at the `>` prompt.** The serial path blocks on
@@ -141,6 +158,26 @@ things about the USB path are worth knowing because they cost real time:
 several baud rates, compares the blocking read against the old polling loop,
 and models a full cycle from the result. It is safe to run with the car asleep
 — it sends AT commands, UDS *read* service 0x21 and monitor mode only.
+
+**The native CAN façade (`cantransport.py`, `--adapter can`).** A native CAN
+controller speaks frames, not ELM327 text, so `CanFacade` is an ELM-speaking
+front over a **frame source**: it keeps exactly the adapter state a real
+ELM327 keeps (`ATSH`, `ATCRA`, `ATCAF`, `ATFCSH`, `ATFCSD`), answers `ATMA`
+from a table of recently received frames — the caller's `timeout` is the
+window, what it returns it forgets — and turns a hex request into one ISO-TP
+exchange through the source, capturing the *raw* response frames off the
+stream so `parse_isotp()` sees the same lines an ELM capture has. Nothing in
+the reader, the profiles or the decoders knows the difference; the scheduler
+only reads two class attributes, `SPEED = 0.05` and `PASSIVE_INSTANT = True`
+(no dwell, so `estimate()` drops the passive items' `secs`). A `FrameSource`
+moves frames and runs one UDS request: `LocalSource` is python-can (a CANable
+2.0 class board over slcan or gs_usb, socketcan on Linux, the in-process
+`virtual` bus in tests); `MqttSource` (`mqttsource.py`, `docs/MQTT.md`) is
+the second source, the same façade over frames arriving from a bridge through
+a broker. Read-only is enforced at this layer too — a request whose service
+byte is not `0x21`/`0x01`/`0x03`/`0x07` never reaches a bus, and a bus opened
+listen-only (EV-CAN, always) refuses every request. `docs/CAN_TRANSPORT.md`;
+as of 2026-09-09 tested on a virtual bus only, not on the board or the car.
 
 ## Data model
 
@@ -376,4 +413,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 802 tests at the time of writing.
+that must stay green. 937 tests at the time of writing.

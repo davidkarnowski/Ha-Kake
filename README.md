@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-802%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
+![status](https://img.shields.io/badge/tests-937%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
 
 > ### ⚠️ Active development
 >
@@ -247,7 +247,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 802 offline tests, no car needed
+pytest -q                          # 937 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -287,6 +287,21 @@ touch web/reader.pause                                # hand the adapter to a to
     up from the ELM327's default 38400 to 115200 (`HAKAKE_SERIAL_BAUD=off` to
     stay at 38400). Measure your own adapter with
     `python tools/bench_transport.py`.
+- **Or a native USB-CAN adapter** (CANable 2.0 class, STM32G431, slcan or
+  candleLight firmware) with `--adapter can` — *designed and tested against a
+  virtual bus, not yet run on a car* (2026-09-09). A native controller hears
+  every frame all the time, so the passive items cost no `ATMA` dwell, and it
+  can sit on the EV-CAN pins (13/12) in listen-only mode, where it cannot
+  transmit a bit. Termination jumper **off**, `can_bus` in `config.local.json`
+  — `docs/CAN_TRANSPORT.md`.
+- **Or a car somewhere else, over MQTT.** A Raspberry Pi at the OBD port
+  (`bridge/`) mirrors CAN frames to a broker and runs the reader's read
+  requests; `--adapter mqtt` ingests it. With `mqtt` configured, any reader
+  also publishes its decoded record to `<prefix>/state` and every value to
+  `<prefix>/signal/<key>` — a gauge needs one topic and no Python:
+  `mosquitto_sub -h <broker> -t 'hakake/leaf/signal/soc'`. The wire protocol
+  is a standalone spec, `docs/MQTT.md`. *Tested in-process only (fake broker,
+  virtual CAN bus) as of 2026-09-09; not yet on a Pi or a car.*
 - macOS, Python 3.12 (tested on 3.12.13; ≥3.10 required). bleak + CoreBluetooth for BLE. Linux should work for USB; BLE untested.
 - For the `leaf_ze0` profile: a 2011–2012 Leaf (ZE0). Later model years move
   offsets; see CONTRIBUTING. The car must be IGN-ON or READY for the LBC to
@@ -301,6 +316,8 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | Path | Role |
 |---|---|
 | `elm327.py` | BLE + USB transport, adapter detection, ECU targeting, passive capture; replay and simulator transports |
+| `cantransport.py` | native CAN: an ELM327-speaking façade over a frame source (a CANable on USB via python-can; MQTT via `mqttsource.py`) — `docs/CAN_TRANSPORT.md` |
+| `mqttsource.py`, `bridge/` | the MQTT frame source and the gauge-facing state publisher; the Raspberry Pi bridge (CAN → broker, read requests, systemd unit) — `docs/MQTT.md` |
 | `vehicles/` | one module per car — items, targets, tiles, signal registry, `decode()`; `__init__.py` is the contract and its validator |
 | `docs/ADDING_A_VEHICLE.md` | **the guide to adding your own car** |
 | `leaf_decoders.py` | the Leaf's decoders: LBC groups 01–06, HVAC amp, Car-CAN frames |
@@ -407,10 +424,25 @@ Being on the bus at all has consequences worth knowing:
   **do not operate the laptop while driving.** The dashboard is a passenger's
   tool.
 
-## Status (2026-09-08)
+## Status (2026-09-09)
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **MQTT ingestion and a public stream** (2026-09-09): a Pi bridge (`bridge/`)
+  mirrors CAN frames to a broker as JSON and runs the reader's read requests
+  on its behalf, with the read-only whitelist enforced on both ends;
+  `--adapter mqtt` ingests it through the same façade as the native CAN
+  transport. Any reader with `mqtt` configured publishes its decoded record
+  and every value as retained topics for gauges. `docs/MQTT.md` is the wire
+  protocol, with a schema per payload; nothing has run against a real
+  broker, Pi or car yet.
+- **Native CAN transport** (2026-09-09): `--adapter can` reads through a
+  CANable 2.0 class USB-CAN adapter behind an ELM327-speaking façade
+  (`cantransport.py`) — the reader, profiles and decoders unchanged, passive
+  items answered from a frame table with no dwell, UDS through ISO-TP, and
+  EV-CAN opened listen-only, always. Designed and tested on a virtual bus with
+  the recorded fixtures; **not yet run on the adapter or the car** —
+  `docs/CAN_TRANSPORT.md` says what is verified and what is not.
 - **Cell log** (2026-09-08): a tile option on the cell grid or the 3D pack
   moves the cell-voltage read into every cycle and stores every fresh read
   (a CELL LOG badge says so) — the same read-only request, more often — so a
@@ -431,7 +463,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 802 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 937 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

@@ -29,6 +29,8 @@ was not.
 | Path | Role |
 |---|---|
 | `elm327.py` | transports: BLE, USB, replay, sim; adapter detect, ECU targeting, passive capture |
+| `cantransport.py` | native CAN: an ELM327-speaking façade (`CanFacade`) over a frame source — `LocalSource` (python-can: CANable on USB, socketcan, virtual) or `MqttSource` in `mqttsource.py`; read-only enforced here too; EV-CAN listen-only, always |
+| `mqttsource.py` | a car over MQTT: `MqttSource` (the façade's second frame source, `--adapter mqtt`, never auto-detected) and `publish_state()` — the decoded record to `<prefix>/state` and `signal/<key>` for gauges; protocol in `docs/MQTT.md` |
 | `vehicles/` | one module per car — items, targets, tiles, signal registry, `decode()`. `__init__.py` is the contract *and* its validator |
 | `leaf_decoders.py` | the Leaf's decoders, plus generic ISO-TP reassembly |
 | `signals.py` | vehicle-independent registry machinery: colour scales, renderer list, resolvers |
@@ -37,7 +39,8 @@ was not.
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag/resize |
 | `simulator/`, `hakake_sim.py` | the simulated car: model, knobs, scenarios, encoder; rig, control API, history generator |
-| `record_session.py` | record a drive, or derive a fixture from raw captures |
+| `record_session.py` | record a drive, derive a fixture from raw captures, or convert a captured MQTT stream (`--from-mqtt`) |
+| `bridge/` | the Raspberry Pi side of MQTT ingestion: `hakake_bridge.py` (SocketCAN → broker, read-only enforced on the Pi, listen-only for EV-CAN), systemd unit, config example, install/sizing README. Standalone — nothing from the tree |
 | `tests/` | pytest, no hardware; `tests/fixtures/` holds real captured frames |
 | `docs/` | the documentation set (below) |
 | `research/` | gitignored: local captures, notes, agent progress logs. Never published |
@@ -122,7 +125,7 @@ that lacks them — feature-detect, never guess. Full surface:
 ## How to verify
 
 ```bash
-pytest -q                          # 802 passing as of 2026-09-09, ~2 min, no hardware
+pytest -q                          # 937 passing as of 2026-09-09, ~2 min, no hardware
 python vehicles/__init__.py        # lint every vehicle profile against the contract
 python scripts/privacy_sweep.py --log 50   # must print "privacy sweep OK" before any push
 ```

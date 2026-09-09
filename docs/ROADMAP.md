@@ -1,6 +1,6 @@
 # Leaf OBD Dashboard — Improvement Plan (2026-08-24)
 
-> **Status 2026-08-24 (evening):** first sprint complete — A1 ✅ A2 ✅ A3 ✅ A4 ✅ B1 ✅ B2 ✅ D2 ✅ D3 ✅ D4 ✅ (P1–P10 all addressed). Later the same evening: sqlite thread-safety crash fixed (reader is a subprocess), Car-CAN passive signals + HVAC amp decoded, Vehicle / Tires / Climate tiles added, cycle time cut from ~28 s to ≤8 s, then to ~2 s with the tile-driven scheduler (C3 done in spirit); dynamic tiles menu; open-source docs + local git repo; Tile Studio (signal registry, per-tile menus, 12 renderers, 7 colour scales, user tiles) and the ADDING_SIGNALS routine. Since then: HVAC setpoint/fan calibration ✅ (walks 2026-08-24), N/Eco gear confirmation ✅ (all five `0x421` values live), drag-resize handles ✅ (gridstack). Next up: Phase 3 adaptive store rate, Phase 5 retention config, B3 cell-rank memory, B5/B6 12 V + insulation cards, C4 alerts, C1 coulomb counting, pedals walk (throttle `0x180` / brake `0x292` scales). **2026-08-28:** vehicle-profile seam cut (`vehicles/` package, `--vehicle` flag, contract in `vehicles/__init__.py`); first non-Leaf profile `lancer_2009` (standard mode-01 PIDs) decoding a live idle capture, 87 tests. Same day: Lancer DTC readout added (MIL lamp + stored/pending/trans codes, modes 01/03/07, read-only), 89 tests. **2026-09-02:** replay mode — `--adapter replay` drives the whole stack (reader, scheduler, transport, decoders, store, API, page) from a recorded session fixture made by `record_session.py`, so a profile can be written and reviewed with no car; `docs/REPLAY.md`. **2026-09-03:** the simulator — `--adapter sim` runs the same stack against a running model (`simulator/`, `hakake_sim.py`) with a provenance-labelled load table, one power identity wall → charger → loads → pack, a 20-row couplings audit, the ZE0 push-button start, a control API on `127.0.0.1:8099` and the cockpit at `/sim`; `docs/SIMULATOR.md` and `docs/SIMULATOR_CONTRACT.md`. Same day: the per-tile ⋯ menu portalled out of the card (toggle, Escape, Done) and the tire art scaled by the card. Same day: the USB transport measured and fixed — a 41 ms poll tick and a 50 ms post-prompt sleep were costing ~91 ms on every command; a blocking read to the prompt and `ATBRD` negotiation to 115200 cut a command round-trip from ~107 ms to ~5–9 ms, and `SPEED` makes the scheduler's cost model transport-aware. **2026-09-07:** audible threshold alerts — every tile's ⋯ menu lists the values it shows, each with below/above (or on/off), a tone and a 1–60 s repeat slider, the card flashing on every beep; `web/static/alerts.js` is a Web Audio tone generator plus a pure rule engine (hysteresis, staleness freeze, node-tested), rules ride in `opts.alerts`, built-in tiles declare their `signals` in the profile. The client half of C4. **2026-09-08:** the 3D battery pack tile — the pack drawn as it sits under the car from a layout table in the profile (`PACK_LAYOUT`, no CAD file), 96 cell-pair bodies in one three.js instanced mesh coloured on three scales (deviation from mean, the grid's absolute scale, drop from rest), orbit / zoom / hover / pin, ⋯-menu options through new Tile Studio hooks (`opts`, `enabled`, `menuExtra`, `tiles:applied`); three.js vendored under `web/static/vendor/three/` and reached through the page's first import map; where each pair sits is partly assumed and flagged (`docs/PACK3D.md`, SIGNALS "Cell order in the pack"). B3's heat-map colouring is the *deviation* scale. **Same day:** Live / Playback — a header switch and a page-level timeline (session picker from gaps in the data, SOC + current strip with a brush that re-fetches at full resolution, playhead, ½×–60× transport, keys) that drives every tile from stored frames through the same five sinks `poll()` uses; `Store.frames()` rebuilds the `/api/status` shape from rows (last real row per bucket, never averaged; cells joined on request), `/api/sessions` and `/api/playback/frames` carry it, `web/static/playback.js` is the pure clock (node-tested); recorded frames are never stale and alerts stay silent unless asked; `docs/PLAYBACK.md`. **Same day:** the cell log — `opts.celllog` on the cell grid or 3D pack tile moves `lbc02` into the fast lane (`reader.period_overrides()`, `Reader.period()`) and the main loop stores every fresh cell read (`cells_seq`), which also stops the sticky cache being stored as four identical cell sets; CELL LOG badge; the same read-only request, more often. **Later the same day:** the tile matched to the grid's colours, sensors coloured and selectable, a module pane with the pair voltages in their colours and the module's own spread and average, a pinned module marked with a box, pin and label, lowest/highest and threshold flashes, rounded module bodies, ⟳ and ⤢ on the pane; the timeline docks to the window; pairs counted 1–96 on screen with `cell_min_no`/`cell_max_no` in the record; the pack's section layout verified against the service manual (EVB-20). **Same evening:** timeline flags (`⚑ Flag`, `/api/bookmarks`, `web/bookmarks.json`) and auto-detected pulls (`/api/bookmarks/auto`), a grabbable playhead, the legend clear of the pill; the pack abstracted — `split` / `group` / `PACK_MODES`, bodies vs values, `docs/PACK3D_GUIDE.md` for other packs. **2026-09-09:** the ISO-TP separation time is per transport — `STMIN` 0x05 on USB serial, 0x20 on BLE, replay and sim — after a parked-car probe showed the 29-frame cell answer intact at 5 ms and 0 ms (1.18 s → 0.36 s); the passive captures' full-dwell `ATMA` wait is the next transport cost to cut. **802 tests.**
+> **Status 2026-08-24 (evening):** first sprint complete — A1 ✅ A2 ✅ A3 ✅ A4 ✅ B1 ✅ B2 ✅ D2 ✅ D3 ✅ D4 ✅ (P1–P10 all addressed). Later the same evening: sqlite thread-safety crash fixed (reader is a subprocess), Car-CAN passive signals + HVAC amp decoded, Vehicle / Tires / Climate tiles added, cycle time cut from ~28 s to ≤8 s, then to ~2 s with the tile-driven scheduler (C3 done in spirit); dynamic tiles menu; open-source docs + local git repo; Tile Studio (signal registry, per-tile menus, 12 renderers, 7 colour scales, user tiles) and the ADDING_SIGNALS routine. Since then: HVAC setpoint/fan calibration ✅ (walks 2026-08-24), N/Eco gear confirmation ✅ (all five `0x421` values live), drag-resize handles ✅ (gridstack). Next up: Phase 3 adaptive store rate, Phase 5 retention config, B3 cell-rank memory, B5/B6 12 V + insulation cards, C4 alerts, C1 coulomb counting, pedals walk (throttle `0x180` / brake `0x292` scales). **2026-08-28:** vehicle-profile seam cut (`vehicles/` package, `--vehicle` flag, contract in `vehicles/__init__.py`); first non-Leaf profile `lancer_2009` (standard mode-01 PIDs) decoding a live idle capture, 87 tests. Same day: Lancer DTC readout added (MIL lamp + stored/pending/trans codes, modes 01/03/07, read-only), 89 tests. **2026-09-02:** replay mode — `--adapter replay` drives the whole stack (reader, scheduler, transport, decoders, store, API, page) from a recorded session fixture made by `record_session.py`, so a profile can be written and reviewed with no car; `docs/REPLAY.md`. **2026-09-03:** the simulator — `--adapter sim` runs the same stack against a running model (`simulator/`, `hakake_sim.py`) with a provenance-labelled load table, one power identity wall → charger → loads → pack, a 20-row couplings audit, the ZE0 push-button start, a control API on `127.0.0.1:8099` and the cockpit at `/sim`; `docs/SIMULATOR.md` and `docs/SIMULATOR_CONTRACT.md`. Same day: the per-tile ⋯ menu portalled out of the card (toggle, Escape, Done) and the tire art scaled by the card. Same day: the USB transport measured and fixed — a 41 ms poll tick and a 50 ms post-prompt sleep were costing ~91 ms on every command; a blocking read to the prompt and `ATBRD` negotiation to 115200 cut a command round-trip from ~107 ms to ~5–9 ms, and `SPEED` makes the scheduler's cost model transport-aware. **2026-09-07:** audible threshold alerts — every tile's ⋯ menu lists the values it shows, each with below/above (or on/off), a tone and a 1–60 s repeat slider, the card flashing on every beep; `web/static/alerts.js` is a Web Audio tone generator plus a pure rule engine (hysteresis, staleness freeze, node-tested), rules ride in `opts.alerts`, built-in tiles declare their `signals` in the profile. The client half of C4. **2026-09-08:** the 3D battery pack tile — the pack drawn as it sits under the car from a layout table in the profile (`PACK_LAYOUT`, no CAD file), 96 cell-pair bodies in one three.js instanced mesh coloured on three scales (deviation from mean, the grid's absolute scale, drop from rest), orbit / zoom / hover / pin, ⋯-menu options through new Tile Studio hooks (`opts`, `enabled`, `menuExtra`, `tiles:applied`); three.js vendored under `web/static/vendor/three/` and reached through the page's first import map; where each pair sits is partly assumed and flagged (`docs/PACK3D.md`, SIGNALS "Cell order in the pack"). B3's heat-map colouring is the *deviation* scale. **Same day:** Live / Playback — a header switch and a page-level timeline (session picker from gaps in the data, SOC + current strip with a brush that re-fetches at full resolution, playhead, ½×–60× transport, keys) that drives every tile from stored frames through the same five sinks `poll()` uses; `Store.frames()` rebuilds the `/api/status` shape from rows (last real row per bucket, never averaged; cells joined on request), `/api/sessions` and `/api/playback/frames` carry it, `web/static/playback.js` is the pure clock (node-tested); recorded frames are never stale and alerts stay silent unless asked; `docs/PLAYBACK.md`. **Same day:** the cell log — `opts.celllog` on the cell grid or 3D pack tile moves `lbc02` into the fast lane (`reader.period_overrides()`, `Reader.period()`) and the main loop stores every fresh cell read (`cells_seq`), which also stops the sticky cache being stored as four identical cell sets; CELL LOG badge; the same read-only request, more often. **Later the same day:** the tile matched to the grid's colours, sensors coloured and selectable, a module pane with the pair voltages in their colours and the module's own spread and average, a pinned module marked with a box, pin and label, lowest/highest and threshold flashes, rounded module bodies, ⟳ and ⤢ on the pane; the timeline docks to the window; pairs counted 1–96 on screen with `cell_min_no`/`cell_max_no` in the record; the pack's section layout verified against the service manual (EVB-20). **Same evening:** timeline flags (`⚑ Flag`, `/api/bookmarks`, `web/bookmarks.json`) and auto-detected pulls (`/api/bookmarks/auto`), a grabbable playhead, the legend clear of the pill; the pack abstracted — `split` / `group` / `PACK_MODES`, bodies vs values, `docs/PACK3D_GUIDE.md` for other packs. **2026-09-09:** the ISO-TP separation time is per transport — `STMIN` 0x05 on USB serial, 0x20 on BLE, replay and sim — after a parked-car probe showed the 29-frame cell answer intact at 5 ms and 0 ms (1.18 s → 0.36 s); the passive captures' full-dwell `ATMA` wait is the next transport cost to cut. **Same day:** the native CAN transport — `cantransport.py`, an ELM327-speaking façade over a frame source, `LocalSource` on python-can for a CANable 2.0 class board (slcan / gs_usb / socketcan / virtual), passive items from a frame table with no dwell, UDS through ISO-TP with the raw frames captured, read-only enforced at the transport, EV-CAN listen-only always; and MQTT ingestion — `mqttsource.py` as the second frame source, a Raspberry Pi bridge (`bridge/`, SocketCAN → broker, kernel filters, batch mode, bounded queue, systemd), a JSON wire protocol with a schema per payload (`docs/MQTT.md`), and the reader publishing its decoded record and every value as retained topics for gauges. Both tested in-process only (virtual bus, fake broker); nothing on a board, a Pi or the car yet. **937 tests.**
 
 Assessment of the codebase as it stands after Sessions 1–5, followed by a phased plan.
 Temperatures are shown as °C / °F throughout (project convention from this date on).
@@ -259,3 +259,80 @@ parked under the read-only rule), a ZE0 DC-DC status. Suggested order: the
 `pedals` walk (throttle, brake, 12 V), a `steer` walk, `0x260` power against
 the LBC's own, `0x54B`, then `0x1D5` / `0x1CB` during a regen coast in an
 empty lot with a passenger on the laptop.
+
+
+## Timing architecture — as the transports speed up (2026-09-09)
+
+A native CAN adapter and an MQTT bridge turn a 3 s cycle into a stream, and
+the store decimates it. The timeline is only as honest as its timestamps, so
+before the decimation is trusted:
+
+- **Acquisition time per item, stored** (`item_ts`) next to `item_age`, so a
+  record that mixes a 0.1 s-old current with a 20 s-old cell set says so in
+  the database, and playback can show it per tile.
+- **Two clocks, both kept**: the source's frame timestamp (bridge or driver)
+  and the laptop's receive time, with the per-session offset published, never
+  applied to stored values.
+- **Peak-preserving decimation**: per-row min / max / time-of-max for the few
+  signals where a peak matters (pack current, power, voltage, lowest cell), so
+  the strip draws the envelope and the auto-pull detector sees the true peak
+  at 5 s cadence.
+- **High-rate samples** for the ids in the ring buffer, flushed on a flag,
+  scrubbable in playback when zoomed in.
+- **`ts_source` on every row**, and a `--timing` mode in the bench tool so the
+  numbers the docs quote are measured, not modelled.
+
+Authority once written: `docs/TIMING.md`. Design detail is in the sprint plan
+in `research/` (local) until it lands.
+
+## Capture is a pillar (2026-09-09)
+
+The capture routine is a module with several front ends, and **none of them
+needs the laptop in the car**: the dashboard reader, a headless reader, a Pi
+bridge streaming over MQTT, the same bridge logging to its SD card with no
+network, a plain SocketCAN log, and the simulator and replay. Every front end
+writes the same two formats — the replay fixture for frames, `readings` rows
+for decoded values — with provenance on every record, so anything captured
+anywhere plays back on the timeline with its flags and pulls, and feeds the
+same tests. `record_session.py --from-mqtt` is the first non-laptop path;
+`--from-candump`, a bridge-side log, and flags made without a browser follow.
+
+## Several adapters at once, and where a value comes from (2026-09-09)
+
+Car-CAN and EV-CAN are two networks, so two adapters of any kind, at once.
+The design: items carry a `bus`, the reader holds one transport per bus and
+polls the buses **concurrently**, each with its own liveness, sleep detection
+and reconnect; the record lists every adapter and keeps the old single
+`adapter_*` keys filled from the Car bus so nothing downstream breaks.
+
+Some values are reachable two ways — pack voltage and current from LBC
+group 01 over Car-CAN and from `0x1DB` on EV-CAN, SOC from group 01 and
+`0x55B`, gear from `0x421` and `0x11A`. The rule: **every source writes its
+own key, the registry names the canonical one and its sources, and a generic
+resolver picks** — a user pin first, then verified over tentative, then
+freshness, then rate — and stamps `<key>_src` on the record. When two fresh
+sources disagree beyond a declared tolerance the record says so and an event
+is written: the "group 05 against group 01" check of February, automated.
+The Leaf's current fusion in `apply_policy` becomes a special case of this.
+A second reader into its own database stays the first step for verifying
+EV-CAN decoders before they join the profile.
+
+Lands as one reader lane together with the timing architecture above, after
+the CAN and MQTT transports integrate. Design detail in the sprint plan in
+`research/` until then.
+
+## To do: a "wide" display mode (2026-09-09)
+
+The tile grid is fixed at the column count `COLS` in `web/static/tilestudio.js`
+inside a page capped at 1400 px (`index.html`), which suits a laptop in the
+passenger seat and turns a wide monitor or a dashboard-mounted screen into a
+narrow strip with a scroll. Wanted: a **wide mode** the owner can switch on
+(header toggle, remembered like the timeline dock; `?wide=1` for a link) that
+lifts the page cap and lets the grid run to more columns — a second layout,
+saved separately in `web/layouts.json` so the laptop layout is not disturbed —
+with the built-in tiles allowed to take the width they draw best at (the cell
+grid and the 3D pack side by side, the timeline strip full width, playback and
+the module pane without the fold). gridstack already supports a column count
+per breakpoint (`columnOpts`), so the mechanics are a responsive column set
+plus a per-mode layout name; the work is deciding which tiles grow and how
+their art scales. Nothing in the reader or the API changes.

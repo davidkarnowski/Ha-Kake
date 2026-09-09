@@ -1215,3 +1215,90 @@ attribute and the command sent.
 whole 0.2 s even when the frame it wants arrived in the first 20 ms; five
 of them a cycle is 1.16 s for perhaps 0.1 s of useful listening. Returning
 on the first clean frame is the next change, with its own probe.
+
+### Native CAN, MQTT ingestion, and a public stream  2026-09-09
+
+Branch `feature/can-transport` (on top of `feature/usb-stmin`, which carries
+the STmin commit recovered from the cut-off session). Two sub-agent lanes,
+each with a progress log in `research/agent-logs/`, integrated and reviewed
+by the orchestrator. **Nothing in this entry has run on a board, a Pi, a
+broker or the car**: the CANable arrived today and is still in its bag, and
+every doc written today says so on its first screen.
+
+**Recovery first.** The 09-09 session had been cut off with the STmin tuning
+uncommitted on `main` and its research sub-agent killed after writing the
+CANable memo but before logging it. The tuning moved to `feature/usb-stmin`
+and was committed with its doc sync (AGENTS had said 730 tests since 09-03;
+802 was the truth). The rule that every sub-agent keeps a log is now also in
+the owner's global instructions, and CLAUDE.md §3b cites this second case.
+
+**The design that shaped both lanes.** A native CAN controller speaks
+frames, not ELM327 text, so `cantransport.py` is an *ELM-speaking façade*
+(`CanFacade`) over a *frame source*: it keeps exactly the adapter state an
+ELM327 keeps (`ATSH`/`ATCRA`/`ATCAF`/`ATFCSH`/`ATFCSD`), answers `ATMA` from
+a table of recently received frames with the caller's window, and turns a
+hex request into one ISO-TP exchange while capturing the raw response frames
+off the stream — so `parse_isotp()` sees the same lines an ELM capture has,
+and the reader, profiles, decoders and fixtures are untouched. MQTT is the
+same façade over a second source; the two sprints share one core.
+
+**Lane can-facade** (48 tests): `LocalSource` on python-can — slcan (the
+stock firmware's silent switch is `M1` before `O`; python-can's `L` is not
+implemented by it), gs_usb (listen-only re-applied through the `gs_usb`
+package and *read back*; a firmware that drops the bit means the bus is not
+opened at all), socketcan (`ip -details link` checked for LISTEN-ONLY),
+virtual for tests; firmware identified from USB VID:PID, the DFU bootloader
+state recognised and refused. Read-only enforced at the transport: a service
+byte outside {0x21, 0x01, 0x03, 0x07} never reaches a bus. **EV-CAN is
+listen-only always, with no override** — the owner's call to confirm; it
+means the LBC's reads keep going through Car-CAN and the VCM bridge. A
+silent ECU costs 1 s, not the item's 10 s. `STMIN = "00"`, `SPEED = 0.05`
+(modelled), `PASSIVE_INSTANT = True` and `Reader.estimate()` drops the
+passive items' dwell. Requests and flow control padded to 8 bytes with 00,
+as the ELM327 does by default (`ATV0`). Fixture round trip verified: a fake
+ECU on the virtual bus answers 2101/2102/2104/2110 from the recorded frames
+honouring our flow control, and `decode_reading()` is equal on both paths.
+`docs/CAN_TRANSPORT.md` carries the arrival checklist and the wiring; the
+firmware-flashing guidance is held ("pending the owner's bench check") at
+the owner's request.
+
+**Lane mqtt-source** (87 tests): the owner chose **JSON payloads** and asked
+that the protocol be documented well enough for a third party to build a
+simple gauge. `docs/MQTT.md` is that spec — topic tree, a JSON Schema per
+payload (frame, batch, uds request, uds ack, status, state, signal), field
+semantics, the read-only rule on both ends, versioning, `mosquitto_sub`
+examples for every topic, a Python gauge and a browser gauge. Frames go to
+`<prefix>/<bus>/rx/<ID>` as `{"t","id","d"}` — `id` + space + `d` *is* the
+ELM line; requests to `tx/uds` with the bridge doing ISO-TP flow control
+locally (a WAN round trip must never be inside the FC timing) and the
+response frames arriving on the ordinary `rx/` topic; a retained `status`
+with a Last Will. Because a gauge wants a number, not a frame, **any reader
+with `mqtt` configured publishes its decoded record to `<prefix>/state` and
+every scalar to `<prefix>/signal/<key>`, retained**; one call in
+`Reader.publish()`, a no-op without a broker, never raises. The Pi bridge
+(`bridge/hakake_bridge.py`) reads SocketCAN, applies `ids` as a kernel
+filter, hand-builds the frame JSON (3.5× `json.dumps` on the laptop), batches
+on request, drops-and-counts on a bounded queue, and refuses every non-read
+itself — it is the process that can transmit, so it trusts nobody. Sized for
+a Pi Zero 2 W as *expectations*: per-id filtered ≈ 200–600 fps comfortable,
+whole-bus needs batch mode. `record_session.py --from-mqtt` turns a saved
+stream into a replay fixture — the first capture path with no laptop in the
+car. Orchestrator fixes on review: the bridge padded requests like the façade
+and the ELM (it had sent them unpadded), and the spec now says `state`
+carries the adapter's identifiers, one more reason the broker stays on the LAN.
+
+**Written into the plan and the roadmap today, not built:** a timing
+architecture (acquisition time per item stored, both clocks kept with the
+offset published, peak-preserving min/max per row for the few signals where
+a peak matters, high-rate samples on a flag, `ts_source` on every row);
+capture as a pillar (one core, several front ends, none needing the laptop);
+and several adapters at once with provenance — items carry a `bus`, one
+transport per bus polled concurrently, every source writes its own key, the
+registry names the canonical key and its sources, a resolver picks (user pin,
+then verified over tentative, then freshness, then rate) and stamps
+`<key>_src`, and two fresh sources disagreeing beyond a tolerance is an
+event, not a silent choice. Python is enough for all of it at these rates;
+if a measurement ever pins the bridge on a small board, a Rust bridge
+speaking the same topics changes nothing on the laptop.
+
+937 tests, privacy sweep clean. Not merged, not pushed.

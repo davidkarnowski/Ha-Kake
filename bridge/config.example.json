@@ -1,0 +1,19 @@
+{
+  "host": "127.0.0.1",
+  "port": 1883,
+  "tls": false,
+  "username": "",
+  "password": "",
+  "prefix": "hakake/leaf",
+  "bus": "car",
+  "interface": "socketcan",
+  "channel": "can0",
+  "bitrate": 500000,
+  "listen_only": false,
+  "ids": ["421", "358", "284", "60D", "5C5", "385", "5B3", "5A9", "355", "292", "7BB", "764"],
+  "batch_ms": 0,
+  "status_s": 2.0,
+  "stats_s": 10.0,
+  "queue": 2000,
+  "uds_timeout": 5.0
+}

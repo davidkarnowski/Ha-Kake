@@ -1,4 +1,20 @@
 {
   "ble_addr": "",
-  "ble_name": "OBDBLE"
+  "ble_name": "OBDBLE",
+  "can_bus": "",
+  "can_interface": "auto",
+  "can_channel": "",
+  "can_bitrate": 500000,
+  "can_listen_only": false,
+  "mqtt": {
+    "host": "",
+    "port": 1883,
+    "tls": false,
+    "username": "",
+    "password": "",
+    "prefix": "hakake/leaf",
+    "bus": "car",
+    "subscribe": "auto",
+    "batch": false
+  }
 }

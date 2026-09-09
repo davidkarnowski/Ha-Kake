@@ -31,6 +31,41 @@ Even so:
   `0x27` security access) without an explicit, documented safety review. Pull
   requests that add them will not be merged.
 
+**Native CAN adapter.** Ha-Kake can also read through a USB-CAN controller
+(CANable 2.0 class, `--adapter can`, `cantransport.py`). What "transmit" means
+does not change: on Car-CAN the adapter sends the same read services the
+ELM327 sends today — UDS `0x21` and OBD modes `01`, `03`, `07`, with their
+ISO-TP flow-control frames — and nothing else; the façade refuses any request
+whose service byte is outside that set before it reaches a bus, and logs it.
+On EV-CAN — the battery, inverter and charger network — the adapter is opened
+in the controller's listen-only mode, in which it transmits nothing, not even
+the acknowledgement bit other nodes see; the transport refuses to open EV-CAN
+in any other mode (and refuses the bus outright when it cannot confirm the
+mode from the device), and answers every request on it with `NO DATA`. The
+onboard termination resistor must be disabled: both of the Leaf's buses are
+already terminated, and a third terminator degrades the signal for every
+controller on that bus. Reviewed 2026-09-09 as a transport, not a new service.
+
+### Remote ingestion (MQTT bridge)
+
+`bridge/hakake_bridge.py` puts a **second process on the bus**: a Raspberry Pi
+at the OBD port that mirrors frames to an MQTT broker and runs read requests
+for a reader elsewhere (`docs/MQTT.md`). "The reader must be the only process
+that talks to the car" therefore reads: *the reader, or a bridge that accepts
+only its read requests*. The bridge enforces the same whitelist as the reader
+— a `tx/uds` request whose service byte is not `0x21`, `0x01`, `0x03` or
+`0x07` is refused, logged and never transmitted; mode `0x04` never leaves;
+`--listen-only` refuses everything (and the kernel interface should be
+brought up `listen-only on` as well). The reader refuses the same set before
+publishing. Neither end trusts the other. The whitelist does not make the
+broker safe to expose: anyone who can publish to `tx/uds` can keep ECUs awake
+by polling — so the broker is **LAN or VPN only, with credentials**, which
+live in `config.local.json` on the laptop and in the bridge's own config on the
+Pi, never in the repository. The dashboard still binds 127.0.0.1; publishing
+the decoded record to `<prefix>/state` is outbound only and carries no way
+back to the car. Reviewed 2026-09-09; not yet exercised against a real
+broker, Pi or car.
+
 ## In scope
 
 - Anything that lets the web dashboard (bound to 127.0.0.1) send commands to

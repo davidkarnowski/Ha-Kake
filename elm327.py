@@ -474,7 +474,8 @@ async def detect_adapter(prefer=None, log=print):
     """Auto-detect an ELM327 adapter. Returns a connected instance.
 
     Args:
-        prefer: "usb", "ble", "replay", or None for auto (tries USB first).
+        prefer: "usb", "ble", "replay", "sim", "can", "mqtt", or None for auto
+        (tries USB first; auto never picks replay, sim, can or mqtt).
 
     "replay" never touches hardware: it serves a recorded session fixture
     (HAKAKE_REPLAY_FIXTURE, else the active profile's default). Auto-detect
@@ -524,6 +525,21 @@ async def detect_adapter(prefer=None, log=print):
                         speed=float(env("HAKAKE_REPLAY_SPEED", default="1") or 1))
         await elm.connect(log=log)
         return elm
+
+    if prefer == "can":
+        # A native CAN controller (CANable 2.0 class) behind an ELM-speaking
+        # façade — cantransport.py. Asked for, never auto-detected: the board
+        # cannot tell which pins it is wired to, and `can_bus` ("car" | "ev")
+        # is required in config.local.json for that reason. Imported lazily so
+        # the ELM paths never need python-can.
+        from cantransport import open_can
+        return await open_can(_cfg, log=log)
+
+    if prefer == "mqtt":
+        # The same façade over frames arriving from a bridge through an MQTT
+        # broker — mqttsource.py, docs/MQTT.md. Lazy: paho-mqtt is optional.
+        from mqttsource import open_mqtt
+        return await open_mqtt(log=log)
 
     if prefer in (None, "usb"):
         port = _find_serial_port()

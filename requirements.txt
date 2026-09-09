@@ -8,6 +8,14 @@ pyobjc-framework-libdispatch==12.0
 async-timeout==5.0.1
 typing_extensions==4.15.0
 pyserial==3.5
+# Native CAN transport (cantransport.py): a CANable 2.0 class adapter, or the
+# in-process virtual bus the tests use. gs_usb / pyusb are imported lazily and
+# only for candleLight firmware: pip install "python-can[gs-usb]" (docs/CAN_TRANSPORT.md)
+python-can==4.6.1
+can-isotp==2.0.7
+# MQTT ingestion and the gauge-facing state topics (mqttsource.py, docs/MQTT.md);
+# imported lazily, so the ELM paths never need it
+paho-mqtt==2.1.0
 Flask==3.1.2
 # Tests
 pytest

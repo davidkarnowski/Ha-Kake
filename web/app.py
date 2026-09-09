@@ -28,6 +28,8 @@ Usage:
   python app.py                      # auto-detect adapter
   python app.py --adapter ble        # force BLE
   python app.py --adapter replay     # no car: run the whole stack off a recorded fixture
+  python app.py --adapter can        # a native USB-CAN adapter (CANable); docs/CAN_TRANSPORT.md
+  python app.py --adapter mqtt       # frames from a Pi bridge through an MQTT broker; docs/MQTT.md
   python app.py --adapter sim        # no car: the simulated car, the dashboard and the
                                      # control API (127.0.0.1:8099) in one command; /sim
                                      # is the cockpit page
@@ -511,7 +513,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Ha-Kake — read-only OBD-II telemetry dashboard")
     ap.add_argument("--interval", type=float, default=0.5, help="Minimum seconds per reader cycle (default: 0.5)")
     ap.add_argument("--budget", type=float, default=1.5, help="Slow-lane seconds per cycle (default: 1.5)")
-    ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim"], default="auto")
+    ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim", "can", "mqtt"], default="auto")
     ap.add_argument("--fast", action="store_true", help="Group-01-only power loop")
     ap.add_argument("--no-reader", action="store_true", help="Run dashboard only (use separate reader.py)")
     ap.add_argument("--vehicle", default=None, help="Vehicle profile in vehicles/ (default: leaf_ze0 or config.local.json)")

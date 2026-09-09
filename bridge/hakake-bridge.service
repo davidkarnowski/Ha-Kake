@@ -1,0 +1,35 @@
+# hakake-bridge — CAN → MQTT, read-only. Install:
+#   sudo cp hakake-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hakake-bridge
+#   journalctl -u hakake-bridge -f
+# Assumes the bridge lives in /opt/hakake-bridge with its venv and config.json
+# (see README.md). For EV-CAN add "listen-only on" to the ip link line AND
+# --listen-only to the bridge: the kernel and the bridge each refuse on their own.
+
+[Unit]
+Description=Ha-Kake CAN to MQTT bridge (read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hakake-bridge
+# Bring the interface up (idempotent). restart-ms recovers from bus-off on its own.
+ExecStartPre=-/sbin/ip link set can0 down
+ExecStartPre=/sbin/ip link set can0 up type can bitrate 500000 restart-ms 100
+ExecStart=/opt/hakake-bridge/venv/bin/python /opt/hakake-bridge/hakake_bridge.py --config /opt/hakake-bridge/config.json
+ExecStopPost=-/sbin/ip link set can0 down
+Restart=always
+RestartSec=3
+# journald gets stdout; `journalctl -u hakake-bridge` reads it
+StandardOutput=journal
+StandardError=journal
+# The bridge needs the CAN socket and the network, nothing else
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hakake-bridge
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
