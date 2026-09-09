@@ -1129,3 +1129,17 @@ at ~4.2 s, every one with cells (the cell log was armed), six pulls, each a
 single row — peaks of −271, −267, −264 A (−89 kW at 54 mph). The peak lands
 in the data with that row's cells; the rise and recovery do not, at this
 cadence — USB for drive days.
+
+**The pack abstracted** (same day): the 3D tile no longer knows it is
+drawing a Leaf. A stack says how its modules map to measured values —
+`split` values per module (the Leaf's 2), or `group` modules per value (a
+Prius NiMH's 2) — and `PACK_MODES` says which record list colours the
+bodies, in what unit, with which scales, `invert` for temperatures; bodies
+and values are separate (`body.v`), so a grouped pack colours several bodies
+alike and labels the value once. The validator checks coverage through
+`split`/`group` and the modes' shape. `docs/PACK3D_GUIDE.md` is the contract,
+the method that produced the Leaf's table with an agent in an afternoon —
+collect the published shape, find the numbering in the service manual, write
+the table with `verify` notes, spike, wire, verify on the car — the mapping
+modes, a Prius sketch and a checklist. Node tests cover a 28-module grouped
+row and a four-slice stack on the same geometry code.

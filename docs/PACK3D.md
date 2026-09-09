@@ -55,6 +55,10 @@ module (6 mm).
 
 ## How the model is built
 
+> To build one for another pack — a Prius NiMH, a pack with a temperature per
+> module — see **`docs/PACK3D_GUIDE.md`**: the contract (`split`, `group`, modes,
+> sensors), the method, a worked sketch.
+
 There is no CAD file. `vehicles/leaf_ze0.py` carries the geometry as data —
 `PACK_MODULE` (303 × 223 × 35 mm), `PACK_CASE` (the envelope: 1570 × 1188 mm
 tray, 265 mm rear hump), `PACK_LAYOUT` (one entry per stack of modules) and

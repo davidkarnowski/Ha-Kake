@@ -134,7 +134,8 @@ def vehicle_ctx():
     pack = None
     if getattr(v, "PACK_LAYOUT", None):
         pack = {"module": v.PACK_MODULE, "case": v.PACK_CASE,
-                "layout": v.PACK_LAYOUT, "sensors": getattr(v, "PACK_SENSORS", [])}
+                "layout": v.PACK_LAYOUT, "sensors": getattr(v, "PACK_SENSORS", []),
+                "modes": getattr(v, "PACK_MODES", [])}
     return {"name": v.NAME, "title": v.TITLE,
             "logo": getattr(v, "LOGO", "dial"),
             "level_key": level, "pack": pack}

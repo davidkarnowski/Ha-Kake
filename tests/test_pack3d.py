@@ -22,7 +22,7 @@ needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node not i
 
 def pack():
     v = get_vehicle("leaf_ze0")
-    return {"module": v.PACK_MODULE, "case": v.PACK_CASE, "layout": v.PACK_LAYOUT, "sensors": v.PACK_SENSORS}
+    return {"module": v.PACK_MODULE, "case": v.PACK_CASE, "layout": v.PACK_LAYOUT, "sensors": v.PACK_SENSORS, "modes": v.PACK_MODES}
 
 
 def run_node(script):
@@ -101,11 +101,56 @@ def test_pack_layout_js_parses_and_is_pure():
 @needs_node
 def test_layout_yields_96_bodies_and_48_modules_with_indices_once():
     out = run_node(HARNESS + """
-      console.log(JSON.stringify({ n: bodies.length, m: modules.length,
-        idx: bodies.map(b => b.i), mods: bodies.map(b => b.m) }));""")
-    assert out["n"] == 96 and out["m"] == 48
-    assert out["idx"] == list(range(96))
+      console.log(JSON.stringify({ n: bodies.length, m: modules.length, values: P.bodies(pack).values,
+        idx: bodies.map(b => b.i), vs: bodies.map(b => b.v), mods: bodies.map(b => b.m) }));""")
+    assert out["n"] == 96 and out["m"] == 48 and out["values"] == 96
+    assert out["idx"] == list(range(96)) and out["vs"] == list(range(96))          # Leaf: one body per value
     assert out["mods"] == [i // 2 for i in range(96)]
+
+
+@needs_node
+def test_grouped_and_sliced_layouts_map_bodies_to_values():
+    """The abstraction other packs need: `group` (Prius NiMH — one voltage per two
+    modules) and `split` other than 2, on the same geometry code."""
+    prius = {"module": {"L": 285, "W": 106, "T": 20}, "case": {"L": 700, "W": 400, "H": 150},
+             "layout": [{"name": "rear row", "kind": "edge", "x": 0, "z": 0, "n": 28, "first": 0, "group": 2}],
+             "sensors": [], "modes": [{"id": "volt", "key": "blocks", "name": "block", "unit": "V"}]}
+    sliced = {"module": {"L": 300, "W": 200, "T": 40}, "case": {"L": 700, "W": 400, "H": 150},
+              "layout": [{"name": "a", "kind": "flat", "x": 0, "z": 0, "n": 3, "first": 0, "split": 4},
+                         {"name": "b", "kind": "flat", "x": 300, "z": 0, "n": 2, "first": 12, "split": 1}]}
+    r = subprocess.run(["node", "-e", """
+      globalThis.window = globalThis; require(process.argv[1]);
+      const P = window.PackLayout, a = P.bodies(JSON.parse(process.argv[2])), b = P.bodies(JSON.parse(process.argv[3]));
+      console.log(JSON.stringify({ an: a.bodies.length, am: a.modules.length, av: a.values, avs: a.bodies.map(x => x.v), ashared: a.bodies.every(x => x.shared),
+        bn: b.bodies.length, bv: b.values, bvs: b.bodies.map(x => x.v), bys: b.bodies.slice(0, 4).map(x => x.cy), bsy: b.bodies[0].sy, bsy1: b.bodies[12].sy }));""",
+        LAYOUT_JS, json.dumps(prius), json.dumps(sliced)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    assert out["an"] == 28 and out["am"] == 28 and out["av"] == 14 and out["ashared"]
+    assert out["avs"] == [i // 2 for i in range(28)]                                    # two modules share a value
+    assert out["bn"] == 14 and out["bv"] == 14 and out["bvs"] == list(range(14))
+    ys = out["bys"]
+    assert ys[0] > ys[1] > ys[2] > ys[3] and abs((ys[0] - ys[3]) - 30) < 1e-9        # four 10 mm slices, first on top
+    assert out["bsy"] < 10 and out["bsy1"] < 40                                        # slice thickness, then a whole module
+
+
+def test_validate_profile_checks_grouped_coverage_and_modes():
+    from vehicles import validate_profile
+    import types
+    v = get_vehicle("leaf_ze0")
+    m = types.ModuleType("grouped")
+    for k in dir(v):
+        if not k.startswith("__"):
+            setattr(m, k, getattr(v, k))
+    m.PACK_LAYOUT = [{"name": "row", "kind": "edge", "x": 0, "z": 0, "n": 28, "first": 0, "group": 2}]
+    assert not [x for x in validate_profile(m) if "PACK_LAYOUT" in x]                  # 28 modules → values 0..13
+    m.PACK_LAYOUT = [{"name": "row", "kind": "edge", "x": 0, "z": 0, "n": 27, "first": 0, "group": 2}]
+    assert any("group=2" in x for x in validate_profile(m))
+    m.PACK_LAYOUT = v.PACK_LAYOUT
+    m.PACK_MODES = [{"id": "temp", "key": "module_temps_f", "name": "module", "unit": "°F", "scales": ["abs", "nope"]}]
+    assert any("unknown scale" in x for x in validate_profile(m))
+    m.PACK_MODES = [{"id": "temp"}]
+    assert any("PACK_MODES entries need" in x for x in validate_profile(m))
 
 
 @needs_node
@@ -174,10 +219,12 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     with open(os.path.join(STATIC, "pack3d.js")) as f:
         js = f.read()
     assert "scale: 'abs'" in js                                            # the grid's own scale by default
-    assert "Tiles.cellColor(mv, f.min, f.max)" in js                       # exactly the grid's call
+    assert "Tiles.cellColor(val, f.min, f.max)" in js                      # exactly the grid's call
     assert "LeafSpy" not in js and "№" not in js                             # no third-party app names in the UI
     # pairs are numbered 1–96 on screen (the manual's count); indices stay 0-based underneath
-    assert "pair <b>${i + 1}</b>" in js and "`${i + 1} · ${cells[i]}`" in js and "pairs ${md.m * 2 + 1} & ${md.m * 2 + 2}" in js
+    assert "${md.name} <b>${v + 1}</b>" in js and "`${b.v + 1} · ${cells[b.v]}`" in js and "${mode().name} ${vs.map(v => v + 1).join(' & ')}" in js
+    assert "function valuesOf(data)" in js and "MODES = (PACK.modes && PACK.modes.length)" in js   # value modes from the profile
+    assert "if (md.invert) t = 1 - t;" in js                                                    # temperatures: hot is red
     with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
         page = f.read()
     assert 'id="cell-${c0}">${c0 + 1}</div>' in page and "Cell pair ${i + 1}:" in page
@@ -186,9 +233,9 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "s.mesh.material.color.copy(c)" in js                           # sensor balls colour-mapped
     assert "function paintPane(i, cells, f, sc)" in js and "pack3d-pane-close" in js
     assert "TileStudio.size('pack3d', null, state.baseH * 2)" in js        # expand doubles the real height
-    assert "flash the lowest pair white and the highest blue" in js and "state.flashing = flashing" in js
+    assert "flash the lowest ${md.name} white and the highest blue" in js and "state.flashing = flashing" in js
     assert "Flash all below" in js and 'data-k="flashBelow"' in js and 'data-k="flashAbove"' in js   # threshold flashes
-    assert "if (below > 0 && cells[i] < below) add(i, WHITE);" in js and "if (above > 0 && cells[i] > above) add(i, BLUE);" in js
+    assert "if (below > 0 && cells[v] < below) add(v, WHITE);" in js and "if (above > 0 && cells[v] > above) add(v, BLUE);" in js
     assert "RoundedBoxGeometry(b0.sx, b0.sy, b0.sz, 2, r)" in js              # rounded like the real module
     assert "slot[i] = { g: groups.length, k }" in js                          # one instanced mesh per body size
     assert 'style="color:${css}"' in js                                        # the pane's voltages in the pair's colour

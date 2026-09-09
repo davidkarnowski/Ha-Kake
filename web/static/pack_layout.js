@@ -5,78 +5,92 @@
 // network — node loads it the way tests/test_alerts.py loads alerts.js:
 //   globalThis.window = globalThis; require('pack_layout.js'); window.PackLayout
 //
-// Input is the profile's pack description as the page receives it
-// (web/app.py vehicle_ctx → `PACK`): {module: {L, W, T}, case: {...},
-// layout: [{name, kind, x, z, n, first, verify}, ...], sensors: [...]}.
+// Input is a profile's pack description as the page receives it
+// (web/app.py vehicle_ctx → `PACK`; the contract is docs/PACK3D_GUIDE.md):
+//   {module: {L, W, T}, case: {...}, layout: [stack, ...], sensors: [...], modes: [...]}
+// A stack places `n` modules and says how they map to measured values:
+//   split  values per module, sliced through the module's thickness (Leaf: 2 — the
+//          2s2p module reports two cell pairs);
+//   group  modules per value (Prius NiMH: 2 — the ECU reports one voltage per two
+//          modules). group > 1 forces split 1.
 // Millimetres, car coordinates: x forward, y up, z toward the passenger side.
+// Bodies are what is drawn (one per module slice); values are what is measured
+// (`body.v` indexes the mode's value list, e.g. `cells`). For the Leaf the two
+// coincide; for a grouped pack several bodies share one value.
 (function () {
   'use strict';
   const TRAY = 20;                       // the tray floor sits this far above the case bottom
+  const GAP = 3;                         // hairline between bodies so they read as separate
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-  // One body per cell pair: a half-slab of its module, split through the module's
-  // thickness (the two series pairs are stacked through it). The first pair of a
-  // module sits on the +axis half. Returns {bodies[96], modules[48]}.
   function bodies(pack) {
     const M = pack.module, out = [], modules = [];
+    let values = 0;
     for (const s of pack.layout) {
+      const group = Math.max(1, s.group | 0), split = group > 1 ? 1 : Math.max(1, s.split == null ? 2 : s.split | 0);
       for (let k = 0; k < s.n; k++) {
-        const m = (s.first >> 1) + k;                    // module number 0..47
-        let cx, cy, cz, sx, sy, sz, halfAxis;
+        const m = modules.length;
+        let cx, cy, cz, sx, sy, sz, thickAxis;
         if (s.kind === 'edge') {
           // on edge: long side along x, height along y, thickness along z;
           // module k runs from the +z end (passenger) toward −z (driver)
           cx = s.x; cy = TRAY + M.W / 2; cz = (s.n / 2 - 0.5 - k) * M.T + (s.z || 0);
-          sx = M.L; sy = M.W; sz = M.T; halfAxis = 'z';
+          sx = M.L; sy = M.W; sz = M.T; thickAxis = 'z';
         } else {
           // flat: long side across the car (z), short side along x, thickness up (y);
           // module k counts from the bottom of the stack
           cx = s.x; cy = TRAY + M.T / 2 + k * M.T; cz = s.z;
-          sx = M.W; sy = M.T; sz = M.L; halfAxis = 'y';
+          sx = M.W; sy = M.T; sz = M.L; thickAxis = 'y';
         }
-        modules.push({ m, cx, cy, cz, sx, sy, sz, kind: s.kind, side: Math.sign(s.z || 0), stack: s.name });
-        for (let h = 0; h < 2; h++) {
-          const i = s.first + k * 2 + h;
-          const off = (h === 0 ? 1 : -1) * M.T / 4;
-          const b = { i, m, cx, cy, cz, sx: sx - 3, sy, sz, loc: s.name, verify: s.verify || '', halfAxis };
-          if (halfAxis === 'z') { b.cz += off; b.sz = M.T / 2 - 1.5; b.sy -= 3; }
-          else { b.cy += off; b.sy = M.T / 2 - 1.5; b.sz -= 3; }
-          out[i] = b;
+        const vFirst = s.first + (group > 1 ? Math.floor(k / group) : k * split);
+        modules.push({ m, cx, cy, cz, sx, sy, sz, kind: s.kind, side: Math.sign(s.z || 0), stack: s.name, vFirst, split, group });
+        for (let h = 0; h < split; h++) {
+          const v = vFirst + (group > 1 ? 0 : h);
+          // slices through the thickness, the first on the +axis side
+          const slice = M.T / split, off = ((split - 1) / 2 - h) * slice;
+          const b = { i: out.length, v, m, cx, cy, cz, sx: sx - GAP, sy, sz, loc: s.name, verify: s.verify || '', halfAxis: thickAxis, shared: group > 1 };
+          if (thickAxis === 'z') { b.cz += off; b.sz = slice - (split > 1 ? GAP / 2 : GAP); b.sy -= GAP; }
+          else { b.cy += off; b.sy = slice - (split > 1 ? GAP / 2 : GAP); b.sz -= GAP; }
+          out.push(b);
+          values = Math.max(values, v + 1);
         }
       }
     }
-    return { bodies: out, modules };
+    return { bodies: out, modules, values };
   }
 
-  function stats(cells) {
-    let min = Infinity, max = -Infinity, sum = 0, imin = -1, imax = -1;
-    for (let i = 0; i < cells.length; i++) {
-      const v = cells[i]; if (v == null) continue;
-      sum += v;
+  function stats(vals) {
+    let min = Infinity, max = -Infinity, sum = 0, n = 0, imin = -1, imax = -1;
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i]; if (v == null) continue;
+      sum += v; n++;
       if (v < min) { min = v; imin = i; }
       if (v > max) { max = v; imax = i; }
     }
-    return { min, max, imin, imax, mean: cells.length ? sum / cells.length : 0 };
+    return { min, max, imin, imax, mean: n ? sum / n : 0 };
   }
 
-  // Colour scales: t ∈ [0, 1] feeds Tiles.cellColor (0 = red/low, 1 = blue/high).
-  //   abs  — the module grid's own scale: lowest pair of the frame → highest
-  //   dev  — deviation from the pack mean at that instant; ±50 mV spans the scale.
-  //          The weak-cell view: under load every pair sags together, this one
-  //          shows who sags more.
-  //   drop — drop from the pair's own rest voltage (first frame seen); 300 mV → red.
-  //          A per-pair internal-resistance proxy.
+  // Colour scales: t ∈ [0, 1] feeds Tiles.cellColor (0 = red/low, 1 = blue/high);
+  // a mode with `invert: true` (temperatures: hot should be red) flips t.
+  //   abs  — the grid's own scale: lowest value of the frame → highest
+  //   dev  — deviation from the mean at that instant; ±cfg.dev spans the scale
+  //          (the weak-cell view: under load every pair sags, this shows who sags more)
+  //   drop — drop from the value's own rest reading (first frame seen); cfg.drop → 0
+  //          (a per-pair internal-resistance proxy; voltage packs only)
   const SCALES = {
-    abs:  { label: 'absolute mV (grid scale)',
-            t: (mv, f) => f.max === f.min ? 1 : (mv - f.min) / (f.max - f.min),
-            lo: f => `${f.min} mV`, hi: f => `${f.max} mV` },
-    dev:  { label: 'deviation from pack mean',
-            t: (mv, f) => clamp(0.5 + (mv - f.mean) / 100, 0, 1),
-            lo: () => '−50 mV', hi: () => '+50 mV vs mean' },
-    drop: { label: 'drop from own rest voltage',
-            t: (mv, f, i, rest) => 1 - clamp(((rest && rest[i] != null ? rest[i] : mv) - mv) / 300, 0, 1),
-            lo: () => '−300 mV', hi: () => '0 mV from rest' },
+    abs:  { label: 'absolute (grid scale)',
+            t: (v, f) => f.max === f.min ? 1 : (v - f.min) / (f.max - f.min),
+            lo: (f, u) => `${f.min} ${u}`, hi: (f, u) => `${f.max} ${u}` },
+    dev:  { label: 'deviation from the mean',
+            t: (v, f, i, rest, cfg) => clamp(0.5 + (v - f.mean) / (2 * ((cfg && cfg.dev) || 50)), 0, 1),
+            lo: (f, u, cfg) => `−${(cfg && cfg.dev) || 50} ${u}`, hi: (f, u, cfg) => `+${(cfg && cfg.dev) || 50} ${u} vs mean` },
+    drop: { label: 'drop from own rest value',
+            t: (v, f, i, rest, cfg) => 1 - clamp(((rest && rest[i] != null ? rest[i] : v) - v) / ((cfg && cfg.drop) || 300), 0, 1),
+            lo: (f, u, cfg) => `−${(cfg && cfg.drop) || 300} ${u}`, hi: (f, u) => `0 ${u} from rest` },
   };
 
-  window.PackLayout = { bodies, stats, SCALES, clamp, TRAY };
+  // the default mode when a profile declares none: the Leaf's cell pairs
+  const DEFAULT_MODE = { id: 'volt', key: 'cells', name: 'cell pair', unit: 'mV', scales: ['abs', 'dev', 'drop'], dev: 50, drop: 300, invert: false };
+
+  window.PackLayout = { bodies, stats, SCALES, DEFAULT_MODE, clamp, TRAY };
 })();

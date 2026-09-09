@@ -67,11 +67,14 @@ mechanism: a record carrying a `cells` list of per-cell millivolts gets one row
 per cell, which is what the Leaf's 96 cell pairs need. Profiles that emit no
 `cells` key never touch that table.
 
-`PACK_MODULE`, `PACK_CASE`, `PACK_LAYOUT` and `PACK_SENSORS` are likewise optional
-and only read by the 3D pack tile: a module's dimensions, the case envelope, a
-list of stacks placing every cell-pair index in the pack, and the temperature
-sensor positions. A profile that declares `PACK_LAYOUT` must cover every index
-from 0 to (pairs − 1) exactly once; `validate_profile` checks that.
+`PACK_MODULE`, `PACK_CASE`, `PACK_LAYOUT`, `PACK_SENSORS` and `PACK_MODES` are
+likewise optional and only read by the 3D pack tile (docs/PACK3D_GUIDE.md is the
+full contract): a module's dimensions, the case envelope, a list of stacks
+placing the modules and saying how they map to measured values (`split` values
+per module, or `group` modules per value), the temperature sensor positions, and
+the value modes (which record key the bodies colour from, its unit and scales).
+A profile that declares `PACK_LAYOUT` must cover every value index from 0 to
+(values − 1) exactly once; `validate_profile` checks that.
 
 `get_vehicle(name)` resolves: explicit arg -> HAKAKE_VEHICLE env ->
 config.local.json "vehicle" -> "leaf_ze0", and validates the profile.
@@ -258,9 +261,18 @@ def validate_profile(mod):
                 continue
             if s["kind"] not in ("edge", "flat"):
                 p.append(f"{name}: PACK_LAYOUT {s['name']!r} kind must be 'edge' or 'flat'")
-            seen.extend(range(s["first"], s["first"] + s["n"] * 2))
+            group, split = int(s.get("group", 1) or 1), int(s.get("split", 2) or 2)
+            if group > 1 and s["n"] % group:
+                p.append(f"{name}: PACK_LAYOUT {s['name']!r} has n={s['n']} modules but group={group}")
+            count = s["n"] // group if group > 1 else s["n"] * split
+            seen.extend(range(s["first"], s["first"] + count))
         if sorted(seen) != list(range(len(seen))):
-            p.append(f"{name}: PACK_LAYOUT must cover every cell-pair index 0..N-1 exactly once")
+            p.append(f"{name}: PACK_LAYOUT must cover every value index 0..N-1 exactly once")
+        for m in getattr(mod, "PACK_MODES", None) or []:
+            if not isinstance(m, dict) or not {"id", "key", "name", "unit"} <= set(m):
+                p.append(f"{name}: PACK_MODES entries need id/key/name/unit, found {m!r}")
+            elif not set(m.get("scales", ["abs"])) <= {"abs", "dev", "drop"}:
+                p.append(f"{name}: PACK_MODES {m['id']!r} names an unknown scale")
 
     # ── item bookkeeping ──
     for i, keys in mod.ITEM_KEYS.items():

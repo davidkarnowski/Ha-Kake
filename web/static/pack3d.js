@@ -16,7 +16,9 @@
 // module. A rounded box cannot be scaled per instance without distorting its
 // corners, so there is one InstancedMesh per body size (the flat halves, the
 // on-edge halves) and a slot table maps a pair index to (mesh, instance).
-// Per-instance colour is the pair's voltage on the chosen scale. A translucent
+// Per-instance colour is the body's measured value (`body.v` into the mode's list —
+// `cells` for the Leaf) on the chosen scale; a profile may declare several modes
+// (voltages, per-module temperatures) and the ⋯ menu switches between them. A translucent
 // case, module outlines, terminal studs and the four temperature sensors (each
 // coloured by its own reading) give it the shape of the real pack. Labels are
 // DOM elements tracked by CSS2DRenderer, so they use the dashboard's own fonts.
@@ -31,7 +33,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 
 const VIEWS = { iso: [1500, 1300, 1700], top: [1, 2600, 1], rear: [-2100, 700, 0], driver: [200, 650, -2300] };
 // scale 'abs' is the cell grid's own colouring, so a pair reads the same colour side by side
-const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '' };
+const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '', mode: '' };
 const WHITE = new THREE.Color(0xffffff), BLUE = new THREE.Color(0x42a5f5), ACCENT = 0x4fc3f7;
 const EDGE_RADIUS = 6;                                   // mm, the real module's rounded edge
 
@@ -41,7 +43,8 @@ const state = {
   flashing: [],                        // [{i, base, to}] — the lowest → white, the highest → blue, thresholds likewise
   expanded: false, baseH: null,
 };
-let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLabels, bodies, modules, ro, sensors = [];
+let renderer, labelRenderer, scene, camera, controls, caseMat, hoverBox, pairLabels, bodies, modules, nValues = 0, ro, sensors = [];
+let MODES = [PackLayout ? PackLayout.DEFAULT_MODE : null];   // the profile's value modes (PACK_MODES), or the Leaf default
 let groups = [], slot = [];                              // groups[g] = {mesh, ids}; slot[i] = {g, k}
 let selBox, selPin, selLabel;                            // the pinned module's marker
 const colorCache = new Map(), tmpColor = new THREE.Color();
@@ -56,7 +59,8 @@ function build(root) {
   if (!host || !pack || !window.PackLayout || state.built) return;
   if (!host.clientWidth) return;                       // hidden tile: wait for tiles:applied
   const PACK = pack, C = PACK.case;
-  ({ bodies, modules } = PackLayout.bodies(PACK));
+  ({ bodies, modules, values: nValues } = PackLayout.bodies(PACK));
+  MODES = (PACK.modes && PACK.modes.length) ? PACK.modes.map(m => Object.assign({}, PackLayout.DEFAULT_MODE, m)) : [PackLayout.DEFAULT_MODE];
   state.host = host; state.note = root.querySelector('#pack3d-note'); state.pane = host.querySelector('.pack3d-pane');
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -170,8 +174,14 @@ function build(root) {
 
 // ── colours ───────────────────────────────────────────────────────────────
 // the cell grid's colour function, as a CSS string (for text) and a THREE colour (for bodies)
-function pairCss(mv, f, i, sc) {
-  return state.opts.scale === 'abs' ? Tiles.cellColor(mv, f.min, f.max) : Tiles.cellColor(sc.t(mv, f, i, state.rest), 0, 1);
+function mode() { return MODES.find(m => m.id === state.opts.mode) || MODES[0]; }
+function valuesOf(data) { const v = data && data[mode().key]; return Array.isArray(v) && v.length >= nValues ? v : null; }
+function pairCss(val, f, i, sc) {
+  const md = mode();
+  if (state.opts.scale === 'abs' && !md.invert) return Tiles.cellColor(val, f.min, f.max);   // exactly the grid's call
+  let t = sc.t(val, f, i, state.rest, md);
+  if (md.invert) t = 1 - t;                                                                // temperatures: hot is red
+  return Tiles.cellColor(t, 0, 1);
 }
 function cssColor(css) {
   let c = colorCache.get(css);
@@ -184,29 +194,32 @@ function flushColors() { for (const g of groups) g.mesh.instanceColor.needsUpdat
 // ── painting ──────────────────────────────────────────────────────────────
 function paint() {
   const data = state.last; if (!state.built || !data) return;
-  const cells = data.cells, f = PackLayout.stats(cells), sc = PackLayout.SCALES[state.opts.scale] || PackLayout.SCALES.abs;
-  for (let i = 0; i < bodies.length; i++) setPairColor(i, cssColor(pairCss(cells[i], f, i, sc)));
+  const md = mode(), cells = valuesOf(data); if (!cells) return;
+  const f = PackLayout.stats(cells), sc = PackLayout.SCALES[state.opts.scale] || PackLayout.SCALES.abs;
+  for (const b of bodies) setPairColor(b.i, cssColor(pairCss(cells[b.v], f, b.v, sc)));
   flushColors();
   // what breathes (see loop): the lowest pair toward white and the highest toward blue,
   // plus every pair below / above the thresholds set in the ⋯ menu
+  // flashing is per value; every body carrying that value breathes
   const flashing = [], below = +state.opts.flashBelow, above = +state.opts.flashAbove;
-  const add = (i, to) => { if (!flashing.some(x => x.i === i)) flashing.push({ i, to, base: cssColor(pairCss(cells[i], f, i, sc)).clone() }); };
+  const add = (v, to) => { for (const b of bodies) if (b.v === v && !flashing.some(x => x.i === b.i)) flashing.push({ i: b.i, to, base: cssColor(pairCss(cells[v], f, v, sc)).clone() }); };
   if (state.opts.flash) { add(f.imin, WHITE); add(f.imax, BLUE); }
-  for (let i = 0; i < cells.length; i++) {
-    if (below > 0 && cells[i] < below) add(i, WHITE);
-    if (above > 0 && cells[i] > above) add(i, BLUE);
+  for (let v = 0; v < nValues; v++) {
+    if (below > 0 && cells[v] < below) add(v, WHITE);
+    if (above > 0 && cells[v] > above) add(v, BLUE);
   }
   state.flashing = flashing;
-  state.thresholdNote = (below > 0 ? ` · ${cells.filter(v => v < below).length} below ${below} mV` : '') +
-                        (above > 0 ? ` · ${cells.filter(v => v > above).length} above ${above} mV` : '');
-  const mode = state.opts.labels;
-  for (let i = 0; i < bodies.length; i++) {
-    const show = mode === 'all' || (mode === 'minmax' && (i === f.imin || i === f.imax)) || i === state.pinned || i === state.hover;
-    const l = pairLabels[i]; l.visible = show;
-    if (show) { l.element.textContent = `${i + 1} · ${cells[i]}`; l.element.classList.toggle('hot', i === f.imin); l.element.classList.toggle('high', i === f.imax); }
+  state.thresholdNote = (below > 0 ? ` · ${cells.filter(v => v < below).length} below ${below} ${md.unit}` : '') +
+                        (above > 0 ? ` · ${cells.filter(v => v > above).length} above ${above} ${md.unit}` : '');
+  const lmode = state.opts.labels, labelled = new Set();
+  for (const b of bodies) {
+    const first = !labelled.has(b.v);                    // a shared value is labelled on its first body only
+    const show = first && (lmode === 'all' || (lmode === 'minmax' && (b.v === f.imin || b.v === f.imax)) || b.i === state.pinned || b.i === state.hover);
+    const l = pairLabels[b.i]; l.visible = show;
+    if (show) { labelled.add(b.v); l.element.textContent = `${b.v + 1} · ${cells[b.v]}`; l.element.classList.toggle('hot', b.v === f.imin); l.element.classList.toggle('high', b.v === f.imax); }
   }
   const ends = state.host.querySelectorAll('.pack3d-legend span');
-  if (ends.length === 2) { ends[0].textContent = sc.lo(f); ends[1].textContent = sc.hi(f); }
+  if (ends.length === 2) { ends[0].textContent = sc.lo(f, md.unit, md); ends[1].textContent = sc.hi(f, md.unit, md); }
   paintSensors(data);
   readout(state.hover >= 0 ? state.hover : state.pinned, cells, f);
   paintSelection(cells, f, sc);
@@ -242,12 +255,13 @@ function readout(i, cells, f) {
   }
   if (i < 0 || !bodies[i]) {
     hoverBox.visible = false;
-    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} mV</b> · mean <b>${f.mean.toFixed(0)} mV</b> · lowest pair <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a pair, click to pin`;
+    const md = mode();
+    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} ${md.unit}</b> · mean <b>${f.mean.toFixed(0)} ${md.unit}</b> · lowest ${md.name} <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a ${md.name}, click to pin`;
     return;
   }
-  const b = bodies[i], dev = cells[i] - f.mean, drop = state.rest ? cells[i] - state.rest[i] : null;
-  note.innerHTML = `pair <b>${i + 1}</b> · <b>${cells[i]} mV</b> · ${sign(dev)} mV vs mean` +
-    (drop == null ? '' : ` · ${sign(drop)} mV from rest`) + ` · module ${b.m + 1} of ${bodies.length / 2} · ${b.loc}` +
+  const md = mode(), b = bodies[i], v = b.v, dev = cells[v] - f.mean, drop = state.rest ? cells[v] - state.rest[v] : null;
+  note.innerHTML = `${md.name} <b>${v + 1}</b> · <b>${cells[v]} ${md.unit}</b> · ${sign(dev)} ${md.unit} vs mean` +
+    (drop == null || !md.scales.includes('drop') ? '' : ` · ${sign(drop)} ${md.unit} from rest`) + ` · module ${b.m + 1} of ${modules.length} · ${b.loc}` +
     (b.verify ? ` <span class="verify" title="${b.verify}">(stack order assumed)</span>` : '') +
     (state.pinned === i ? ' · pinned' : '');
   hoverBox.visible = state.hover === i;
@@ -272,41 +286,49 @@ function paintSelection(cells, f, sc) {
   selBox.position.set(md.cx, md.cy, md.cz); selBox.scale.set(md.sx + 10, md.sy + 10, md.sz + 10);
   selPin.position.set(md.cx, md.cy + md.sy / 2 + 60, md.cz);
   selLabel.position.set(md.cx, md.cy + md.sy / 2 + 96, md.cz);
-  selLabel.element.textContent = `module ${b.m + 1} · pairs ${md.m * 2 + 1} & ${md.m * 2 + 2}`;
+  const vs = valuesOfModule(md.m);
+  selLabel.element.textContent = `module ${b.m + 1} · ${mode().name} ${vs.map(v => v + 1).join(' & ')}`;
   paintPane(i, cells, f, sc);
 }
+// the measured values a module carries (its slices), or the value it shares with its group
+function valuesOfModule(m) { return [...new Set(bodies.filter(b => b.m === m).map(b => b.v))]; }
 function paintPane(i, cells, f, sc) {
   const pane = state.pane; if (!pane) return;
-  const b = bodies[i], sib = bodies[b.m * 2] === b ? bodies[b.m * 2 + 1] : bodies[b.m * 2];
+  const md = mode(), b = bodies[i], vs = valuesOfModule(b.m), u = md.unit;
   const order = cells.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).map(x => x[1]);
-  const pair = p => {
-    const v = cells[p.i], dev = v - f.mean, drop = state.rest ? v - state.rest[p.i] : null;
-    const rank = order.indexOf(p.i) + 1, bal = state.last.balancing && state.last.balancing[p.i];
-    const css = pairCss(v, f, p.i, sc);                           // the pair's own colour, as the grid paints it
-    return `<div class="pack3d-pane-pair ${p.i === i ? 'on' : ''}" style="border-left-color:${css}">
-      <div class="k">pair ${p.i + 1} <small>module ${p.m + 1}</small></div>
-      <div class="v" style="color:${css}">${v}<small>mV</small></div>
-      <div class="rows"><span>vs mean</span><b>${sign(dev)} mV</b>
-        <span>from rest</span><b>${drop == null ? '—' : sign(drop) + ' mV'}</b>
+  const row = v => {
+    const val = cells[v], dev = val - f.mean, drop = state.rest ? val - state.rest[v] : null;
+    const rank = order.indexOf(v) + 1, bal = md.key === 'cells' && state.last.balancing && state.last.balancing[v];
+    const css = pairCss(val, f, v, sc);                           // the value's own colour, as the grid paints it
+    const sharedBy = b.shared ? modules.filter(x => valuesOfModule(x.m).includes(v)).map(x => x.m + 1) : null;
+    return `<div class="pack3d-pane-pair ${v === b.v ? 'on' : ''}" style="border-left-color:${css}">
+      <div class="k">${md.name} ${v + 1} <small>${sharedBy ? 'modules ' + sharedBy.join('–') : 'module ' + (b.m + 1)}</small></div>
+      <div class="v" style="color:${css}">${val}<small>${u}</small></div>
+      <div class="rows"><span>vs mean</span><b>${sign(dev)} ${u}</b>
+        ${md.scales.includes('drop') ? `<span>from rest</span><b>${drop == null ? '—' : sign(drop) + ' ' + u}</b>` : ''}
         <span>rank</span><b>${ordinal(rank)} lowest${rank === 1 ? ' ⚑' : rank === cells.length ? ' ▲' : ''}</b>
-        <span>balancing</span><b>${bal ? 'yes' : '—'}</b></div></div>`;
+        ${md.key === 'cells' ? `<span>balancing</span><b>${bal ? 'yes' : '—'}</b>` : ''}</div></div>`;
   };
-  // the module as a whole: its two pairs' spread and average, ranked among the 48
-  const v0 = cells[b.m * 2], v1 = cells[b.m * 2 + 1], avg = (v0 + v1) / 2, spread = Math.abs(v0 - v1);
-  const modAvgs = modules.map(md => (cells[md.m * 2] + cells[md.m * 2 + 1]) / 2);
-  const modRank = modAvgs.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).findIndex(x => x[1] === b.m) + 1;
-  const modSpreads = modules.map(md => Math.abs(cells[md.m * 2] - cells[md.m * 2 + 1]));
-  const spreadRank = modSpreads.map((v, k) => [v, k]).sort((a, c) => c[0] - a[0]).findIndex(x => x[1] === b.m) + 1;
-  const modHtml = `<div class="pack3d-pane-mod"><div class="k">module ${b.m + 1} — both pairs</div>
-      <div class="two"><div><div class="k">spread</div><div class="v">${spread}<small>mV</small></div></div>
-        <div><div class="k">average</div><div class="v" style="color:${pairCss(avg, f, b.i, sc)}">${avg.toFixed(0)}<small>mV</small></div></div></div>
-      <div class="rows"><span>average vs pack</span><b>${sign(avg - f.mean)} mV</b>
+  // the module as a whole, when it carries more than one value: spread and average, ranked among the modules
+  let modHtml = '';
+  if (vs.length > 1) {
+    const mv = m => valuesOfModule(m).map(v => cells[v]);
+    const avg = vs.reduce((a, v) => a + cells[v], 0) / vs.length, spread = Math.max(...vs.map(v => cells[v])) - Math.min(...vs.map(v => cells[v]));
+    const modAvgs = modules.map(x => { const a = mv(x.m); return a.reduce((p, q) => p + q, 0) / a.length; });
+    const modRank = modAvgs.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).findIndex(x => x[1] === b.m) + 1;
+    const modSpreads = modules.map(x => { const a = mv(x.m); return Math.max(...a) - Math.min(...a); });
+    const spreadRank = modSpreads.map((v, k) => [v, k]).sort((a, c) => c[0] - a[0]).findIndex(x => x[1] === b.m) + 1;
+    modHtml = `<div class="pack3d-pane-mod"><div class="k">module ${b.m + 1} — all ${vs.length} ${md.name}s</div>
+      <div class="two"><div><div class="k">spread</div><div class="v">${spread}<small>${u}</small></div></div>
+        <div><div class="k">average</div><div class="v" style="color:${pairCss(avg, f, b.v, sc)}">${avg.toFixed(0)}<small>${u}</small></div></div></div>
+      <div class="rows"><span>average vs pack</span><b>${sign(avg - f.mean)} ${u}</b>
         <span>average rank</span><b>${ordinal(modRank)} lowest of ${modules.length}</b>
         <span>spread rank</span><b>${ordinal(spreadRank)} widest of ${modules.length}</b></div></div>`;
-  pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${bodies.length / 2}</b><span>${b.loc}</span>
+  }
+  pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${modules.length}</b><span>${b.loc}</span>
       <button class="pack3d-pane-close" title="unpin">×</button></div>
-    ${pair(b)}${pair(sib)}${modHtml}
-    <div class="pack3d-pane-foot">pack ${f.min}–${f.max} mV · spread ${(f.max - f.min).toFixed(0)} · mean ${f.mean.toFixed(0)}` +
+    ${vs.map(row).join('')}${modHtml}
+    <div class="pack3d-pane-foot">pack ${f.min}–${f.max} ${u} · spread ${(f.max - f.min).toFixed(0)} · mean ${f.mean.toFixed(0)}` +
     (b.verify ? ` · <span class="verify" title="${b.verify}">stack order assumed</span>` : '') + `</div>`;
   pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinned = -1; paint(); });
   pane.hidden = false;
@@ -415,16 +437,19 @@ export function render(root, data) {
   if (!data) return;
   if (!state.built) build(root);
   if (!state.built) { window.__pack3dPending = data; return; }
-  if (!data.cells || data.cells.length !== bodies.length) return;
-  // rest voltages: the first frame seen, again whenever a playback window starts
+  const vals = valuesOf(data); if (!vals) return;
+  // rest values: the first frame seen, again whenever a playback window starts
   const pb = !!data.playback;
-  if (!state.rest || pb !== state.playback || data.playback_first) state.rest = data.cells.slice();
+  if (!state.rest || pb !== state.playback || data.playback_first) state.rest = vals.slice();
   state.playback = pb;
   state.last = data; paint();
 }
 export function setOpts(o) {
   const before = state.opts.view;
+  const beforeMode = state.opts.mode;
   Object.assign(state.opts, DEFAULT_OPTS, o || {});
+  if (state.opts.mode !== beforeMode) state.rest = null;
+  if (!mode().scales.includes(state.opts.scale)) state.opts.scale = mode().scales[0];
   state.opts.case = PackLayout.clamp(+state.opts.case, 0, 0.6);
   if (caseMat) caseMat.opacity = state.opts.case;
   if (controls) controls.autoRotate = !!state.opts.spin;
@@ -446,14 +471,16 @@ if (window.TileStudio && TileStudio.menuExtra) {
   TileStudio.menuExtra('pack3d', (box, o, commit) => {
     const sel = (key, entries) => `<select data-k="${key}">${entries.map(([v, l]) => `<option value="${v}" ${(o[key] ?? DEFAULT_OPTS[key]) == v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const on = key => (o[key] ?? DEFAULT_OPTS[key]) ? 'checked' : '';
+    const md = mode();
     box.innerHTML = `<h5>3D pack</h5>
-      <div class="row"><label>Colour by</label>${sel('scale', Object.entries(PackLayout.SCALES).map(([k, s]) => [k, s.label]))}</div>
+      ${MODES.length > 1 ? `<div class="row"><label>Show</label>${sel('mode', MODES.map(m => [m.id, `${m.name}s (${m.unit})`]))}</div>` : ''}
+      <div class="row"><label>Colour by</label>${sel('scale', md.scales.map(k => [k, PackLayout.SCALES[k].label]))}</div>
       <div class="row"><label>Values</label>${sel('labels', [['minmax', 'lowest and highest pair'], ['hover', 'hover only'], ['all', 'every pair']])}</div>
       <div class="row"><label>Case</label><input type="range" data-k="case" min="0" max="60" value="${Math.round((o.case ?? DEFAULT_OPTS.case) * 100)}"> <span style="color:var(--dim)">opacity</span></div>
       <div class="row seg">${Object.keys(VIEWS).map(v => `<button data-view="${v}" class="${(o.view || DEFAULT_OPTS.view) === v ? 'on' : ''}">${v}</button>`).join('')}<span style="color:var(--dim)">view</span></div>
-      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest pair white and the highest blue</label></div>
-      <div class="row"><label>Flash all below</label><input type="number" data-k="flashBelow" min="0" max="5000" step="1" value="${o.flashBelow ?? ''}" placeholder="mV" style="width:78px">
-        <label style="min-width:0">above</label><input type="number" data-k="flashAbove" min="0" max="5000" step="1" value="${o.flashAbove ?? ''}" placeholder="mV" style="width:78px"></div>
+      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest ${md.name} white and the highest blue</label></div>
+      <div class="row"><label>Flash all below</label><input type="number" data-k="flashBelow" min="0" max="5000" step="1" value="${o.flashBelow ?? ''}" placeholder="${md.unit}" style="width:78px">
+        <label style="min-width:0">above</label><input type="number" data-k="flashAbove" min="0" max="5000" step="1" value="${o.flashAbove ?? ''}" placeholder="${md.unit}" style="width:78px"></div>
       <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Every pair under the first value breathes white, every pair over the second breathes blue. Leave blank for none.</div>`;
     box.querySelectorAll('select[data-k]').forEach(s => s.addEventListener('change', () => { o[s.dataset.k] = s.value; commit(); }));
     box.querySelector('input[data-k="case"]').addEventListener('input', e => { o.case = +e.target.value / 100; setOpts(o); });

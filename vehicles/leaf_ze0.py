@@ -218,6 +218,13 @@ PACK_LAYOUT = [
 # The four 2011–2012 pack temperature sensors, at the locations LeafSpy's help
 # table gives: 1 rear block centre-back, 2 right side under the front right
 # seat, 3 left side under the rear left floor, 4 rear block right end.
+# What the bodies show. One mode here: the 96 cell-pair voltages, two per module
+# (`split: 2` is the layout default). A pack whose ECU reports temperatures per
+# module would add a second mode with `key` naming that list (docs/PACK3D_GUIDE.md).
+PACK_MODES = [
+    {"id": "volt", "key": "cells", "name": "cell pair", "unit": "mV",
+     "scales": ["abs", "dev", "drop"], "dev": 50, "drop": 300},
+]
 PACK_SENSORS = [
     {"n": "T1", "x": -770, "y": 131, "z": 0,    "where": "rear block, centre back — usually the hottest"},
     {"n": "T2", "x": 491,  "y": 172, "z": 431,  "where": "right side, under the front passenger seat"},
