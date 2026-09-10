@@ -179,6 +179,23 @@ def test_timeline_docks_to_the_window_so_playback_can_be_driven_from_any_tile():
     assert ".timeline.dock-bottom { bottom: 8px;" in css and ".timeline.dock-top { top: 8px;" in css
 
 
+def test_the_docked_timeline_is_no_wider_than_the_page_s_own_column():
+    """It floats over the page, so without a cap it spans the window while everything
+    beneath it stops at the content column — the owner saw that on a wide display.
+    One custom property states the column; `.dash` and the docked timeline both read it."""
+    css = read(os.path.join(STATIC, "hakake.css"))
+    page = read(INDEX)
+    assert "--app-max: 1400px;" in css and "--app-pad: 20px;" in css
+    assert "--app-col: calc(var(--app-max) - 2 * var(--app-pad));" in css
+    dock = [l for l in css.splitlines() if ".timeline.dock-bottom, .timeline.dock-top" in l]
+    assert dock and "margin: 0 auto;" in dock[0], "auto margins centre it between left/right"
+    assert "max-width: var(--app-col);" in css.split(".timeline.dock-bottom, .timeline.dock-top")[1][:400]
+    assert "left: 12px; right: 12px;" in dock[0], "still inset from the edges on a narrow window"
+    # the page column reads the same property, so one number moves both
+    assert "max-width: var(--app-max);" in page and "padding: var(--app-pad);" in page
+    assert "max-width: 1400px;" not in page, "the literal was replaced by the property"
+
+
 def test_flags_are_offered_in_both_modes_and_drawn_on_the_strip():
     page = read(INDEX)
     assert 'id="flag-btn"' in page and 'id="tl-flags"' in page and 'id="tl-unflag"' in page

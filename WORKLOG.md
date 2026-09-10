@@ -1493,3 +1493,24 @@ row changes, which is the same rule the power tile's smoothing follows.
 Node-tested for the clamp, the override, the fallback and the legend, plus the
 proof that a value keeps its colour across frames where the frame-relative
 scale moves. Not yet seen in the owner's browser.
+
+### The docked timeline matches the page's column  2026-09-10
+
+Branch `bug/timeline-width`. The owner, on a wide display: the playback
+timeline spans the whole browser window while every card beneath it stops at
+the page's column, so the two do not line up.
+
+It floats — `position: fixed` inset 12 px from the left and right edges — and
+nothing capped it, while `.dash` caps at 1400 px and pads by 20 px. On a
+1440-pixel window they are nearly the same and the mismatch hides; on anything
+wider the timeline runs away from the page. The page's column is now one
+custom property in `hakake.css` (`--app-max`, `--app-pad`, and `--app-col` for
+the card width that follows from them); `.dash` reads it instead of carrying
+its own literal, and the docked timeline takes `max-width: var(--app-col)`
+with auto margins, which centres it between the same insets. Narrow windows
+are unchanged, because there the insets still win.
+
+The single property is also the seam the wide-display mode will move, when it
+is built: that is still only a roadmap entry, never implemented.
+
+Not yet seen in the owner's browser.

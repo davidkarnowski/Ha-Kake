@@ -5,6 +5,12 @@
    the body reset, the card, the 12-column tile grid and the Tiles menu.
    Moved verbatim out of index.html; tiles.css holds the tile internals. */
 :root {
+  /* The page's content column. `.dash` caps at --app-max and pads by --app-pad, so a
+     card is --app-col wide; the docked playback timeline matches that rather than the
+     window, or it floats wider than everything it sits under. One number governs both. */
+  --app-max: 1400px;
+  --app-pad: 20px;
+  --app-col: calc(var(--app-max) - 2 * var(--app-pad));
   --bg: #0a0e17;
   --card: #111827;
   --card2: #1a2234;
@@ -101,7 +107,8 @@ body {
 .tl-note { font-size: 0.75em; color: var(--dim); margin-left: auto; }
 .tiles-btn.on { border-color: var(--accent); color: var(--accent); }
 /* docked: the timeline floats over the page, locked to the bottom (default) or the top */
-.timeline.dock-bottom, .timeline.dock-top { position: fixed; left: 12px; right: 12px; z-index: 60; margin: 0; padding: 10px 16px 10px;
+.timeline.dock-bottom, .timeline.dock-top { position: fixed; left: 12px; right: 12px; z-index: 60; margin: 0 auto; padding: 10px 16px 10px;
+                                            max-width: var(--app-col);
                                             background: rgba(17, 24, 39, .96); backdrop-filter: blur(6px); }
 .timeline.dock-bottom { bottom: 8px; box-shadow: 0 -10px 30px rgba(0, 0, 0, .55); }
 .timeline.dock-top { top: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .55); }
