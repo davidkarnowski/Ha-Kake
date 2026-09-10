@@ -377,3 +377,53 @@ setting in the tile's ⋯ menu (off / 3 / 5 / 10); `tests/test_policy_raw.py`
 holds every profile to the rule. Still to do in the provenance lane: the raw
 source currents (`hv_current1_a`, `hv_current2_a`, `g05_current_a`) as
 first-class columns.
+
+## Follow-up: do we stamp a value when we asked for it, or when it arrived? (2026-09-10)
+
+The owner, watching a pull in playback: the current meter rises, and the cell
+colours show the sag a frame *later*. The question behind it is whether the
+cell voltages should carry a timing offset, given that they cost a
+request-and-answer while the current does not.
+
+**What the code does today.** `Reader.stamp()` records a UDS item's `item_ts`
+**the moment its answer returns**, and `docs/TIMING.md` says so. A passive item
+on a transport with a frame table is stamped by its newest frame's *arrival*,
+which is better. The stored row's own `ts` is the moment the **cycle started**,
+so neither value sits at its row's timestamp. Measured over the owner's own USB
+rows: the current read finishes about 0.18 s into a cycle and the cell read
+about 0.51 s, the two being adjacent in the poll order, so the cells are stamped
+a median **0.33 s** after the current within one row. Over BLE, before the
+separation-time work, the cell read alone was 1.18 s.
+
+**Why return time is the wrong end for a multi-frame read.** The LBC fixes the
+payload before it transmits it; the 29 frames that follow are transport, not
+measurement. So the sample instant is at or before the *request*, and stamping
+at return pushes cell data systematically late by the whole read duration.
+
+**The offset is already recoverable, and no capture changes are needed.** Both
+`item_ts_epoch[item]` and `timing[item]` are stored in every row's `extra`, so
+the request instant is `item_ts_epoch − timing`. Acquisition is therefore
+already an interval; it is simply implicit and undocumented as one.
+
+**What to do, in order.**
+
+1. Make the interval explicit — record the request instant per item rather than
+   leaving it to arithmetic — and say in `docs/TIMING.md` which end a consumer
+   should use for what, and why.
+2. Let playback align a value at its interval start instead of the row's
+   timestamp, as a stated choice rather than a silent correction. **Never shift
+   a stored timestamp**: the same rule as stored values being the reported
+   values, and the same rule the power tile's smoothing follows.
+3. Measure the real end-to-end lag before trusting any constant. There is a
+   clean way: the cells sum to a pack voltage (`pack_v_cells`) and group 01
+   carries its own, read fast. Cross-correlating the two through a logged pull
+   measures the lag including the LBC's internal scan latency, which nothing
+   outside the car can observe directly. That is the technique the project
+   already used for group 05 against group 01. Label the result MEASURED, and
+   only then consider a calibrated offset.
+
+**Keep the three causes apart.** Sampling cadence (the cells are read once a
+cycle at best) is the largest term and is not a timestamp problem; the
+stamp-at-return error is the second; the ECU's own scan latency is the third
+and is unknown. The cell log already addresses the first, and the separation
+-time work cut the second by two thirds over USB.
