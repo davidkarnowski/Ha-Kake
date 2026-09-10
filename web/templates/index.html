@@ -545,6 +545,8 @@
       <span class="adapter-label" id="adapter-label">--</span>
       <span class="adapter-detail" id="adapter-detail">--</span>
     </div>
+    <!-- one more chip per further bus when several adapters are open (docs/ARCHITECTURE.md "Several adapters") -->
+    <span id="bus-chips" style="display:contents"></span>
     <span id="status-dot" class="waiting"></span>
     <span id="status-text">Waiting for reader...</span>
     <button class="tiles-btn" id="alerts-bell" title="Alert sounds">🔔</button>
@@ -994,6 +996,27 @@ function updateDash(data) {
     const port = data.adapter_port || '';
     const shortPort = port.length > 24 ? '...' + port.slice(-20) : port;
     document.getElementById('adapter-detail').textContent = data.playback ? 'recorded' : shortPort;
+  }
+  // One chip per further bus: "EV · can · live / silent / reconnecting". The
+  // first chip above is the primary bus, as it always was.
+  const chips = document.getElementById('bus-chips');
+  if (chips) {
+    const list = Array.isArray(data.adapters) ? data.adapters.slice(1) : [];
+    chips.textContent = '';
+    list.forEach(a => {
+      const box = document.createElement('div');
+      box.className = 'adapter-info bus-chip';
+      const label = document.createElement('span');
+      label.className = 'adapter-label';
+      label.textContent = String(a.bus || '?').toUpperCase();
+      const detail = document.createElement('span');
+      detail.className = 'adapter-detail';
+      const live = a.connected === false ? 'reconnecting' : a.alive === false ? 'silent' : a.alive ? 'live' : 'connected';
+      detail.textContent = `${a.type || '?'} · ${a.listen_only ? 'listen-only · ' : ''}${data.playback ? 'recorded' : live}`;
+      box.title = (a.name || '') + (a.port ? ` (${a.port})` : '') + (a.error ? ` — ${a.error}` : '');
+      box.append(label, detail);
+      chips.append(box);
+    });
   }
   document.getElementById('celllog-badge').classList.toggle('on', !!data.celllog && !data.playback);
 

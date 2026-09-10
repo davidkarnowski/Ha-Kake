@@ -115,6 +115,15 @@ there, so the true peak of a pull counts even when the 5 s sample missed it,
 and `t_peak` is the peak's own time. The strip drawing the envelope is the
 next step (`docs/PLAYBACK.md` "Resolution").
 
+## 4b. Freshness, for the resolver
+
+The provenance resolver (`docs/ARCHITECTURE.md` "Provenance") needs one
+definition of *fresh*, and it is this: a source is fresh when its item's
+`item_age` is at most **3 × the item's period**, and at least **3 s** — the
+floor covers fast-lane (period 0), passive and instant items. Stale sources
+are out of the running; when none is fresh the last canonical value stands
+and `<key>_src` says `"stale"`. `reader.source_freshness_limit()`.
+
 ## 5. The self-test
 
 ```

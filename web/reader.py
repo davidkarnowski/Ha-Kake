@@ -1270,9 +1270,7 @@ class Reader:
                 if self.session_id:
                     self.store.end_session(self.session_id)
                     self.session_id = None
-                await self.close_transports()
-                if elm and elm not in self.transports.values():
-                    await self._close_quietly(elm)
+                await self.close_transports()      # every bus, reconnect tasks included
 
     async def poll_loop(self, elm):
         asleep = False

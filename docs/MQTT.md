@@ -534,6 +534,15 @@ override it):
   `rx/#` until the first one). A list of ids or full topics pins it instead.
   `batch: true` subscribes to `rx/_batch` (whole bus) instead of per-id topics.
 
+- **A bridge per bus, or one bridge with two subtrees** (2026-09-09): the
+  reader's `adapters` list names an MQTT entry per bus — `{"type": "mqtt",
+  "bus": "ev", "host": "…"}` beside a `usb` or `can` entry for Car-CAN, or
+  two `mqtt` entries pointing at `<prefix>/car/` and `<prefix>/ev/` on one
+  broker. An entry's `host` / `port` / `prefix` override the `mqtt` block
+  for that bus only. Both buses are polled concurrently and each reconnects
+  on its own (`docs/ARCHITECTURE.md` "Several adapters"). In-process tests
+  only so far.
+
 **Bridge side**: `bridge/README.md` — install on a Raspberry Pi, `ip link`
 bring-up, Mosquitto on the LAN (Tailscale or a VPN beyond it), the systemd unit, sizing for a Pi
 Zero 2 W.

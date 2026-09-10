@@ -356,6 +356,8 @@ Not decoded from any byte; the reader stamps them on every record and row.
 | `ts_source` | record, its own `readings` column | whose clock the row's time is: `laptop` \| `driver` \| `bridge`; NULL on rows from before the column | test-verified |
 | `clock_offset_s` | record, `sessions.clock_offset_s` | `median(t_rx − t_src)` over the last frames; absent on an ELM; never applied to a stored value | test-verified in-process |
 | `<key>_min`, `<key>_max`, `<key>_tmin`, `<key>_tmax`, `<key>_n` | stored row's `extra` only | the envelope of a `peak: True` key since the previous row (Leaf: `pack_v`, `current_a`, `power_kw`, `cell_min`); reset on every row | test-verified |
+| `adapters`, `bus_alive` | record, `extra`; `sessions.adapters` | one entry per bus ({bus, type, name, port, listen_only, speed, connected, alive, …}); the tri-state liveness per bus. The old `adapter_*` keys are the primary bus's | test-verified with fake transports; two real adapters not yet run |
+| `<key>_src`, `<key>_resolved`, `<key>_disagree` | record, `extra` | for a `SIGNALS` entry with `sources`: which source the resolver chose (`"bus:item"` or `"stale"`), its value when a decoder owns `<key>` itself, and `{a, b, delta}` when two fresh sources differ by more than `tolerance` (also a `source_disagree` event). Leaf: `current_a` from `hv_current2_a` (lbc01) and `g05_current_a` (lbc05), tolerance 3 A — expect disagreements while driving above ±32 A, where group 05 wraps | test-verified |
 
 ## Credits
 

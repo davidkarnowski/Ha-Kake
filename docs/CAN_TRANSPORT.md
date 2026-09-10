@@ -169,6 +169,21 @@ python web/app.py --adapter can                # or: python web/reader.py --adap
 `--adapter can` is never auto-detected — like `replay` and `sim` it must be
 asked for, for the reason `can_bus` is required.
 
+**Two buses at once** (2026-09-09): a CANable on EV-CAN beside the ELM327
+(or a second CANable) on Car-CAN is an `adapters` list in the same file,
+one entry per bus, each entry's own `can_*` keys overriding the ones above —
+
+```json
+{"adapters": [{"type": "usb", "bus": "car"},
+              {"type": "can", "bus": "ev", "can_channel": "/dev/cu.usbmodemXXXX"}]}
+```
+
+— and no `--adapter` flag. The reader opens both, polls them concurrently,
+reconnects the EV adapter on its own if it drops, and the record's
+`adapters` list says what each bus is on (`docs/ARCHITECTURE.md` "Several
+adapters"). The EV entry is listen-only whatever it says, as always.
+Tested with fake transports only; not yet with two boards.
+
 ## How the façade maps ELM327 commands
 
 `cantransport.CanFacade.send()` keeps exactly the adapter state a real ELM327

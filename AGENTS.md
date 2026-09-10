@@ -151,6 +151,8 @@ the log, then `git diff --stat`, then continue from `NEXT:`. Logs stay in
 | Conventions, branching, commits, the privacy sweep, progress logs | `CLAUDE.md` |
 | What does byte N mean, and how sure are we? | `docs/SIGNALS.md` — then `leaf_decoders.py` |
 | Processes, scheduler, data model, Tile Studio | `docs/ARCHITECTURE.md` |
+| What a timestamp means, which clock it came from, why a 5 s row keeps a peak | `docs/TIMING.md`; `tools/bench_transport.py --timing` measures it |
+| Two adapters (Car-CAN + EV-CAN) at once; which source a value came from | `docs/ARCHITECTURE.md` "Several adapters" and "Provenance"; `adapters` in `config.local.json`; `sources` on a SIGNALS entry |
 | What must a vehicle profile provide? | `vehicles/__init__.py` docstring + `validate_profile()` |
 | How do I add a car? | `docs/ADDING_A_VEHICLE.md` |
 | How do I add one signal to a car that already works? | `docs/ADDING_SIGNALS.md` |

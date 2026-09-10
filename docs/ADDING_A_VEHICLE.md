@@ -131,6 +131,7 @@ ITEMS = {
 | `id` + `secs` | passive kinds | The CAN id to filter to, and how long to listen. Both required, and validated. |
 | `timeout` | optional | Seconds to wait for an answer; default 8.0. |
 | `est` | optional | What one poll of this item *costs*, in seconds. See §3.4. |
+| `bus` | optional | Which network the item is on; default `"car"`. A car with two networks (the Leaf: Car-CAN and EV-CAN) declares `BUSES` and the reader opens one adapter per bus and polls them concurrently (`docs/ARCHITECTURE.md` "Several adapters"). |
 
 Be stingy with `period: 0`. On BLE every fast item costs roughly 0.4 s of
 every cycle, and a cycle is what the whole dashboard's freshness is made of.
@@ -219,6 +220,8 @@ asleep every time a slow cycle comes around.
 | `HISTORY_COLS` | `dict` column → spec | Which record keys get **real, indexed SQLite columns** instead of riding in the `extra` JSON bag. Anything not listed here is stored forever but cannot be charted or aggregated. `web/store.py` builds the schema, the insert, `history()` and `daily_health()` from this — a profile never edits the store. |
 | `EXTRA_SKIP` | `tuple` of record keys | Keys never worth putting in `extra` at all: raw dumps, lists already stored as columns. The Leaf skips `("temps", "temps_c", "temps_f", "temps_raw", "balancing", "readings")`. |
 | `apply_policy(cache, calib, state)` | callable | Per-vehicle sensor policy, run every cycle after decode: fusion, calibration, sign correction. `state` is a dict the profile owns and the reader carries between cycles. **It may add keys but must never change a value `decode()` reported** — the database stores what the car said; a derived value gets its own key (`tests/test_policy_raw.py` checks every profile). The Leaf derives `current_adj_a` / `power_adj_kw` (zero-current offset, sensor fusion, direction from the BMS discharge flag) and leaves `current_a` / `power_kw` raw. |
+| `BUSES` | `tuple` of names | The car's networks, default `("car",)`. Every item's `bus` must be listed, and the `FAST_ONLY` items must share one bus — the primary, whose silence means the car is asleep. |
+| `SIGNALS[k]["sources"]`, `["tolerance"]` | list, number | A value reachable more than one way: `sources: [{"key": "ev_pack_v", "item": "p1DB", "confidence": "verified", "rate_hz": 100}, {"key": "pack_v", "item": "lbc01", "confidence": "verified", "rate_hz": 0.5}]` names the record key each source writes (decoders never write one key from two items); `tolerance` is in the signal's unit. The reader's generic resolver picks — pin, then verified over tentative, then freshness, then rate — and stamps `<k>_src`; it writes `k` itself only when no decoder does, else `<k>_resolved`; two fresh sources apart by more than `tolerance` set `<k>_disagree` and log an event. See `docs/ARCHITECTURE.md` "Provenance" and the Leaf's `current_a`. |
 | `DB_FILE` | `str` | A database file of this profile's own, in `web/`. Unset is the normal case: every profile shares `web/leaf_battery.db` and rows are separated by the `vehicle` column. |
 | `LOGO` | `str` | Header wordmark art. `"leaf"` gives the leaf silhouette; anything else — including omitting it — gives a neutral dial. The mark fills with the first level-ish signal your registry declares (`soc`, then `fuel_pct`), or stays static if you declare neither. |
 
