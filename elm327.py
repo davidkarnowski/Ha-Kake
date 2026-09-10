@@ -470,12 +470,17 @@ def _find_serial_port():
     return None
 
 
-async def detect_adapter(prefer=None, log=print):
+async def detect_adapter(prefer=None, log=print, cfg=None):
     """Auto-detect an ELM327 adapter. Returns a connected instance.
 
     Args:
         prefer: "usb", "ble", "replay", "sim", "can", "mqtt", or None for auto
         (tries USB first; auto never picks replay, sim, can or mqtt).
+        cfg: optional per-call overrides in config.local.json's own shape —
+        `can_*` keys, an `mqtt` block, `ble_addr`, `serial_port` — merged
+        over the file's settings. The reader passes one per `adapters`
+        entry so two adapters (Car-CAN and EV-CAN, say) can be opened from
+        one file; without it the call reads the file as it always did.
 
     "replay" never touches hardware: it serves a recorded session fixture
     (HAKAKE_REPLAY_FIXTURE, else the active profile's default). Auto-detect
@@ -533,16 +538,20 @@ async def detect_adapter(prefer=None, log=print):
         # is required in config.local.json for that reason. Imported lazily so
         # the ELM paths never need python-can.
         from cantransport import open_can
-        return await open_can(_cfg, log=log)
+        return await open_can(dict(_cfg, **cfg) if cfg else _cfg, log=log)
 
     if prefer == "mqtt":
         # The same façade over frames arriving from a bridge through an MQTT
         # broker — mqttsource.py, docs/MQTT.md. Lazy: paho-mqtt is optional.
         from mqttsource import open_mqtt
+        if cfg and isinstance(cfg.get("mqtt"), dict):
+            block = dict(_cfg.get("mqtt") or {})
+            block.update(cfg["mqtt"])
+            return await open_mqtt(log=log, cfg=block)
         return await open_mqtt(log=log)
 
     if prefer in (None, "usb"):
-        port = _find_serial_port()
+        port = (cfg or {}).get("serial_port") or _find_serial_port()
         if port:
             try:
                 elm = SerialELM(port=port)
@@ -554,7 +563,7 @@ async def detect_adapter(prefer=None, log=print):
 
     if prefer in (None, "ble"):
         try:
-            elm = BleELM()
+            elm = BleELM(address=cfg["ble_addr"]) if (cfg or {}).get("ble_addr") else BleELM()
             await elm.connect(log=log)
             log(f"  Adapter ready: {elm.adapter_name} (BLE: {elm.adapter_port})")
             return elm

@@ -239,7 +239,17 @@ SIGNALS = {
     # ── LBC group 01 ──
     "soc":              {"label": "State of charge", "unit": "%",   "min": 0,   "max": 100, "dec": 1, "item": "lbc01", "hist": "soc",          "color": "soc"},
     "pack_v":           {"label": "Pack voltage",    "unit": "V",   "min": 300, "max": 410, "dec": 1, "item": "lbc01", "hist": "pack_v",       "color": "good-high"},
-    "current_a":        {"label": "Pack current",    "unit": "A",   "min": -150, "max": 150, "dec": 1, "item": "lbc01", "hist": "current_a",   "color": "diverge"},
+    # Two sources for the pack current, both verified: group 01's sensor 2 every
+    # cycle (a dead zone near zero) and group 05's processed current every 5 s
+    # (wraps at ±32 A). The reader's resolver picks the fresher verified one and
+    # writes `current_a_resolved` / `current_a_src`, never `current_a` itself
+    # (decode() owns that key); beyond 3 A apart it stamps `current_a_disagree`
+    # and logs a `source_disagree` event — the February "05 vs 01" check, kept
+    # running. apply_policy's fusion stays the Leaf's own answer to the pair.
+    "current_a":        {"label": "Pack current",    "unit": "A",   "min": -150, "max": 150, "dec": 1, "item": "lbc01", "hist": "current_a",   "color": "diverge",
+                         "sources": [{"key": "hv_current2_a", "item": "lbc01", "confidence": "verified", "rate_hz": 0.5},
+                                     {"key": "g05_current_a", "item": "lbc05", "confidence": "verified", "rate_hz": 0.2}],
+                         "tolerance": 3.0},
     "power_kw":         {"label": "Power",           "unit": "kW",  "min": -10, "max": 10,  "dec": 2, "item": "lbc01", "hist": "power_kw",     "color": "diverge"},
     # Derived by apply_policy (fusion offset, zero calibration, discharge clamp) — what the
     # power tile shows; the raw `current_a` / `power_kw` above are what the database keeps.

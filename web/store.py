@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     ended TEXT,
     adapter TEXT,
     note TEXT,
-    clock_offset_s REAL        -- median(t_rx − t_src) of the source's clock; NULL for ELM (docs/TIMING.md)
+    clock_offset_s REAL,       -- median(t_rx − t_src) of the source's clock; NULL for ELM (docs/TIMING.md)
+    adapters TEXT              -- JSON [{bus, type, name, port, listen_only, speed}], one per bus polled
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS events (
@@ -195,6 +196,8 @@ CREATE TABLE IF NOT EXISTS readings (
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN vehicle TEXT")
             if table == "sessions" and cols and "clock_offset_s" not in cols:
                 self.conn.execute("ALTER TABLE sessions ADD COLUMN clock_offset_s REAL")
+            if table == "sessions" and cols and "adapters" not in cols:
+                self.conn.execute("ALTER TABLE sessions ADD COLUMN adapters TEXT")
         for col, s in self.cols.items():
             if s.get("index"):
                 self.conn.execute(
@@ -290,11 +293,14 @@ CREATE TABLE IF NOT EXISTS readings (
                 )
         return rid
 
-    def start_session(self, adapter, note=None):
+    def start_session(self, adapter, note=None, adapters=None):
+        """`adapter` is the primary bus's adapter type (as always); `adapters`
+        is the full list, one entry per bus, kept as JSON."""
         with self.conn:
             cur = self.conn.execute(
-                "INSERT INTO sessions (started, adapter, note, vehicle) VALUES (?, ?, ?, ?)",
-                (utc_now_iso(), adapter, note, self.vname),
+                "INSERT INTO sessions (started, adapter, note, vehicle, adapters) VALUES (?, ?, ?, ?, ?)",
+                (utc_now_iso(), adapter, note, self.vname,
+                 json.dumps(list(adapters)) if adapters else None),
             )
             return cur.lastrowid
 
