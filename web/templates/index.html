@@ -1104,10 +1104,12 @@ function updateDash(data) {
     }
   }
 
-  // ── per-tile freshness badges ──
+  // ── per-tile freshness badges: when the tile's item was actually read ──
+  // (Playback.itemAge — item_ts_epoch against now, or against the frame's own
+  // moment in playback; docs/TIMING.md)
+  const ageNow = Date.now();
   document.querySelectorAll('[data-age-for]').forEach(el => {
-    const a = data.item_age ? data.item_age[el.dataset.ageFor] : null;
-    el.textContent = a == null ? '' : a < 60 ? `${Math.round(a)}s ago` : `${Math.round(a / 60)}m ago`;
+    el.textContent = Playback.fmtAge(Playback.itemAge(data, el.dataset.ageFor, ageNow));
   });
   if (data.items) document.getElementById('tiles-poll').textContent = `polling ${data.items.length} source${data.items.length === 1 ? '' : 's'}` + (data.cycle_s != null ? ` · ${data.cycle_s.toFixed(1)}s cycle` : '');
 

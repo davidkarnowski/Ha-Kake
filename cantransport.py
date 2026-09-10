@@ -133,11 +133,15 @@ class FrameSource:
         bus: str                           "car" | "ev" — configuration, never guessed.
         name: str                          becomes adapter_name; must contain a digit
                                            (Reader.probe_alive demands one).
+        ts_source: str                     whose clock stamps `t`: "driver" (python-can,
+                                           this machine) or "bridge" (a Pi's clock, over
+                                           MQTT). docs/TIMING.md.
     """
 
     listen_only = False
     bus = "car"
     name = ""
+    ts_source = "driver"
 
     async def start(self, on_frame, on_status):
         raise NotImplementedError
@@ -199,6 +203,8 @@ class CanFacade:
         # the tables (memo §4.4)
         self.lock = threading.Lock()
         self.latest = {}                                   # id -> (mono_t, src_t, bytes)
+        self.wall = {}                                     # id -> (t_rx_wall, src_t): the two clocks, docs/TIMING.md
+        self.clock_samples = collections.deque(maxlen=200)  # t_rx_wall - src_t, newest last
         self.recent = collections.defaultdict(lambda: collections.deque(maxlen=recent))
         self._captures = {}                                # id -> list, during a request
         self.frames = 0
@@ -217,8 +223,12 @@ class CanFacade:
         cid = cid.upper()
         data = bytes(data)
         now = time.monotonic()
+        wall = time.time()
         with self.lock:
             self.latest[cid] = (now, t, data)
+            self.wall[cid] = (wall, t)
+            if t and t > 0:
+                self.clock_samples.append(wall - t)
             self.recent[cid].append((now, data))
             cap = self._captures.get(cid)
             if cap is not None:
@@ -376,6 +386,37 @@ class CanFacade:
         now = time.monotonic()
         with self.lock:
             return {cid: round(now - t, 3) for cid, (t, _, _) in self.latest.items()}
+
+    # ── the two clocks (docs/TIMING.md) ──────────────────────────────────
+    # Every frame arrives with the source's own timestamp `t` (python-can's
+    # driver clock, or the bridge's clock over MQTT) and is stamped again with
+    # this machine's wall clock on receipt. Both are kept; neither corrects
+    # the other. The reader publishes the median difference as
+    # `clock_offset_s` and stores it on the session — evidence, not a fix.
+
+    def source_times(self):
+        """{id: (t_rx_wall, t_src)} for the newest frame of every id: the
+        laptop's receive time (epoch) and the source's own timestamp (epoch,
+        0.0 when the source has none)."""
+        with self.lock:
+            return dict(self.wall)
+
+    def clock_offset(self):
+        """Median of (t_rx_wall − t_src) over the last frames, seconds; None
+        until a frame with a source timestamp has arrived."""
+        with self.lock:
+            s = sorted(self.clock_samples)
+        if not s:
+            return None
+        n = len(s)
+        mid = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+        return round(mid, 4)
+
+    @property
+    def ts_source(self):
+        """Whose clock the frames' `t` came from: the source says ("driver"
+        for python-can, "bridge" over MQTT)."""
+        return getattr(self.source, "ts_source", "driver")
 
     # ── UDS through the source ───────────────────────────────────────────
 

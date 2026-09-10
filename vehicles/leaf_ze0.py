@@ -120,9 +120,12 @@ def _temp_avg(rec):
 HISTORY_COLS = {
     # ── LBC group 01 (battery state) ──
     "soc":              {"kind": "real", "hist": "soc",  "round": 2, "daily": {"min": "soc_min", "max": "soc_max"}},
-    "pack_v":           {"kind": "real", "hist": "pack_v", "round": 1},
-    "current_a":        {"kind": "real", "hist": "current_a", "round": 3},
-    "power_kw":         {"kind": "real", "hist": "power_kw", "round": 3},
+    # `peak`: the reader keeps min / max / time-of-max between stored rows
+    # (`<key>_min/_max/_tmax` in the row's extra) — a 5 s row still shows the
+    # true peak of a pull, and the timeline strip can draw the envelope.
+    "pack_v":           {"kind": "real", "hist": "pack_v", "round": 1, "peak": True},
+    "current_a":        {"kind": "real", "hist": "current_a", "round": 3, "peak": True},
+    "power_kw":         {"kind": "real", "hist": "power_kw", "round": 3, "peak": True},
     "discharging":      {"kind": "bool", "hist": "discharging"},
     "capacity_ah":      {"kind": "real", "hist": "capacity_ah", "round": 3, "daily": {"avg": "capacity_ah"},
                          "daily_filter": True},
@@ -140,7 +143,7 @@ HISTORY_COLS = {
     "temp_avg_c":       {"kind": "real", "key": _temp_avg, "hist": "temp_avg", "round": 1,
                          "hist_f": "temp_avg_f", "daily": {"avg": "temp_avg_c"}},
     # ── LBC groups 02 / 06 (cell pairs, balancing) ──
-    "cell_min":         {"kind": "int", "hist": "cell_min", "round": 0},
+    "cell_min":         {"kind": "int", "hist": "cell_min", "round": 0, "peak": True},
     "cell_max":         {"kind": "int", "hist": "cell_max", "round": 0},
     "cell_avg":         {"kind": "int"},
     "cell_spread":      {"kind": "int", "hist": "spread", "round": 0,

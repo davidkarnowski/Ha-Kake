@@ -65,5 +65,31 @@
     return (d ? d + 'd ' : '') + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
   }
 
-  window.Playback = { SPEEDS, frameIndex, createTransport, fmtDur };
+  // How old item `item`'s value is in `data`, in seconds — "read at" for a tile.
+  //   * A record carrying item_ts_epoch (docs/TIMING.md) is measured from the
+  //     record's own moment: live, from `nowMs` (the age keeps growing between
+  //     polls); playback, from the frame's timestamp — the age as it *was*,
+  //     never as it is now, because a recorded frame is not stale.
+  //   * Otherwise the reader's item_age (seconds at emission) is used as is.
+  // null when the record knows nothing about the item.
+  function itemAge(data, item, nowMs) {
+    if (!data || !item) return null;
+    const ts = data.item_ts_epoch ? data.item_ts_epoch[item] : null;
+    if (typeof ts === 'number') {
+      let ref;
+      if (data.playback || nowMs == null) ref = Date.parse(data.timestamp || data.last_ok || '') / 1000;
+      else ref = nowMs / 1000;
+      if (ref === ref) return Math.max(0, ref - ts);     // NaN-safe; a row keeps whole seconds
+    }
+    const a = data.item_age ? data.item_age[item] : null;
+    return typeof a === 'number' ? a : null;
+  }
+
+  // "3s ago" / "4m ago" / "1.2h ago"; '' for null
+  function fmtAge(sec) {
+    if (sec == null || !(sec >= 0)) return '';
+    return sec < 60 ? `${Math.round(sec)}s ago` : sec < 5400 ? `${Math.round(sec / 60)}m ago` : `${(sec / 3600).toFixed(1)}h ago`;
+  }
+
+  window.Playback = { SPEEDS, frameIndex, createTransport, fmtDur, itemAge, fmtAge };
 })();

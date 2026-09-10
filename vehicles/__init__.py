@@ -58,6 +58,12 @@ History columns (optional, but needed for anything graphable)
                                    column is NULL (one column at most)
                      index         name of a partial index on (ts_epoch) where
                                    this column is 1
+                     peak          True: the reader keeps a running min / max /
+                                   time-of-max of this key between stored rows
+                                   and writes <key>_min / _max / _tmax into the
+                                   row's `extra` (peak-preserving decimation,
+                                   docs/TIMING.md). Also accepted on a SIGNALS
+                                   entry. The key must be a plain record key.
   EXTRA_SKIP       optional tuple — record keys never worth storing in `extra`
                    (raw dumps, lists already stored in columns)
   DB_FILE          optional str — a database file of this profile's own, in
@@ -126,6 +132,25 @@ def history_cols(mod):
         s.setdefault("type", _SQL_TYPE.get(s["kind"], "REAL"))
         s.setdefault("key", col)
         out[col] = s
+    return out
+
+
+def peak_keys(mod):
+    """Record keys the profile marks `peak: True` — in HISTORY_COLS (the
+    column's record key, when it is a plain string) or in SIGNALS (the entry's
+    key, when it is not a dotted list index). Declaration order, no duplicates.
+    The reader keeps their envelope between stored rows (docs/TIMING.md)."""
+    out = []
+    for col, spec in (getattr(mod, "HISTORY_COLS", None) or {}).items():
+        if isinstance(spec, dict) and spec.get("peak") is True:
+            key = spec.get("key", col)
+            if isinstance(key, str) and "." not in key and key not in out:
+                out.append(key)
+    for key, spec in (getattr(mod, "SIGNALS", None) or {}).items():
+        if isinstance(spec, dict) and spec.get("peak") is True:
+            k = spec.get("key", key)
+            if isinstance(k, str) and "." not in k and k not in out:
+                out.append(k)
     return out
 
 
@@ -310,6 +335,12 @@ def validate_profile(mod):
         if s.get("unit") == "°F" and not (s.get("alt") and s.get("alt_unit") == "°C"):
             p.append(f"{name}: °F signal {k!r} must carry its °C twin as "
                      f"'alt' + 'alt_unit': '°C' (house rule: always °C and °F)")
+        if "peak" in s:
+            if not isinstance(s["peak"], bool):
+                p.append(f"{name}: signal {k!r} peak must be True or False, found {s['peak']!r}")
+            elif s["peak"] and ("." in k or kind != "number"):
+                p.append(f"{name}: signal {k!r} cannot be a peak: only a plain number key "
+                         f"(no dotted index) has a min / max between rows")
 
     # ── history columns ──
     p += _validate_history(mod, name)
@@ -380,6 +411,12 @@ def _validate_history(mod, name):
         if "index" in spec and not (isinstance(spec["index"], str) and spec["index"].isidentifier()):
             p.append(f"{name}: HISTORY_COLS[{col!r}] index must be the index's name, "
                      f"found {spec['index']!r}")
+        if "peak" in spec:
+            if not isinstance(spec["peak"], bool):
+                p.append(f"{name}: HISTORY_COLS[{col!r}] peak must be True or False, found {spec['peak']!r}")
+            elif spec["peak"] and (not isinstance(key, str) or "." in key or kind not in ("real", "int")):
+                p.append(f"{name}: HISTORY_COLS[{col!r}] cannot be a peak: only a plain numeric "
+                         f"record key (no dotted index, no callable) has a min / max between rows")
     if len(filters) > 1:
         p.append(f"{name}: at most one HISTORY_COLS column may set daily_filter "
                  f"(found {', '.join(filters)})")
@@ -415,6 +452,8 @@ if __name__ == "__main__":                      # python vehicles/__init__.py [n
             for x in probs:
                 print(f"  - {x}")
         else:
+            pk = peak_keys(m)
             print(f"{n}: OK ({m.TITLE}, {len(m.ITEMS)} items, {len(m.SIGNALS)} signals, "
-                  f"{len(history_cols(m))} history columns)")
+                  f"{len(history_cols(m))} history columns"
+                  + (f", peaks kept for {', '.join(pk)}" if pk else "") + ")")
     sys.exit(1 if bad else 0)

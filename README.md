@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-940%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-954%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -247,7 +247,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 940 offline tests, no car needed
+pytest -q                          # 954 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -331,7 +331,8 @@ ISO-TP needs `ATCAF1`; passive sniffing needs `ATCAF0`; always filter with
 | `docs/ADDING_SIGNALS.md` | **the six-step routine for decoding and wiring a new input** |
 | `docs/reverse-engineering/` | **the eight-chapter guide to finding signals in any car** |
 | `web/reader.py` | the only process that talks to the car — tile-driven scheduler, reconnect, pause |
-| `tools/bench_transport.py` | developer tool: times adapter round-trips at several baud rates and models a full cycle |
+| `tools/bench_transport.py` | developer tool: times adapter round-trips at several baud rates and models a full cycle; `--timing` runs the reader's own cycle over any adapter and reports jitter, per-item timing and source-clock drift |
+| `docs/TIMING.md` | **what every timestamp means and which clock it came from; the `peak` envelope between rows** |
 | `battery_read.py` | console reader: one full read or a logging loop, °C / °F |
 | `calibrate_input.py` | interactive input walker (fan / lights / doors / locks …) — how every signal was decoded |
 | `probe_hvac_carcan.py` | one-shot probe: passive Car-CAN IDs, HVAC amp groups, VCM |
@@ -434,6 +435,17 @@ Being on the bus at all has consequences worth knowing:
   `current_adj_a` / `power_adj_kw` (with `current_adj_src` naming the steps),
   the power tile shows the adjusted value, and its smoothing is a display-only
   choice in the tile's ⋯ menu. A test holds every profile to the rule.
+- **Timing architecture** (2026-09-09): every record and row says when each
+  value was actually read (`item_ts` per item, beside `item_age`), whose
+  clock the row's time is (`ts_source`: laptop / driver / bridge, an additive
+  column), and — on a transport with a clock of its own — the source's frame
+  times and the per-session offset between the two clocks, kept as evidence
+  and never applied. Signals a profile marks `peak` (the Leaf: pack voltage,
+  current, power, lowest cell) keep their min / max / time-of-each between
+  stored rows, so a 5 s row still holds the true peak of a pull and the
+  timeline's auto-flags find it. `docs/TIMING.md` is the authority;
+  `tools/bench_transport.py --timing` measures a transport's jitter and
+  clock drift (test-verified on replay; no native adapter or bridge yet).
 - **MQTT ingestion and a public stream** (2026-09-09): a Pi bridge (`bridge/`)
   mirrors CAN frames to a broker as JSON and runs the reader's read requests
   on its behalf, with the read-only whitelist enforced on both ends;
@@ -469,7 +481,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 940 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 954 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

@@ -45,13 +45,14 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from elm327 import detect_adapter, set_uds_target, passive_capture  # noqa: E402
 from store import Store, utc_now_iso, ev_norm                       # noqa: E402
 import mqttsource            # <prefix>/state + signal/<key> for gauges; no-op without mqtt.host  # noqa: E402
-from vehicles import get_vehicle                                    # noqa: E402
+from vehicles import get_vehicle, peak_keys                         # noqa: E402
 import signals                                                      # noqa: E402
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -107,6 +108,7 @@ STORE_PERIOD = 5.0          # seconds between SQLite rows (state file updates ev
 VEHICLE = None
 ITEMS, TILES, DEFAULT_SPAN, DEFAULT_TILES, ITEM_KEYS = {}, [], {}, {"tiles": []}, {}
 WATCH, KIND_ORDER, TARGETS, FAST_ONLY = (), (), {}, set()
+PEAK_KEYS = []                            # record keys whose envelope is kept between rows
 
 
 async def configure_vehicle(elm):        # module-level so tests can monkeypatch it
@@ -116,8 +118,9 @@ async def configure_vehicle(elm):        # module-level so tests can monkeypatch
 def set_vehicle(name=None):
     """Bind a vehicle profile (vehicles/<name>.py) to this module and the signal registry."""
     global VEHICLE, ITEMS, TILES, DEFAULT_SPAN, DEFAULT_TILES, ITEM_KEYS
-    global WATCH, KIND_ORDER, TARGETS, FAST_ONLY
+    global WATCH, KIND_ORDER, TARGETS, FAST_ONLY, PEAK_KEYS
     VEHICLE = get_vehicle(name)
+    PEAK_KEYS = peak_keys(VEHICLE)
     ITEMS = VEHICLE.ITEMS
     TILES = VEHICLE.TILES
     DEFAULT_SPAN = VEHICLE.DEFAULT_SPAN
@@ -484,6 +487,13 @@ def save_calibration(cal):
     return cal
 
 
+def _iso_ms(epoch):
+    """UTC ISO-8601 with milliseconds and a trailing Z — the acquisition-time
+    format (rows keep whole seconds; an item's read time needs better)."""
+    return (dt.datetime.fromtimestamp(epoch, dt.timezone.utc)
+            .isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+
+
 def write_state(record):
     tmp = STATE_FILE + ".tmp"
     with open(tmp, "w") as f:
@@ -554,6 +564,16 @@ class Reader:
         self.cache = {}                   # latest decoded value of every key
         self.item_last = {}               # item → loop time of last successful run
         self.item_age = {}                # item → seconds since last run (published)
+        # ── the clocks (docs/TIMING.md) ──
+        # item_last / item_age are monotonic (scheduling); item_ts is the wall
+        # clock (storage): when each item's answer, or its newest passive
+        # frame, arrived. frame_ts is the *source's* clock for that frame
+        # (bridge / driver) where the transport has one; ELM adapters do not.
+        self.item_ts = {}                 # item → epoch seconds of acquisition
+        self.frame_ts = {}                # item → source-clock epoch of its newest frame
+        self.ts_source = "laptop"         # whose clock stamps the rows: laptop | driver | bridge
+        self._peaks = {}                  # key → envelope since the last stored row
+        self._stored_offset = None        # clock_offset_s last written to the session
         self.last_good = {k: v for k, v in load_state().items() if k not in ("status",)}
         self.session_id = None
         self.target = None                # "lbc" / "hvac" / "passive"
@@ -760,11 +780,13 @@ class Reader:
                 responses[i] = await elm.send(it["cmd"], wait=0.05, timeout=it.get("timeout", 8.0))
             timing[i] = round(loop.time() - t, 2)
             self.item_last[i] = loop.time()
+            self.stamp(elm, i, it)
 
         alive = True
         if responses:
             rec, a = VEHICLE.decode(responses)
             self.cache.update(rec)
+            self.track_peaks(rec)
             if "cells" in rec:
                 self.cells_seq += 1           # a real cell read, as opposed to the sticky cache
             if a is not None:
@@ -776,10 +798,75 @@ class Reader:
         merged = dict(self.cache)
         merged["timing"] = timing
         merged["item_age"] = self.item_age
+        merged["item_ts"] = {i: _iso_ms(e) for i, e in self.item_ts.items()}
+        merged["item_ts_epoch"] = {i: round(e, 3) for i, e in self.item_ts.items()}
+        if self.frame_ts:
+            merged["frame_ts"] = {i: round(e, 3) for i, e in self.frame_ts.items()}
+        merged["ts_source"] = self.ts_source
+        off = elm.clock_offset() if hasattr(elm, "clock_offset") else None
+        if off is not None:
+            merged["clock_offset_s"] = off
+        else:
+            merged.pop("clock_offset_s", None)
         merged["items"] = sorted(self._items)
         merged["cells_seq"] = self.cells_seq
         merged["celllog"] = self._periods.get(CELLLOG_ITEM) == 0
         return merged, alive
+
+    # ── acquisition time and the envelope (docs/TIMING.md) ───────────────
+
+    def stamp(self, elm, i, it):
+        """Record when item `i`'s value was actually acquired. A UDS answer is
+        stamped as it returns. A passive item on a transport that keeps a
+        frame table (`source_times()`: the native CAN façade, MQTT) is stamped
+        with its newest frame's *arrival* time — which may be older than this
+        cycle when nothing new came in — and its source-clock time goes to
+        `frame_ts`. On an ELM the frames arrived during the ATMA dwell that
+        just ended, so the return time is within `secs` of the truth."""
+        now = time.time()
+        self.item_ts[i] = now
+        if TARGETS[it["kind"]] is None and hasattr(elm, "source_times"):
+            pair = elm.source_times().get(str(it["id"]).upper())
+            if pair:
+                wall, src = pair
+                self.item_ts[i] = float(wall)
+                if src and src > 0:
+                    self.frame_ts[i] = float(src)
+                else:
+                    self.frame_ts.pop(i, None)
+
+    def track_peaks(self, rec):
+        """Keep min / max / time-of-each for the profile's `peak` keys over the
+        values decode() produced this cycle — never the sticky cache, so a
+        value read once is counted once. Reset by take_peaks() on store."""
+        if not PEAK_KEYS:
+            return
+        for k in PEAK_KEYS:
+            v = rec.get(k)
+            if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            it = signals.signal_item(k)
+            t = self.item_ts.get(it) if it else None
+            t = round(t if t is not None else time.time(), 3)
+            p = self._peaks.get(k)
+            if p is None:
+                self._peaks[k] = {"min": v, "max": v, "tmin": t, "tmax": t, "n": 1}
+            else:
+                p["n"] += 1
+                if v < p["min"]:
+                    p["min"], p["tmin"] = v, t
+                if v > p["max"]:
+                    p["max"], p["tmax"] = v, t
+
+    def take_peaks(self):
+        """The envelope since the last stored row, as record keys
+        (`<key>_min/_max/_tmin/_tmax/_n`), and start a new one."""
+        out = {}
+        for k, p in self._peaks.items():
+            out[f"{k}_min"], out[f"{k}_max"] = p["min"], p["max"]
+            out[f"{k}_tmin"], out[f"{k}_tmax"], out[f"{k}_n"] = p["tmin"], p["tmax"], p["n"]
+        self._peaks = {}
+        return out
 
     # ── supervisor ───────────────────────────────────────────────────────
 
@@ -801,6 +888,9 @@ class Reader:
                 self.target = None
                 self.speed = float(getattr(elm, "SPEED", 1.0) or 1.0)
                 self.passive_instant = bool(getattr(elm, "PASSIVE_INSTANT", False))
+                self.ts_source = str(getattr(elm, "ts_source", None) or "laptop")
+                self.frame_ts = {}
+                self._stored_offset = None
                 self.session_id = self.store.start_session(elm.adapter_type)
                 self.refresh_items()
                 self.log(f"[reader] configured {elm.adapter_name} via {elm.adapter_type}; "
@@ -901,10 +991,15 @@ class Reader:
             fresh_cells = rec.get("cells_seq") != self._stored_cells_seq
             due = loop.time() - self._last_store >= STORE_PERIOD
             if due or (rec.get("celllog") and fresh_cells):
-                row = rec if fresh_cells else {k: v for k, v in rec.items() if k != "cells"}
-                self.store.insert_reading(row, ts=now, adapter=elm.adapter_type)
+                row = dict(rec) if fresh_cells else {k: v for k, v in rec.items() if k != "cells"}
+                row.update(self.take_peaks())      # the envelope since the previous row
+                self.store.insert_reading(row, ts=now, adapter=elm.adapter_type, ts_source=self.ts_source)
                 self._stored_cells_seq = rec.get("cells_seq")
                 self._last_store = loop.time()
+                off = rec.get("clock_offset_s")
+                if self.session_id and off is not None and off != self._stored_offset:
+                    self.store.set_session_clock_offset(self.session_id, off)
+                    self._stored_offset = off
             self.last_good = rec
             self.last_good["last_ok"] = rec["timestamp"]
             self.publish("ok")

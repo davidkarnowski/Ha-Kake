@@ -38,7 +38,9 @@ DEFAULT_DB = os.path.join(DIR, "leaf_battery.db")
 
 # record keys the store consumes or that are transport noise — never in `extra`.
 # A profile adds its own bulky/raw keys through EXTRA_SKIP.
-BASE_SKIP = {"cells", "timestamp", "status", "adapter_type", "adapter_name", "adapter_port"}
+BASE_SKIP = {"cells", "timestamp", "status", "adapter_type", "adapter_name", "adapter_port",
+             "ts_source",          # its own column
+             "item_ts"}            # rebuilt from item_ts_epoch on the way back (docs/TIMING.md)
 
 
 def _coerce(kind, v):
@@ -83,7 +85,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     started TEXT NOT NULL,
     ended TEXT,
     adapter TEXT,
-    note TEXT
+    note TEXT,
+    clock_offset_s REAL        -- median(t_rx − t_src) of the source's clock; NULL for ELM (docs/TIMING.md)
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS events (
@@ -163,6 +166,7 @@ CREATE TABLE IF NOT EXISTS readings (
     adapter TEXT,
     {cols},
     vehicle TEXT,
+    ts_source TEXT,
     extra TEXT
 );
 """
@@ -181,10 +185,16 @@ CREATE TABLE IF NOT EXISTS readings (
                 added.append(col)
         if "vehicle" not in have:
             self.conn.execute("ALTER TABLE readings ADD COLUMN vehicle TEXT")
+        if "ts_source" not in have:
+            # whose clock stamped the row: laptop | driver | bridge. Older rows
+            # stay NULL — the reader's clock, but saying so would be a guess.
+            self.conn.execute("ALTER TABLE readings ADD COLUMN ts_source TEXT")
         for table in ("events", "sessions"):
             cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if cols and "vehicle" not in cols:
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN vehicle TEXT")
+            if table == "sessions" and cols and "clock_offset_s" not in cols:
+                self.conn.execute("ALTER TABLE sessions ADD COLUMN clock_offset_s REAL")
         for col, s in self.cols.items():
             if s.get("index"):
                 self.conn.execute(
@@ -245,14 +255,20 @@ CREATE TABLE IF NOT EXISTS readings (
 
     # ── writes ───────────────────────────────────────────────────────────
 
-    def insert_reading(self, rec, ts=None, adapter=None):
-        """Insert one decoded record. Returns the new reading id."""
+    def insert_reading(self, rec, ts=None, adapter=None, ts_source=None):
+        """Insert one decoded record. Returns the new reading id.
+
+        `ts_source` says whose clock `ts` is — "laptop" (this machine, the
+        ELM case), "driver" (python-can) or "bridge" (a Pi over MQTT); the
+        reader passes it, a record may carry it, and a caller that knows
+        neither leaves it NULL (docs/TIMING.md)."""
         d = to_utc(ts or rec.get("timestamp") or dt.datetime.now(dt.timezone.utc))
         row = {
             "ts": _iso_z(d),
             "ts_epoch": d.timestamp(),
             "adapter": adapter or rec.get("adapter_type"),
             "vehicle": self.vname,
+            "ts_source": ts_source or rec.get("ts_source"),
         }
         for col, s in self.cols.items():
             row[col] = _coerce(s["kind"], _resolve(rec, s["key"]))
@@ -285,6 +301,14 @@ CREATE TABLE IF NOT EXISTS readings (
     def end_session(self, sid):
         with self.conn:
             self.conn.execute("UPDATE sessions SET ended=? WHERE id=?", (utc_now_iso(), sid))
+
+    def set_session_clock_offset(self, sid, offset_s):
+        """The session's source-clock offset, median(t_rx − t_src) in seconds,
+        as the reader last measured it. Evidence about the two clocks; it is
+        never applied to a stored value (docs/TIMING.md)."""
+        with self.conn:
+            self.conn.execute("UPDATE sessions SET clock_offset_s=? WHERE id=?",
+                              (None if offset_s is None else float(offset_s), sid))
 
     # ── events (state transitions) ───────────────────────────────────────
 
@@ -542,8 +566,17 @@ CREATE TABLE IF NOT EXISTS readings (
                 rec[twin] = round(rec[c] * 9 / 5 + 32, 1)
         if cells:
             rec["cells"] = cells
+        if isinstance(rec.get("item_ts_epoch"), dict):       # the ISO twin is not stored
+            rec["item_ts"] = {}
+            for i, e in rec["item_ts_epoch"].items():
+                try:
+                    rec["item_ts"][i] = (dt.datetime.fromtimestamp(float(e), dt.timezone.utc)
+                                         .isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+                except (TypeError, ValueError, OverflowError, OSError):
+                    pass
         rec.update({"timestamp": d["ts"], "last_ok": d["ts"], "status": "ok",
-                    "adapter_type": d.get("adapter"), "playback": True})
+                    "adapter_type": d.get("adapter"), "ts_source": d.get("ts_source"),
+                    "playback": True})
         return rec
 
     def sessions(self, gap_s=600):
@@ -581,24 +614,39 @@ CREATE TABLE IF NOT EXISTS readings (
         {t, t_end, t_peak, duration_s, n, peak_a, peak_kw, speed_mph, label, kind: "auto"}.
         At the default 5 s store period a pull is often a single row — the peak
         lands in the data, the rise and recovery do not — so `n` says how much of
-        its shape there is to scrub through."""
+        its shape there is to scrub through. A row whose `extra` carries the
+        envelope the reader keeps between rows (`current_a_min`, `power_kw_min`,
+        `current_a_tmin`; docs/TIMING.md) is judged by that envelope, so the true
+        peak of a pull counts even when the stored sample missed it."""
         vf, a = self._vfilter()
         rows = self.conn.execute(
-            f"""SELECT ts_epoch, current_a, power_kw, speed_mph FROM readings
+            f"""SELECT ts_epoch, current_a, power_kw, speed_mph, extra FROM readings
                 WHERE {vf} AND ts_epoch BETWEEN ? AND ? AND current_a IS NOT NULL ORDER BY ts_epoch""",
             a + [t_from, t_to]).fetchall()
         out, cur = [], None
-        for te, i, kw, mph in rows:
+        for te, i, kw, mph, extra in rows:
+            tp = te
+            if extra and '"current_a_min"' in extra:
+                try:
+                    ex = json.loads(extra)
+                    if isinstance(ex.get("current_a_min"), (int, float)) and ex["current_a_min"] < i:
+                        i = ex["current_a_min"]
+                        if isinstance(ex.get("power_kw_min"), (int, float)):
+                            kw = ex["power_kw_min"]
+                        if isinstance(ex.get("current_a_tmin"), (int, float)):
+                            tp = ex["current_a_tmin"]
+                except (ValueError, TypeError):
+                    pass
             if i >= -amps:
                 continue
             if cur and te - cur["t_end"] <= min_gap_s:
                 cur["t_end"] = te
                 cur["n"] += 1
             else:
-                cur = {"t": te, "t_end": te, "t_peak": te, "n": 1, "peak_a": i, "peak_kw": kw, "speed_mph": mph}
+                cur = {"t": te, "t_end": te, "t_peak": tp, "n": 1, "peak_a": i, "peak_kw": kw, "speed_mph": mph}
                 out.append(cur)
             if i < cur["peak_a"]:
-                cur.update(peak_a=i, peak_kw=kw, speed_mph=mph, t_peak=te)
+                cur.update(peak_a=i, peak_kw=kw, speed_mph=mph, t_peak=tp)
         for p in out:
             p["duration_s"] = round(p["t_end"] - p["t"], 1)
             p["label"] = f"pull {p['peak_a']:.0f} A" + (f" · {p['speed_mph']:.0f} mph" if p.get("speed_mph") is not None else "")

@@ -73,6 +73,33 @@ purpose: the reader may be live on the car while two browsers scrub two
 different afternoons; what it borrows from the simulator is the vocabulary
 (`N×`, fixed jumps), not its Python clock.
 
+## Resolution
+
+A frame is a stored row, and a row is one sample every `STORE_PERIOD` (5 s)
+— plus one per fresh cell read while the cell log is armed. Three things
+make that honest at 5 s (`docs/TIMING.md` is the authority):
+
+- **Every frame says when each of its values was read.** `item_ts` /
+  `item_ts_epoch` per item ride in the row and come back in the frame, so the
+  per-tile "read at" badge in playback shows the age *as it was* — a cell set
+  from 20 s before the frame says 20 s, measured from the frame's own moment,
+  never from now (`Playback.itemAge()`).
+- **Peaks between rows are kept.** For the profile's `peak` keys (the Leaf:
+  `pack_v`, `current_a`, `power_kw`, `cell_min`) the row carries
+  `<key>_min` / `_max` / `_tmin` / `_tmax` / `_n` — the envelope of every
+  decode since the previous row. The stored sample is still the last value
+  the car reported; the envelope sits beside it. The auto-detected pulls on
+  the strip (`/api/bookmarks/auto`) use `current_a_min`, so a pull whose peak
+  fell between two rows is flagged at its true peak and its own time. Drawing
+  the envelope on the strip itself is the next step.
+- **Every row says whose clock it is.** `ts_source` (`laptop` / `driver` /
+  `bridge`) is a column and comes back in the frame; a source's clock offset
+  is on the session. Nothing is corrected on the way in or out.
+
+Thinning for the strip and the frame list keeps the *last real row* per
+bucket, never an average — the envelope keys of that row are the row's own,
+not the bucket's.
+
 ## The endpoints
 
 **`GET /api/sessions?gap=600`** — recorded sessions, newest first. A session is

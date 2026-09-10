@@ -235,6 +235,19 @@ Never pruned; downsampled on read.
 All timestamps UTC ISO-8601 with `Z`; legacy naive-local data was converted on
 migration.
 
+**Time is three clocks, two of them stored** (`docs/TIMING.md`). The reader
+schedules on the monotonic clock (`item_last`, `item_age`, the store period)
+and stores on the wall clock (`ts` / `ts_epoch`), never mixing them. Each
+row's `extra` carries `item_ts_epoch` — when every item's value was actually
+acquired, which with the sticky cache can be seconds to minutes before the
+row — and the additive `ts_source` column says whose clock the row's time is
+(`laptop` for an ELM, `driver` for python-can, `bridge` for a Pi over MQTT).
+A transport with a clock of its own also yields `frame_ts` per passive item
+and a per-session `clock_offset_s` (`median(t_rx − t_src)`, on `sessions`),
+kept as evidence and never applied. The profile's `peak: True` columns get
+their envelope since the previous row (`<key>_min/_max/_tmin/_tmax/_n`) in
+`extra`, so a 5 s row still holds the true peak of a pull.
+
 **Playback frames go the other way.** `Store.frames(t_from, t_to)` rebuilds
 the `/api/status` shape from rows — the `extra` bag, the columns, the
 temperature lists and every °F twin from the °C columns, the cells joined in
@@ -420,4 +433,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 940 tests at the time of writing.
+that must stay green. 954 tests at the time of writing.

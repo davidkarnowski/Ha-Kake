@@ -241,6 +241,7 @@ class MqttSource:
     """
 
     listen_only = False
+    ts_source = "bridge"                   # frames' `t` is the Pi's clock (docs/TIMING.md)
 
     def __init__(self, cfg=None, client_factory=None, log=print):
         self.cfg = mqtt_config(cfg) if cfg is not None else mqtt_config()

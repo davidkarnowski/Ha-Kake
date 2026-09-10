@@ -232,7 +232,8 @@ def _cols(conn, table="readings"):
 
 def test_leaf_schema_is_unchanged(store):
     """A fresh Leaf database must have exactly the columns (and SQL types) the
-    hardcoded schema produced, plus the new `vehicle` stamp."""
+    hardcoded schema produced, plus the two additive stamps: `vehicle` and
+    `ts_source` (whose clock the row's time is; docs/TIMING.md)."""
     import sqlite3
     ref = sqlite3.connect(":memory:")
     ref.row_factory = sqlite3.Row
@@ -240,6 +241,7 @@ def test_leaf_schema_is_unchanged(store):
     want = _cols(ref)
     got = _cols(store.conn)
     assert got.pop("vehicle") == "TEXT"
+    assert got.pop("ts_source") == "TEXT"
     assert got == want
     idx = {r[0] for r in store.conn.execute(
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='readings'")}

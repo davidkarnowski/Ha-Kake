@@ -248,9 +248,16 @@ HISTORY_COLS = {
 - `daily_filter` — daily aggregation skips rows where this column is NULL. At
   most one column may set it.
 - `index` — name of a partial index on `(ts_epoch)` where this column is 1.
+- `peak` — `True` keeps a running min / max / time-of-each of this key
+  between stored rows and writes `<key>_min/_max/_tmin/_tmax/_n` into the
+  row's `extra` (peak-preserving decimation, `docs/TIMING.md`). Only a plain
+  numeric record key can be a peak — no dotted index, no callable — and the
+  validator says so. Also accepted on a `SIGNALS` entry. The Leaf marks
+  `pack_v`, `current_a`, `power_kw` and `cell_min`; a car with nothing that
+  spikes between rows marks nothing.
 
 Column names may not collide with the built-ins `id`, `ts`, `ts_epoch`,
-`adapter`, `vehicle`, `extra`. The migration is additive and self-healing: a
+`adapter`, `vehicle`, `ts_source`, `extra`. The migration is additive and self-healing: a
 new column appears in existing databases on the next start and is backfilled
 from `extra`.
 
