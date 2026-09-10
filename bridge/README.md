@@ -43,7 +43,7 @@ check; see `docs/CAN_TRANSPORT.md` when it lands.
 
 These are **expectations, not measurements** — nobody has run this on a Pi yet.
 Numbers for the bus come from the memo's frame-rate table (Car-CAN ≈ 1,700
-frames/s in total, EV-CAN ≈ 800).
+frames/s in total, EV-CAN ≈ 790).
 
 | Setup | Frames/s to Python | Zero 2 W | Pi 4 |
 |---|---|---|---|

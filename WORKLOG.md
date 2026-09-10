@@ -1514,3 +1514,58 @@ The single property is also the seam the wide-display mode will move, when it
 is built: that is still only a roadmap entry, never implemented.
 
 Not yet seen in the owner's browser.
+
+### A truth audit: the docs against the code  2026-09-10
+
+Branch `docs/truth-sync`. After the two lanes merged, the owner asked whether
+the documentation still describes the code. Four reviewers went over it in
+parallel — the reader and store, the transports and security, the simulator
+and the page, and the front-door documents — with the rule that a claim is
+checked by running something, not by reading around it. Their logs are in
+`research/agent-logs/audit-*-20260910.md`.
+
+**The answer is mostly yes, with two findings that mattered.**
+
+*The docs promised a speed the code deliberately declines.* `ARCHITECTURE.md`
+and the README said the USB transport negotiates up to 115200. It does not:
+`serial_target_baud()` returns 38400 unless `HAKAKE_SERIAL_BAUD` asks
+otherwise, and its own docstring says why — `ATBRD` leaves persistent state on
+the adapter, so a killed run leaves the chip fast while the next one opens
+slow and hears silence, which cost a session on 2026-09-03. The large win came
+from the blocking read, which touches nothing. Both documents now say the rate
+is opt-in and mark the round-trip figures as the faster wire's.
+
+*A documented invariant was not enforced.* `ADDING_A_VEHICLE.md` lists the
+columns a profile may not redefine and includes `ts_source`; the validator's
+reserved tuple never did, so a profile declaring that column would have had it
+emitted twice and failed at `CREATE TABLE`. Fixed in `validate_profile`, with
+a test that now walks every reserved name.
+
+**Everything else was drift, corrected in place.** A row's `ts` is the cycle's
+*start* and can precede every value in it — `TIMING.md` had that backwards.
+The scheduler paragraph knew two transports and no `PASSIVE_INSTANT`
+exception. The cycle model counted eleven passive captures where the profile
+has ten. `ADDING_SIGNALS.md` still said EV-CAN was unreachable, months after
+items gained a `bus`. The current policy publishes six more keys than
+`SIGNALS.md` named, and the HVAC group captured raw is 00, not 01. The MQTT
+spec omitted two rules its own filter applies and overstated its environment
+variables; the `req` pattern is a producer rule the bridge does not fully
+enforce. The pack guide's temperature example was missing a required key and
+would have failed validation, and it did not warn that an omitted mode key
+inherits the Leaf's millivolt numbers. The playback document described a demo
+frame set that does not exist, credited the `f` key with working live when it
+only works in playback, and said auto-pulls are flagged at their true peak
+when the endpoint computes it and the page still draws the run's first row.
+Two things the code had wrong in user-visible text: the pack pane said "all
+four sensors" whatever the pack held, now counted; and the legend bar does not
+honour a mode's `invert`, which is now stated rather than implied.
+
+Counts checked rather than assumed: 1023 collected, 1022 passing, the skip
+being the policy test on a profile with no policy. Two claims that said
+"tests" now say "passing". The suite's stated runtime moved from "~2 min" to
+2.5-4 min, which is also why a push feels slow: the hook runs the sweep and
+the whole suite before it uploads.
+
+Three findings were left as code questions rather than doc edits, and are on
+the roadmap: the legend not inverting, the `f` key not working live, and the
+auto-pull flag not using the peak time the store already returns.

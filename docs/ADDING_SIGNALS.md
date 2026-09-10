@@ -11,7 +11,7 @@ mistaken for facts.
 | broadcast on Car-CAN (gear, TPMS, doors) | a **passive** item: one CAN ID, captured with `ATCAF0` | `probe_hvac_carcan.py --phase A`, `gear_hvac_live.py gear` |
 | answered by the LBC (battery) | an **lbc** item: UDS `0x79B → 0x7BB`, service `21 NN` | `battery_read.py --raw` |
 | answered by another ECU (HVAC amp …) | a **uds** item with its own tx/rx pair | `probe_hvac_carcan.py --phase B` |
-| only on EV-CAN (`0x1DB`, `0x54F` …) | **not reachable** without a re-pinned cable — stop here | — |
+| only on EV-CAN (`0x1DB`, `0x54F` …) | needs a second adapter on OBD pins 13/12: give the item `"bus": "ev"`, declare `BUSES` in the profile, and list both adapters in `config.local.json` (`docs/CAN_TRANSPORT.md`, ARCHITECTURE "Several adapters at once") | a CANable in listen-only mode |
 
 ## 1. Capture it, with the physical input changing
 

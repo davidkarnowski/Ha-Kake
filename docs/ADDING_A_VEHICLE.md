@@ -82,8 +82,9 @@ python vehicles/__init__.py civic_2006       # just yours
 It prints one line per profile and exits non-zero on a problem:
 
 ```
-lancer_2009: OK (2009 Mitsubishi Lancer ES, 19 items, 20 signals, 18 history columns)
-leaf_ze0: OK (2012 Nissan Leaf (ZE0), 18 items, 61 signals, 33 history columns)
+lancer_2009: OK (2009 Mitsubishi Lancer ES, 19 items on bus car, 20 signals, 18 history columns)
+leaf_ze0: OK (2012 Nissan Leaf (ZE0), 18 items on bus car, 61 signals, 33 history columns,
+          peaks kept for pack_v, current_a, power_kw, cell_min, resolved from several sources: current_a)
 ```
 
 It returns the *whole* list of problems rather than raising on the first, so

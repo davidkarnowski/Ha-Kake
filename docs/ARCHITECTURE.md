@@ -23,6 +23,8 @@ loop; a supervisor around connect → configure → poll that reconnects with
 back-off on any transport error, detects "car asleep" (the primary ECU silent),
 and honours `web/reader.pause` so calibration tools can borrow the adapter. It
 imports no vehicle module — everything car-shaped arrives through the profile,
+with one exception worth knowing: the cell-log fast lane names the Leaf's cell
+item (`CELLLOG_ITEM = "lbc02"`), which belongs in a profile and has not moved yet —
 and its per-cycle console line is built from the first few fast-lane signals in
 the registry. Shared car-independent helpers (`c_to_f`, `fmt_temp`, and `env()`,
 which reads the `HAKAKE_*` variables with the older `LEAF_*` names as silent
@@ -104,9 +106,12 @@ An item's `est` is what one poll costs **over BLE** — that is the link the
 numbers were timed on, and they stay in those units so a vehicle profile never
 has to know which adapter is plugged in. The transport supplies the conversion:
 each transport class carries a `SPEED` multiplier (BLE 1.0 by definition, USB
-0.1) and `Reader.estimate()` multiplies by it. A passive capture is the
-exception — `ATMA` runs for a wall-clock `secs` that no link can shorten, so
-only its per-command overhead scales.
+0.1, the native CAN façade 0.05) and `Reader.estimate()` multiplies by it. A
+passive capture is the exception — over an ELM327 `ATMA` runs for a wall-clock
+`secs` that no link can shorten, so only its per-command overhead scales. A
+transport that declares `PASSIVE_INSTANT` (the CAN façade, which answers
+`ATMA` from a frame table it already holds) has no dwell at all, and
+`estimate()` drops it.
 
 Measured over BLE: ~0.2 s per command round-trip plus ~40 ms per CAN frame;
 a fast-lane cycle is ~1.5–2 s, full refresh of everything ≈ 20–60 s by period.
@@ -114,9 +119,10 @@ a fast-lane cycle is ~1.5–2 s, full refresh of everything ≈ 20–60 s by per
 Measured over USB (CH340 ELM327 v1.5 clone, 2026-09-03, `tools/bench_transport.py`):
 a command round-trip is **5–10 ms** at 115200 and a 435-byte answer 44 ms. The
 adapter itself accounts for ~6 ms of that; the rest is wire time, which is why
-the transport negotiates 115200 with `ATBRD` (see below). A full Leaf cycle
-with every tile enabled models at ~3.4 s, of which ~3.2 s is `ATMA` dwell time
-for the eleven passive captures and only ~0.24 s is UDS and adapter setup. **On
+115200 is offered at all (see below — it is opt-in, and the default stays at
+38400, where the same answer takes about twice as long on the wire). A full Leaf cycle
+with every tile enabled models at ~3.5 s, of which ~3.3 s is `ATMA` dwell time
+for the ten passive captures and only ~0.24 s is UDS and adapter setup. **On
 USB the passive dwell is the cycle time; nothing else is close.**
 
 ## Transport
@@ -133,16 +139,23 @@ things about the USB path are worth knowing because they cost real time:
   `wait` still means something on BLE, where a reply arrives as a series of
   20-byte notifications and a late chunk can follow the one carrying the
   prompt; on a byte stream it bought nothing, so the serial path ignores it.
-- **The wire rate is negotiated.** Every ELM327 powers up at 38400, where a
-  29-frame answer spends ~200 ms just being transmitted. `SerialELM.set_baud()`
-  asks for 115200 with `ATBRD` and *verifies* it: the chip answers OK at the
-  old rate, sends its ID at the new one, and wants a bare CR back inside
+- **The wire rate can be negotiated, but is not by default.** Every ELM327
+  powers up at 38400, where a 29-frame answer spends ~200 ms just being
+  transmitted, and **that is where the link stays** unless
+  `HAKAKE_SERIAL_BAUD=115200` asks otherwise (`serial_target_baud()` returns
+  38400 for unset and for `off`). The reason is in that function's docstring:
+  `ATBRD` is the one thing here that leaves persistent state on the *adapter*,
+  so a killed run leaves the chip fast while the next one opens slow and hears
+  silence — a regression that cost a session on 2026-09-03. The large win, a
+  round trip of ~107 ms down to ~15 ms, came from the blocking read and
+  dropping the post-prompt sleep, and neither touches the device. When it is
+  asked for, `SerialELM.set_baud()` *verifies* the change: the chip answers OK
+  at the old rate, sends its ID at the new one, and wants a bare CR back inside
   ~75 ms, so every failure path puts the link back at 38400 and carries on.
   `ATZ` — the first thing `configure_uds()` sends — resets the chip to 38400,
   so `send()` follows it down and negotiates back up; a run that died with the
-  chip left fast is found again by `_recover_baud()`. `HAKAKE_SERIAL_BAUD`
-  overrides the target (`off` stays at 38400). 230400 and 500000 negotiate on
-  the clone tested but drop bytes, so they are opt-in, not the default.
+  chip left fast is found again by `_recover_baud()`. 230400 and 500000
+  negotiate on the clone tested but drop bytes.
 - **The flow-control pace is per transport.** `ATFCSD 30 00 <STmin>` asks the
   ECU to leave *STmin* between the frames of a multi-frame answer, and it is
   the pace of every long read — the LBC's 29-frame cell answer above all. Each
@@ -502,4 +515,5 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 1022 tests at the time of writing.
+that must stay green. 1023 passing at the time of writing (1024 collected; the
+skip is the profile-policy test on a profile that has no policy).

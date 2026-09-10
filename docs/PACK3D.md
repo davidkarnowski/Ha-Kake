@@ -5,7 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # The 3D battery pack tile
 
-> Tile **Battery pack — 3D** in the tiles menu. Leaf profile only.
+> Tile **Battery pack (3D)** in the tiles menu (the card's own title reads
+> *Battery pack — 3D*). Leaf profile only.
 
 ![The pack in 3D on a real 2012 Leaf: the rear block on edge, the floor stacks, sensors labelled, module 28 pinned](img/pack3d.jpg)
 
@@ -24,10 +25,10 @@ it follows the recording; under `--demo` it shows the demo frame.
 
 | Scale | What `t = 0` (red) … `t = 1` (blue) means | Use it for |
 |---|---|---|
-| **absolute mV (grid scale)** (default) | the frame's lowest pair … its highest | Exactly the grid tile's colouring, so a pair is the same colour in both panels side by side. The slabs are lit so a top face shows its plain colour. **It rescales every frame**: red is whichever pair is lowest *now*, so in playback the meaning of a colour slides as the pack sags. |
+| **absolute (grid scale)** (default) | the frame's lowest pair … its highest | Exactly the grid tile's colouring, so a pair is the same colour in both panels side by side. The slabs are lit so a top face shows its plain colour. **It rescales every frame**: red is whichever pair is lowest *now*, so in playback the meaning of a colour slides as the pack sags. |
 | **fixed range** | a range that never moves: the profile's `fixed` bounds (3000 … 4200 mV on the Leaf), or the two numbers in the ⋯ menu | Watching a pull or a playback, where a colour must mean one voltage from the first frame to the last. Values outside the range clamp to the ends. The cost is contrast: at rest a healthy pack sits in a narrow slice near the top of the ramp and every pair looks alike, which is what the deviation scale is for. |
-| deviation from pack mean | −50 mV … +50 mV from the pack's mean at that instant | The weak-cell view. Under load every pair sags together; this shows who sags *more*. |
-| drop from own rest voltage | −300 mV … 0 mV below the pair's first value this session | A per-pair internal-resistance proxy during a drive log or playback. |
+| deviation from the mean | −50 mV … +50 mV from the pack's mean at that instant | The weak-cell view. Under load every pair sags together; this shows who sags *more*. |
+| drop from own rest value | −300 mV … 0 mV below the pair's first value this session (re-seeded when a playback window changes or the mode is switched) | A per-pair internal-resistance proxy during a drive log or playback. |
 
 *Fixed range* in the menu sets the two bounds the fixed scale uses; leave them
 blank for the profile's own. The cell grid carries the same two rows in its ⋯
@@ -43,13 +44,22 @@ white and every pair over the second breathes blue, with the counts on the
 readout line (blank for none). All of it persists in the tile's `opts` like
 any other tile setting.
 
+**The legend** under the viewport is a gradient bar with the active scale's
+two ends written beside it — the frame's lowest and highest value on the grid
+scale, the fixed bounds on the fixed one, ±the span on deviation. The bar is
+always drawn red-low to blue-high: a mode with `invert` (temperatures, where
+hot reads red) flips the *bodies* but not the bar, so on such a mode the
+legend reads backwards. No shipped mode inverts, and `docs/PACK3D_GUIDE.md`
+says so where it matters.
+
 **In the viewport.** The four balls are the pack's temperature sensors
 (T1–T4); each is coloured on the pack's own range — hottest red, coolest
 blue — and labelled with its reading in °F and °C. Hover a pair or a sensor
 for its readout on the line below; **click a pair** to pin its module — a
 glowing box round the whole module, a pin bobbing above it and a label, so
 it can be found from any angle — and open a side pane: both pairs of that
-module, larger, each voltage in the pair's own colour (the grid's), deviation
+module, larger, each voltage in the colour the *currently chosen* scale gives
+it, deviation
 from the mean, drop from rest, rank in the pack (1st lowest ⚑, highest ▲),
 whether the BMS is balancing it; then the module as a whole — its two pairs'
 spread and average, large, with the average ranked among the 48 modules and
@@ -112,8 +122,9 @@ packs of 8" per side, which is exactly what EVB-20's counts require. What
 nobody has published is the order of the two stacks inside a group and the
 bottom-to-top order within a stack; the tile draws the string as one loop
 (driver side rear → front, passenger side front → rear, bottom → top) and
-shows *(stack order assumed)* in its readout for those pairs. Each
-`PACK_LAYOUT` entry carries the same note; when the EVB-20 figure or a look
+shows *(stack order assumed)* in its readout for those pairs. Every
+`PACK_LAYOUT` entry whose order is still assumed carries that note in its
+`verify` field; the rear block's is empty, because EVB-20 settles it; when the EVB-20 figure or a look
 under the seat settles it, moving a stack is a data edit, not a code change.
 
 ## Reading it under load

@@ -12,8 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 ## Using it
 
 Press **Playback** in the header (or open `/?playback=1`). The page stops
-polling the car, a PLAYBACK badge appears, and a timeline card opens above the
-tiles:
+polling the car, a PLAYBACK badge appears, and the timeline opens — docked to
+the bottom of the window by default (see *Docked* below):
 
 - **Session** — a recorded run, newest first, labelled with its date, length,
   SOC start → end, row count, whether cell voltages were read, and the
@@ -23,11 +23,13 @@ tiles:
   downward), a tick at the bottom wherever cells were read, the playhead.
   Click to seek. **Drag to zoom** into a stretch — the frames are re-fetched
   at full resolution for just that range. *Whole session* zooms back out.
+  Press within a few pixels of the playhead and it drags instead, scrubbing;
+  the cursor says which. A slider under the strip scrubs too.
 - **Transport** — ⟨ frame / ▶ Play / frame ⟩, −1 min / −10 s / +10 s / +1 min,
   and speeds ½× 1× 4× 10× 60× (real seconds × speed; a 5 s row every 5 s at
   1×). The clock shows the frame's wall time and the offset from the window's
-  start. Keys: space plays and pauses, ← → step a frame, shift + ← → jump
-  ten seconds.
+  start, and the frame's number in the window. Keys: space plays and pauses,
+  ← → step a frame, shift + ← → jump ten seconds.
 - **Every tile follows** — the gauges, the history graphs (up to the
   playhead), the cell grid and the 3D pack, user tiles, the body and climate
   cards. The status dot says *Recorded <time>*; nothing is "stale".
@@ -45,15 +47,17 @@ tiles:
   default, so any tile — the 3D pack three screens down — can be watched
   while the transport stays in reach. *Dock top* moves it to the top, *in
   the page* puts it back above the tiles; the choice is remembered.
-- **Flags.** `⚑ Flag` in the header (or the `f` key) drops a bookmark on a
-  moment — live, that is *now*, so a passenger can mark "pull from the
-  light" as it happens; in playback it is the playhead. Flags are yellow
-  triangles on the strip with a dotted line; the `⚑ jump to…` list seeks to
-  one, `✕` removes the selected one. They live in `web/bookmarks.json`
+- **Flags.** `⚑ Flag` in the header drops a bookmark on a moment — live,
+  that is *now*, so a passenger can mark "pull from the light" as it
+  happens; in playback it is the playhead. The `f` key does the same, but
+  only in playback: live, use the button. Flags are yellow triangles on the
+  strip with a dotted line; the `⚑ jump to…` list seeks to one, `✕` removes
+  the selected one, and only your own — an auto-detected pull cannot be
+  removed. They live in `web/bookmarks.json`
   (gitignored, per machine, stamped with the vehicle).
 - **Auto-detected pulls** show as hollow orange triangles: every run of rows
-  with pack current below −40 A in the loaded window
-  (`/api/bookmarks/auto?amps=`). At the default 5 s store period a pull is
+  with pack current below −40 A in the loaded window, runs closer together
+  than 8 s being merged into one (`/api/bookmarks/auto?amps=`, `min_gap=`). At the default 5 s store period a pull is
   usually one row — its peak, with that row's cells, but no rise or
   recovery — so they mark *where* to look rather than replay the shape;
   with the cell log armed and USB the rows come every cycle.
@@ -93,8 +97,10 @@ make that honest at 5 s (`docs/TIMING.md` is the authority):
   decode since the previous row. The stored sample is still the last value
   the car reported; the envelope sits beside it. The auto-detected pulls on
   the strip (`/api/bookmarks/auto`) use `current_a_min`, so a pull whose peak
-  fell between two rows is flagged at its true peak and its own time. Drawing
-  the envelope on the strip itself is the next step.
+  fell between two rows is *found* by its true peak. The endpoint returns that
+  peak and its time (`peak_a`, `t_peak`), but the strip still draws the flag —
+  and the jump list still seeks — at the run's first row; drawing at the peak,
+  and drawing the envelope itself, are both still to do.
 - **Every row says whose clock it is.** `ts_source` (`laptop` / `driver` /
   `bridge`) is a column and comes back in the frame; a source's clock offset
   is on the session. Nothing is corrected on the way in or out.
@@ -152,6 +158,7 @@ every cycle and stepping through an acceleration shows each pair sag.
 ## Demo mode
 
 `docs/demo/sessions.json` and `docs/demo/frames.json` carry one canned session
-(the demo state at the store period over the last two minutes of the demo
-history — the same frame with a moving clock, no invented values) so `--demo`
+(one frame per row of the demo history: 24 frames a minute apart, spanning
+about 23 minutes, with SOC, pack voltage, current and power moving as that
+history moves — no invented values) so `--demo`
 has something to scrub.

@@ -39,9 +39,9 @@ the MQTT `state` topic) carries, per item polled:
 | `item_ts_epoch[item]` | epoch s | the same, as a number | `extra` |
 | `frame_ts[item]` | epoch s | the *source's* timestamp of the newest frame behind a passive item; only on a transport with a source clock | `extra` |
 | `ts_source` | text | whose clock stamps the rows: `laptop` (ELM, replay, sim), `driver` (python-can), `bridge` (a Pi over MQTT) | its own column |
-| `clock_offset_s` | s | `median(t_rx − t_src)` over the last ≤ 200 frames; absent on an ELM | `sessions.clock_offset_s` |
+| `clock_offset_s` | s | `median(t_rx − t_src)` over the last ≤ 200 frames; absent on an ELM | `sessions.clock_offset_s`, and each row's `extra` |
 | `cycle_s` | s | the whole cycle | `extra` |
-| `timestamp` | ISO s `Z` | the cycle's wall time; a row's `ts` is this | column |
+| `timestamp` | ISO s `Z` | emission time, set *after* the cycle. A row's `ts` is the cycle's **start**, taken before polling, so it can precede every `item_ts` in the same row | column |
 
 **What "acquired" means.** A UDS answer (`lbc01`, `hvac10`, a mode-01 PID) is
 stamped the moment it returns. A passive item is stamped by its *newest

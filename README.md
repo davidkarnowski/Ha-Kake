@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1022%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1023%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -265,7 +265,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 1022 offline tests, no car needed
+pytest -q                          # 1023 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -301,10 +301,11 @@ touch web/reader.pause                                # hand the adapter to a to
 - One ELM327 adapter on the OBD-II port. Tested with:
   - **LELink BLE** ("OBDBLE", ELM327 v1.5 clone) — wireless, ~2 s cycles
   - **obdiisoft USB** (CH340, ELM327 v1.5, HS/MS switch — leave it on **HS**)
-    — a command round-trip is 5–10 ms, and the transport negotiates the link
-    up from the ELM327's default 38400 to 115200 (`HAKAKE_SERIAL_BAUD=off` to
-    stay at 38400). Measure your own adapter with
-    `python tools/bench_transport.py`.
+    — a command round-trip is 5–10 ms. The link stays at the ELM327's default
+    38400 unless you opt in with `HAKAKE_SERIAL_BAUD=115200`, which is worth
+    roughly 2× on a long answer but leaves persistent state on the adapter
+    (`docs/ARCHITECTURE.md` says why it is not the default). Measure your own
+    adapter with `python tools/bench_transport.py`.
 - **Or a native USB-CAN adapter** (CANable 2.0 class, STM32G431, slcan or
   candleLight firmware) with `--adapter can` — *designed and tested against a
   virtual bus, not yet run on a car* (2026-09-09). A native controller hears
@@ -347,6 +348,7 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `docs/ADDING_A_VEHICLE.md` | **the guide to adding your own car** |
 | `leaf_decoders.py` | the Leaf's decoders: LBC groups 01–06, HVAC amp, Car-CAN frames |
 | `signals.py` | registry machinery shared by every profile (colour scales, renderers, resolvers) |
+| `util.py` | vehicle-independent helpers shared by the generic layers (temperature formatting) |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag-to-reorder |
 | `web/static/alerts.js` | audible alerts: the Web Audio tone generator and the threshold rule engine (pure, node-tested) |
 | `web/static/pack3d.js`, `web/static/pack_layout.js` | the 3D battery pack tile: the three.js module, and the pure geometry / colour-scale layer it draws from (node-tested) |
@@ -387,6 +389,7 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 
 | Route | Returns |
 |---|---|
+| `GET /` | the dashboard page |
 | `GET /api/status` | latest merged reading + `status`, `cycle_s`, per-item `item_age`. `cells` is a positional list (index 0 = pair 1); `cell_min_no` / `cell_max_no` are the pair numbers as people count them, 1–96, the same numbers the page shows; `cell_min_idx` / `cell_max_idx` are the 0-based list positions |
 | `GET /api/history?minutes=N` | downsampled readings (`N=0` → everything) |
 | `GET /api/health` | one row per day: capacity, SOH, temps, spread, 12 V, insulation |
@@ -450,7 +453,7 @@ Being on the bus at all has consequences worth knowing:
   **do not operate the laptop while driving.** The dashboard is a passenger's
   tool.
 
-## Status (2026-09-09)
+## Status (2026-09-10)
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
@@ -531,7 +534,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 1022 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 1023 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

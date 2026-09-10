@@ -160,7 +160,9 @@ request window.
 
 `req` is chosen by the sender — Ha-Kake uses four random hex digits — and only
 has to be unique among that sender's in-flight requests. It is part of a
-topic, so it must not contain `/`, `+` or `#`.
+topic, so it must not contain `/`, `+` or `#`. The pattern above is a rule for
+producers: the bridge enforces only that `req` is non-empty and free of those
+three characters, and echoes anything else back on the ack topic unchanged.
 
 ### 3.4 uds ack — `tx/uds/<req>`
 
@@ -300,7 +302,8 @@ Which keys exist is the profile's business (§8); `<key>` is the record key
 verbatim (`soc`, `pack_v`, `hv_current_a`, `ambient_f` …), and a list such as
 `cells` or `temps_f` publishes `signal/cells/0` … `signal/cells/95`. Objects
 (`item_age`, `timing`), `null` values and lists of non-scalars are **not**
-published as signals — they live in `state`.
+published as signals — they live in `state`. Nor are keys that begin with `_`
+or that contain a `/`, since a key is a topic segment.
 
 Signals are published **on change** and retained; `state` is published every
 cycle. So a signal topic always holds the current value for a new subscriber,
@@ -517,8 +520,9 @@ negligible: one record plus the changed signals per cycle.
 
 ## 10. Running it
 
-**Reader side** (`config.local.json`, gitignored; `HAKAKE_MQTT_HOST` etc.
-override it):
+**Reader side** (`config.local.json`, gitignored; `HAKAKE_MQTT_HOST`,
+`HAKAKE_MQTT_PORT`, `HAKAKE_MQTT_PREFIX` and `HAKAKE_MQTT_BUS` override it —
+`subscribe` and `batch` have no environment override):
 
 ```json
 {"mqtt": {"host": "", "port": 1883, "prefix": "hakake/leaf", "bus": "car",

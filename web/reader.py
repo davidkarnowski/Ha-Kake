@@ -843,9 +843,9 @@ class Reader:
         The `est` numbers in a vehicle profile are BLE seconds — that is the
         link they were timed on, and they stay that way so a profile never has
         to know which adapter is plugged in. `self.speed` is the transport's
-        own multiplier (SPEED on the transport class): 1.0 for BLE, ~0.15 for
-        USB, where the same command costs tens of milliseconds instead of
-        hundreds. Without it a USB cycle spent its whole slow-lane budget on
+        own multiplier (SPEED on the transport class): 1.0 for BLE, 0.1 for
+        USB and 0.05 for the native CAN façade, where the same command costs
+        tens of milliseconds instead of hundreds. Without it a USB cycle spent its whole slow-lane budget on
         two items it had already finished, and the slow lane starved.
 
         A passive capture is the exception: ATMA runs for a wall-clock `secs`

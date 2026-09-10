@@ -53,7 +53,8 @@ Bundled third-party components
   https://threejs.org
 
   Vendored at `web/static/vendor/three/` (`three.module.min.js`,
-  `addons/controls/OrbitControls.js`, `addons/renderers/CSS2DRenderer.js`),
+  `addons/controls/OrbitControls.js`, `addons/renderers/CSS2DRenderer.js`,
+  `addons/geometries/RoundedBoxGeometry.js`),
   reached through the dashboard page's import map; it draws the 3D battery
   pack tile. The full MIT license text ships alongside it at
   `web/static/vendor/three/LICENSE`, and for the same reason as above that

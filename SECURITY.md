@@ -16,7 +16,8 @@ sends UDS service `0x21` read requests (the Leaf's controllers), OBD-II modes
 which clears codes, is never sent), and ELM327 monitor mode. The
 console probe tools additionally send read-identification services (`0x22`,
 `0x1A`, OBD mode `09`), and one legacy script sends `0x10` session control —
-still no writes, but it does change an ECU's diagnostic session state. Nothing
+still no writes, but it does change an ECU's diagnostic session state, and the
+session it asks for (`1002`) is the programming one. Nothing
 in this repository sends control, routine, write, or security-access services.
 Even so:
 

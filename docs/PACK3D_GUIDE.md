@@ -15,7 +15,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Five optional attributes in `vehicles/<profile>.py`. The tile appears only if
 `PACK_LAYOUT` exists and the profile lists a `pack3d` tile in `TILES`.
-`vehicles/__init__.py`'s `validate_profile()` checks the table on every load
+`vehicles/__init__.py`'s `validate_profile()` checks `PACK_LAYOUT` and
+`PACK_MODES` on every load (`PACK_MODULE`, `PACK_CASE` and `PACK_SENSORS` are
+not validated)
 (`python vehicles/__init__.py <name>` runs it standalone).
 
 | Attribute | What it is |
@@ -57,6 +59,12 @@ to N−1 must be covered exactly once across the stacks — the validator checks
  "fixed": [3000, 4200],              # the fixed scale's bounds — required if "fixed" is offered
  "invert": False}                    # True for temperatures: hot should read red
 ```
+
+**Anything you leave out is inherited, not empty.** The tile merges each mode
+over `PackLayout.DEFAULT_MODE`, whose numbers are the Leaf's cell pairs in mV:
+`scales` `abs / fixed / dev / drop`, `dev` 50, `drop` 300, `fixed`
+`[3000, 4200]`. A mode in another unit that omits them gets millivolt spans on
+a degree scale, so state all four explicitly unless the unit really is mV.
 
 `key` names a list in the record (what `/api/status` carries) with at least
 N entries, one per value index. With several modes the ⋯ menu gains a
@@ -138,7 +146,9 @@ to show its plain colour.
   block-voltage list; each body of a group takes its shared value.
 - **Temperatures per module** (packs whose BMS reports a temperature for
   every module or block): a second mode `{"id": "temp", "key":
-  "module_temps_f", "unit": "°F", "scales": ["abs", "dev"], "invert": true}`;
+  "module_temps_f", "name": "module", "unit": "°F", "scales": ["abs", "dev"],
+  "dev": 5, "invert": true}` (`name` is required, and a non-mV mode should
+  state its own `dev` / `drop` / `fixed` — see the note under the mode above);
   the ⋯ menu's *Show* switches the bodies from volts to degrees, hottest red.
 - **A few discrete sensors** (the Leaf's four): `PACK_SENSORS`, coloured on
   their own range and selectable, independent of the bodies' mode.

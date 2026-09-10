@@ -355,7 +355,7 @@ function paintSensorPane(sj) {
         <div class="rows"><span>celsius</span><b>${s.c.toFixed(1)} °C</b>
           <span>vs pack mean</span><b>${mean == null ? '—' : sign(s.f - mean, 1) + ' °F'}</b>
           <span>rank</span><b>${rank === 1 ? 'hottest' : rank === withF.length ? 'coolest' : ordinal(rank) + ' hottest'} of ${withF.length}</b></div></div>`;
-  const others = `<div class="pack3d-pane-mod"><div class="k">all four sensors</div><div class="rows">` +
+  const others = `<div class="pack3d-pane-mod"><div class="k">all ${sensors.length} sensors</div><div class="rows">` +
     sensors.map(x => `<span>${x.n} <small>${x.where}</small></span><b style="color:${x.css || 'inherit'}">${x.f == null ? '—' : x.f.toFixed(1) + ' °F · ' + x.c.toFixed(1) + ' °C'}</b>`).join('') + `</div></div>`;
   pane.innerHTML = `<div class="pack3d-pane-head"><b>Sensor ${s.n}</b><span>${s.where}</span>
       <button class="pack3d-pane-close" title="unpin">×</button></div>${main}${others}

@@ -132,7 +132,8 @@ of those would be lying about the one thing this repo is careful about.
 
 The dashboard serves it (`web/templates/sim.html` + `web/static/sim.js`), on
 the dashboard's own tile engine (`tilestudio.js`, gridstack) and with the
-dashboard's own four styled tiles (`web/templates/tiles/*.html`,
+dashboard's own styled tiles (four of `web/templates/tiles/*.html` — vehicle,
+tires, body and climate; the fifth, the 3D pack, is not in the cockpit),
 `web/static/tiles.js`) — so what you drive here looks exactly like what the
 dashboard shows. Its JavaScript talks to the control API cross-origin
 (the API sends `Access-Control-Allow-Origin: *` on JSON and answers
@@ -703,6 +704,11 @@ also want to override the power.
 | `--json` | `hakake_sim.py` | one JSON object per line instead of prose; the first is a `ready` object with `pty`, `control`, `dashboard_command`, `panel_url`, `scenario`, `seed`, `time_scale` and a `warning` |
 | `--report S` / `--duration S` | `hakake_sim.py` | status line period (0 = never) / exit after S seconds |
 | `--dump-schema` / `--dump-state` | `hakake_sim.py` | print and exit |
+| `--sim-can [BUS]` | `app.py`, `reader.py` | run the model behind simulated ECUs on a virtual CAN bus instead of the ELM327 look-alike; `ev` also starts the EV-CAN channel ([The simulated bus](#the-simulated-bus)) |
+| `--monitor-window S` | `app.py`, `reader.py` | how far back a passive capture may reach in the frame table |
+| `--db PATH` | `app.py`, `reader.py` | read an existing database instead of the throwaway one |
+| `--generate` | `hakake_sim.py` | write months of synthetic history and exit; with `--days`, `--out`, `--sample`, `--idle-sample`, `--cells-per-day` |
+| `--pull` | `hakake_sim.py` | run the acceleration scenario and leave its three artefacts; with `--jsonl`, `--fixture`, `--no-fixture`, `--bus-load` |
 
 ---
 
@@ -874,6 +880,7 @@ Declarative JSON in `simulator/scenarios/`, and shipped by name:
 | `dc_fast` | CHAdeMO: 44 kW, hard taper past 60 %, the pack heating into its derate |
 | `degradation_arc` | two years of ageing walked through in a couple of minutes |
 | `degraded_pack` | the failure the simulator was built for: a collapsed cell pair |
+| `pull` | a standing-start acceleration to about 50 mph and back to rest — what `--pull` runs |
 | `lancer_idle`, `lancer_dtc` | the other profile |
 
 For a *populated* degradation chart use `--generate`; `degradation_arc` walks
@@ -1066,7 +1073,7 @@ anything else gets a UDS negative response `7F <svc> 11`
 car (`fault.car_asleep`) puts nothing on the bus and answers nothing;
 `fault.bus_noise` puts error frames on it, which the façade counts.
 
-**What the bench measured** (`tools/bench_canrate.py`, 10 s per load, the
+**What the bench measured** (`tools/bench_canrate.py --seconds 10`, the tool's own default is 8 s; the
 reader's own `poll_once()` with every tile on, paced at its 0.5 s
 `--interval`; Darwin arm64, Python 3.12, 2026-09-09) — **MEASURED ON THE
 LAPTOP, VIRTUAL BUS**: no wire, no bit errors, no LBC pacing (the simulated

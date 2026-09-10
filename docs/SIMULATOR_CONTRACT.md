@@ -99,7 +99,9 @@ instead.
 `parking_lights`, `fog_lights`, `turn_signal`, `handbrake`, `odometer_mi`,
 `tpms_psi` (four)
 
-**Rig** `noise` (sensor jitter amplitude), `clock_scale`. (`ambient_c` is a
+**Rig** `noise` (sensor jitter amplitude), `clock_scale`, `bus_load` (0–1, how
+much filler traffic the simulated CAN bus carries; required by the `/sim/state`
+contract at the end of this document). (`ambient_c` is a
 *climate* knob — it is listed above, not here.)
 
 **Faults** — the point of the whole exercise, since these cannot be produced
@@ -115,7 +117,7 @@ on demand in a real car: `fault.cell_degraded`, `fault.insulation_low`,
 
 Declarative JSON in `simulator/scenarios/`, shipped by name (`idle`, `drive`,
 `commute`, `charge`, `full_charge`, `dc_fast`, `degradation_arc`,
-`degraded_pack`, `lancer_idle`, `lancer_dtc`). Shape:
+`degraded_pack`, `pull`, `lancer_idle`, `lancer_dtc`). Shape:
 
 Shape (illustrative; the shipped `drive.json` has more steps and injects no
 fault):
@@ -230,7 +232,7 @@ keyed by `sim.vehicle`, the UDS pairs come from the profile's `TARGETS`.
 
 ## Agent usability — a hard requirement, not a nice-to-have
 
-- `sim.knob_schema()` and `hakake-sim --dump-schema` emit JSON so an agent
+- `sim.knob_schema()` and `python hakake_sim.py --dump-schema` emit JSON so an agent
   discovers every knob without reading source.
 - A control surface lets an agent change conditions **mid-run** and watch the
   dashboard react. That is the whole point.

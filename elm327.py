@@ -2,19 +2,29 @@
 # SPDX-FileCopyrightText: 2026 David D. Karnowski
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-ELM327 Transport Abstraction — BLE and USB Serial
+ELM327 Transport Abstraction — BLE, USB Serial, and the doors to the rest
 
 Provides a common async interface for communicating with ELM327-based OBD-II
-adapters over either BLE (bleak) or USB serial (pyserial).
+adapters over either BLE (bleak) or USB serial (pyserial), and the one place
+that hands out the non-ELM transports living in their own modules.
 
 Classes:
-  BleELM     — BLE adapter (LELink "OBDBLE" or similar)
-  SerialELM  — USB serial adapter (CH340-based or similar)
-  ReplayELM  — a recorded session fixture, no hardware (--adapter replay)
-  SimELM     — a running vehicle model, no hardware (--adapter sim)
+  BleELM       — BLE adapter (LELink "OBDBLE" or similar)
+  SerialELM    — USB serial adapter (CH340-based or similar)
+  SimSerialELM — the simulator behind a real serial device (--sim-serial)
+  ReplayELM    — a recorded session fixture, no hardware (--adapter replay)
+  SimELM       — a running vehicle model, no hardware (--adapter sim)
+
+Not here, but reached through detect_adapter(): the native CAN façade
+(cantransport.CanFacade, --adapter can) and the same façade over a broker
+(mqttsource, --adapter mqtt). Both are imported lazily, so the ELM paths
+never need python-can or paho-mqtt installed.
 
 Functions:
-  detect_adapter(prefer=None)  — auto-detect connected adapter
+  detect_adapter(prefer=None, cfg=None)  — connect one adapter. `prefer` is
+                usb | ble | replay | sim | can | mqtt; auto-detect only ever
+                picks real hardware. `cfg` merges one `adapters` entry's keys
+                over config.local.json for that call (see web/reader.py).
   configure_uds(elm, tx, rx)   — reset + ISO-TP setup for one ECU conversation
   set_uds_target(elm, tx, rx)  — re-point an already configured adapter
   passive_capture(elm, can_id) — raw frame capture (ATCAF0 + ATCRA + ATMA)

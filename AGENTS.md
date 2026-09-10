@@ -34,6 +34,7 @@ was not.
 | `vehicles/` | one module per car — items, targets, tiles, signal registry, `decode()`. `__init__.py` is the contract *and* its validator |
 | `leaf_decoders.py` | the Leaf's decoders, plus generic ISO-TP reassembly |
 | `signals.py` | vehicle-independent registry machinery: colour scales, renderer list, resolvers |
+| `util.py` | vehicle-independent helpers (temperature formatting) used by the generic layers |
 | `web/reader.py` | the only process that talks to the car — tile-driven scheduler, reconnect, pause |
 | `web/store.py` | SQLite time series; schema/insert/history/daily built from the profile's `HISTORY_COLS` |
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
@@ -131,7 +132,7 @@ that lacks them — feature-detect, never guess. Full surface:
 ## How to verify
 
 ```bash
-pytest -q                          # 1022 passing as of 2026-09-10, ~2 min, no hardware
+pytest -q                          # 1023 passing as of 2026-09-10, 2.5-4 min, no hardware
 python vehicles/__init__.py        # lint every vehicle profile against the contract
 python scripts/privacy_sweep.py --log 50   # must print "privacy sweep OK" before any push
 ```

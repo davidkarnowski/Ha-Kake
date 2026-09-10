@@ -193,7 +193,10 @@ produced (sensor 2 when group 01 was read, else group 05; power from that and
 `pack_v`) and that is what the database keeps. Everything the policy derives —
 the fusion offset, the zero calibration, the positive-while-discharging clamp —
 lands in `current_adj_a` / `power_adj_kw`, with `current_adj_src` naming the
-steps (`s2+g05_offset+zero_cal+clamp`), and the power tile shows the adjusted
+steps (`s2+g05_offset+zero_cal+clamp`). The policy also publishes its working:
+`current_raw_a` (an alias of the reported value), `current_fused`,
+`s2_offset_a`, `s2_offset_stale` and `current_offset_a`, and it sets
+`discharging` only when `decode()` did not, and the power tile shows the adjusted
 value with a *display-only* smoothing chosen in its ⋯ menu. A profile's policy
 may add keys; it may never change a reported one (`tests/test_policy_raw.py`).
 
@@ -235,7 +238,7 @@ Full service-21 sweep (2026-08-24): only **00** (4 B `80 01 80 00`), **01**, **1
 mode (4-position cycle, twice), AUTO, fresh/recirc. OVMS reads those from
 EV-CAN `0x54B` (fan, vent mode, intake) — needs the re-pinned cable.
 
-Group 11 (11 B) and group 01 (11 B) are captured raw; not yet decoded.
+Group 11 (11 B) and group 00 (11 B) are captured raw; not yet decoded.
 
 ![The Vehicle tile — gear, drive state, odometer and range from Car-CAN](img/vehicle.png)
 

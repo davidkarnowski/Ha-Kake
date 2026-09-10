@@ -46,7 +46,7 @@ Do this once, at the desk, before the board ever sees the OBD port.
    | USB ID | Firmware | What the transport does |
    |---|---|---|
    | `16d0:117e`, product "CANable2 …" | **slcan** (stock canable2-fw) | opens the serial port; pyserial only |
-   | `1d50:606f` "Geschwister Schneider CAN adapter" | **candleLight** / `gs_usb` | needs `pip install "python-can[gs-usb]"` and libusb (`brew install libusb`) |
+   | `1d50:606f` or `1209:2323` "Geschwister Schneider CAN adapter" | **candleLight** / `gs_usb` | needs `pip install "python-can[gs-usb]"` and libusb (`brew install libusb`) |
    | `0483:df11` "STM Device in DFU Mode" | **bootloader** — the board is stuck in boot mode | refuses to open; unplug for 5 s and replug |
 
    Anything else: write it down and look it up before going further.
@@ -193,7 +193,8 @@ frame source:
 | Command | Does | Answers |
 |---|---|---|
 | `ATZ`, `ATI`, `AT@1` | `ATZ` resets header / filter / flow-control state; no bus action | the adapter name (contains a digit, for the liveness probe); `[]` when the source is offline |
-| `ATE0 ATL1 ATH1 ATS1 ATSP6 ATFCSM1 …` | nothing — the bus was opened at 500 k / 11-bit | `[]` |
+| `ATE0 ATL1 ATH1 ATS1 ATSP6 …` | nothing — the bus was opened at 500 k / 11-bit | `[]` |
+| `ATFCSM1` | remembers the flow-control mode (bookkeeping; the source always sends our own FC) | `[]` |
 | `ATSH <id>` / `ATCRA <id>` / `ATAR` / `ATFCSH <id>` | remembers request header, response filter, flow-control header | `[]` |
 | `ATCAF0` / `ATCAF1` | bookkeeping only — there is no `DATA ERROR` here | `[]` |
 | `ATFCSD 30 <BS> <STmin>` | parses the block size and separation time we send in flow control | `[]` |
@@ -201,7 +202,7 @@ frame source:
 | `""` (the poke that ends `ATMA`) | nothing | `[]` |
 | `2101`, `2110`, `0100`, `03`, `07` | one ISO-TP request to `ATSH`, answer from `ATCRA`, captured as the **raw response frames** in bus order — `parse_isotp()`'s input, byte-identical to an ELM capture | `["7BB 10 29 61 01 …", "7BB 21 …", …]` or `["NO DATA"]` |
 | a request whose service byte is not `0x21` / `0x01` / `0x03` / `0x07` | refused before it reaches any bus (`SECURITY.md`); logged once | `["NO DATA"]` |
-| anything on a listen-only bus | refused; logged once | `["NO DATA"]` |
+| anything parseable on a listen-only bus | refused; logged once | `["NO DATA"]` |
 | anything unparseable | logged once | `["?"]` |
 
 Two transport-class attributes matter to the scheduler: `SPEED = 0.05`
@@ -266,7 +267,7 @@ advice, because the database is chosen by `--adapter`. Full description,
 the pull scenario and the comparison tool: `docs/SIMULATOR.md`, "The
 simulated bus".
 
-What the bench measured (`tools/bench_canrate.py`, 10 s per load, the
+What the bench measured (`tools/bench_canrate.py --seconds 10`, the tool's own default is 8 s; the
 reader's `poll_once()` with every tile on, paced at `--interval 0.5`; Darwin
 arm64, Python 3.12, 2026-09-09) — **MEASURED ON THE LAPTOP, VIRTUAL BUS: no
 wire, no bit errors, no LBC pacing, no USB, no slcan parser**:

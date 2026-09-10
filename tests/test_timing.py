@@ -282,6 +282,21 @@ def test_peak_keys_come_from_the_profile_and_the_validator_checks_them(leaf_prof
     assert vehicles.peak_keys(ns2) == ["x"]
 
 
+def test_ts_source_is_a_reserved_history_column():
+    """`ts_source` is one of the columns the store writes itself, and
+    `docs/ADDING_A_VEHICLE.md` says a profile may not redefine it. Until
+    2026-09-10 the validator did not check it, so a profile that declared the
+    column would have produced it twice in the readings DDL and failed at
+    CREATE TABLE with `duplicate column name`."""
+    lancer = vehicles.get_vehicle("lancer_2009")
+    for reserved in ("ts_source", "ts", "ts_epoch", "adapter", "vehicle", "extra", "id"):
+        ns = types.SimpleNamespace(**{k: getattr(lancer, k) for k in dir(lancer) if not k.startswith("__")})
+        ns.HISTORY_COLS = dict(lancer.HISTORY_COLS)
+        ns.HISTORY_COLS[reserved] = {"kind": "text"}
+        problems = "\n".join(vehicles.validate_profile(ns))
+        assert f"may not redefine the built-in column {reserved!r}" in problems, reserved
+
+
 def test_the_envelope_is_kept_from_decoded_values_only_and_reset_on_take(env, monkeypatch):
     tmp_path, store = env
     seq = iter([{"current_a": -10.0, "pack_v": 380.0, "soc": 50.0},

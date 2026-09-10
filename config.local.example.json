@@ -1,4 +1,5 @@
 {
+  "vehicle": "leaf_ze0",
   "ble_addr": "",
   "ble_name": "OBDBLE",
   "can_bus": "",
@@ -6,6 +7,10 @@
   "can_channel": "",
   "can_bitrate": 500000,
   "can_listen_only": false,
+  "can_isotp_stmin": null,
+  "can_response_timeout": 1.0,
+  "can_tx_padding": 0,
+  "can_libusb_path": "",
   "mqtt": {
     "host": "",
     "port": 1883,

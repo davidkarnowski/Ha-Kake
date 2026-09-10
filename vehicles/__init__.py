@@ -79,8 +79,8 @@ History columns (optional, but needed for anything graphable)
                                    this column is 1
                      peak          True: the reader keeps a running min / max /
                                    time-of-max of this key between stored rows
-                                   and writes <key>_min / _max / _tmax into the
-                                   row's `extra` (peak-preserving decimation,
+                                   and writes <key>_min / _max / _tmin / _tmax
+                                   / _n into the row's `extra` (peak-preserving decimation,
                                    docs/TIMING.md). Also accepted on a SIGNALS
                                    entry. The key must be a plain record key.
   EXTRA_SKIP       optional tuple — record keys never worth storing in `extra`
@@ -490,7 +490,7 @@ def _validate_history(mod, name):
         if not (isinstance(col, str) and col.isidentifier()):
             p.append(f"{name}: HISTORY_COLS key {col!r} must be a plain SQL column name")
             continue
-        if col in ("id", "ts", "ts_epoch", "adapter", "vehicle", "extra"):
+        if col in ("id", "ts", "ts_epoch", "adapter", "vehicle", "ts_source", "extra"):
             p.append(f"{name}: HISTORY_COLS may not redefine the built-in column {col!r}")
         if not isinstance(spec, dict):
             p.append(f"{name}: HISTORY_COLS[{col!r}] must be a dict, found {type(spec).__name__}")
