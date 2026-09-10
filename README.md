@@ -131,6 +131,24 @@ collapsed cell pair, low isolation resistance, a sleeping ECU, a negative
 response code. See **[docs/SIMULATOR.md](docs/SIMULATOR.md)**.
 
 ```bash
+python web/app.py --adapter sim --sim-can        # ... behind a simulated CAN bus
+python hakake_sim.py --pull                      # a scripted acceleration, ready to play back
+```
+
+**The simulated bus** puts the same model behind a *native CAN* adapter instead
+of an ELM327: simulated ECUs broadcast every id the profile reads at the
+periods a real Leaf uses, with filler traffic so the bus carries its true load,
+and they answer the reader's read requests over ISO-TP. It exists to test the
+app at the rate the CANable will deliver, before the board arrives. On this
+laptop, at a full Car-CAN load of about 1,700 frames a second, the reader's
+scheduler cycle stays near 4 ms and no read request is missed. `--sim-can ev`
+adds the EV-CAN channel, whose frame layouts are *assumed* from published
+documentation and labelled so. `hakake_sim.py --pull` runs a scripted
+acceleration and leaves three things behind: a session to play back, the raw
+frame stream, and a fixture of the expected curve to compare against the car.
+See **[docs/SIMULATOR.md](docs/SIMULATOR.md)** and `tools/compare_sessions.py`.
+
+```bash
 python hakake_sim.py --generate --days 180 --out /tmp/ui.db
 python web/app.py --db /tmp/ui.db --no-reader   # months of history, for working on the charts
 python web/app.py --demo                        # canned JSON, no reader at all
@@ -449,6 +467,14 @@ Being on the bus at all has consequences worth knowing:
   EV-CAN opened listen-only, always. Designed and tested on a virtual bus with
   the recorded fixtures; **not yet run on the adapter or the car** —
   `docs/CAN_TRANSPORT.md` says what is verified and what is not.
+- **A simulated CAN bus** (2026-09-09): `--adapter sim --sim-can` runs the whole
+  stack against simulated ECUs on a virtual bus at real frame rates, so the app
+  could be measured at the CANable's data rate before the board arrived. At a
+  full Car-CAN load the scheduler cycle stays near 4 ms with no missed read.
+  `hakake_sim.py --pull` generates an acceleration with a fixture of the
+  expected curve, to compare against the car when the hardware runs. Measured
+  on the laptop against a virtual bus: no wire, no bit errors, no real ECU
+  pacing. EV-CAN frame layouts are assumed from public documentation.
 - **Cell log** (2026-09-08): a tile option on the cell grid or the 3D pack
   moves the cell-voltage read into every cycle and stores every fresh read
   (a CELL LOG badge says so) — the same read-only request, more often — so a

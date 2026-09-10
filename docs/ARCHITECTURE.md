@@ -178,6 +178,15 @@ a broker. Read-only is enforced at this layer too — a request whose service
 byte is not `0x21`/`0x01`/`0x03`/`0x07` never reaches a bus, and a bus opened
 listen-only (EV-CAN, always) refuses every request. `docs/CAN_TRANSPORT.md`;
 as of 2026-09-09 tested on a virtual bus only, not on the board or the car.
+The virtual bus has a car on it: `--adapter sim --sim-can` runs the model's
+ECUs (`simulator/canbus.py`) on the in-process channel at the surveyed frame
+rate — every decoded id at its period, filler to ≈1,700 frames/s, ISO-TP
+answers honouring flow control, `7F xx 11` for anything but a read — behind
+`SimCanFacade`, a `CanFacade` that files its rows under `sim` and stamps them
+simulated; `tools/bench_canrate.py` measures the reader against it (a
+scheduled cycle ~4 ms, the reader's own CPU ~15 % of a core at the full rate,
+on the laptop with no wire), and the EV-CAN channel it can add is ASSERTED
+throughout — `docs/SIMULATOR.md`, "The simulated bus".
 
 ## Data model
 

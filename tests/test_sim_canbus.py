@@ -333,7 +333,7 @@ def test_a_uds_answer_through_the_facade_decodes_like_the_elm_sim_path():
         rc, re_ = decode_reading(via_can), decode_reading(via_elm)
         assert rc == re_
         assert rc["soc"] == pytest.approx(42.5, abs=0.01)
-        assert rc["hv_current2_a"] == pytest.approx(-80.0, abs=0.05)
+        assert rc["hv_current2_a"] == pytest.approx(-80.0, abs=0.6)   # the −80 A extra plus the READY base draw
         assert len(rc["cells"]) == 96
         assert not elm.misses
         assert ecu.fc and ecu.fc[-1] == (0, 0)                       # the façade's STmin 0

@@ -1365,3 +1365,57 @@ true` on a LAN listener; SECURITY.md, `docs/MQTT.md` and the gauge examples
 say the same. A test pins it: auth keys in config are ignored, never
 applied. The read-only whitelist is unchanged — it never was the thing
 protecting the broker; the private network is.
+
+### A simulated CAN bus, and an acceleration to compare against  2026-09-09
+
+Branch `feature/sim-can-rig`. The CANable had not arrived, and the question
+the owner wanted answered before it did was whether the app can take the
+data rate a native adapter delivers. So the simulator grew a bus.
+
+**The rig.** `simulator/canbus.py` runs simulated ECUs on python-can's
+`virtual` channels, driven by the same model the cockpit drives: every
+Car-CAN id the Leaf profile reads, encoded through the existing encoder at
+the periods the frame-rate survey gives, plus filler ids so the bus carries
+its true load (a `bus_load` knob scales it, and it is in the schema like
+every other knob). The battery and climate controllers answer the reader's
+`0x21` reads over ISO-TP honouring the requester's flow control; anything
+that is not a read gets a negative response, never an exception. A second
+channel carries EV-CAN — `1DB`, `1DA`, `1D4`, `55B`, `5BC`, `11A`, `1DC` —
+whose byte layouts come from the published DBC and OVMS sources, are cited
+in the code and are labelled ASSERTED, because no car here has confirmed
+them. `--adapter sim --sim-can` runs the whole stack behind the CAN façade.
+
+**What it measured** (`tools/bench_canrate.py`, on the laptop, virtual bus —
+no wire, no bit errors, no real ECU pacing, no USB):
+
+| Bus load | Broadcast fps | Scheduler cycle med / p90 | CPU total / ECU / reader | Missed reads |
+|---|---|---|---|---|
+| 0.1 | 525 | 3.9 / 4.6 ms | 17.3 / 9.7 / 7.7 % | 0 |
+| 0.5 | 1,044 | 3.4 / 4.6 ms | 21.7 / 11.8 / 9.8 % | 0 |
+| 1.0 | 1,693 | 3.9 / 4.3 ms | 30.6 / 15.7 / 14.9 % | 0 |
+
+So the answer is yes, with room: at a full Car-CAN load the reader's own
+share is about 15 % of one core, and the passive items are answered from
+the frame table with no dwell at all. Every passive item's own capture
+window caught its id at every load; a 0.2 s window misses the 500 ms ids
+only by phase, which is why they ask for 0.8 s.
+
+**The pull.** `simulator/scenarios/pull.json` is a standing start to about
+50 mph in eight seconds reaching −250 to −270 A, a hold, a regen coast and
+a brake to stop — shaped to the owner's own reading of −271 A and −89 kW at
+54 mph on 2026-09-08. `hakake_sim.py --pull` leaves three artefacts: a
+session in the throwaway database with the cell log armed, playable on the
+timeline with the pull auto-detected; the raw frame stream of both channels
+as JSON lines; and a thinned replay fixture,
+`tests/fixtures/session_leaf_ze0_pull_sim.json`, marked synthetic and
+carrying a note that the EV-CAN bytes are assumed. That fixture is the
+*expected* half of a comparison: `tools/compare_sessions.py` prints peak
+current and when it arrived, time to peak, the lowest pair, pack sag, SOC
+drop and the per-id periods actually observed, so when the board is on the
+car the difference between what we predicted and what the Leaf does is one
+command.
+
+A simulator checks consistency, not truth. Nothing here is evidence about a
+car, and the EV-CAN half is not even evidence about the bus — it is a
+statement of what we expect to find, written down early so it can be proved
+wrong.

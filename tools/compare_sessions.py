@@ -165,15 +165,41 @@ def load_stream(path, vehicle=None, period=0.5):
     stream itself, the samples through a temporary fixture built by
     `record_session.from_mqtt()` (so a stream and a fixture decode alike)."""
     from record_session import from_mqtt
+    from simulator.pull import thin_stream_strided, _topic_bus_id
 
     periods, counts = stream_periods(path)
-    tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+    # A two-channel stream (the rig's, or a bridge on each bus) carries some
+    # ids on both — 0x284 is a VCM relay on EV-CAN with another payload — so
+    # only the car bus feeds the profile's decoders; from EV-CAN only the
+    # ASSERTED ids are kept, and a single-bus capture is taken whole.
+    buses = set()
+    with open(path) as f:
+        for raw in f:
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if "/rx/" in msg.get("topic", ""):
+                buses.add(_topic_bus_id(msg["topic"], msg.get("payload"))[0])
+    tmpdir = tempfile.mkdtemp(prefix="hakake-compare-")
+    tmp, thinned = os.path.join(tmpdir, "fixture.json"), os.path.join(tmpdir, "stream.jsonl")
     try:
-        from_mqtt(path, out=tmp, vehicle=vehicle, period=period, log=lambda *a: None)
+        src = path
+        if len(buses) > 1:
+            strides = {("car", cid): 1 for cid in counts}
+            strides.update({("ev", cid): 1 for cid in EV_IDS})
+            thin_stream_strided(path, thinned, strides)
+            src = thinned
+        from_mqtt(src, out=tmp, vehicle=vehicle, period=period, log=lambda *a: None)
         series = load_fixture(tmp, vehicle=vehicle)
     finally:
+        for fpath in (tmp, thinned):
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
         try:
-            os.remove(tmp)
+            os.rmdir(tmpdir)
         except OSError:
             pass
     series.update({"source": path, "kind": "stream", "periods": periods, "counts": counts})

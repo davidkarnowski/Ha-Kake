@@ -291,6 +291,32 @@ an ELM327 on EV-CAN and would expose, per OVMS:
 inverter temps, `0x5C0` battery temp, `0x380`/`0x5BF` charger status,
 `0x11A` gear + eco.
 
+**EV-CAN, simulated only (ASSERTED, 2026-09-09).** The simulated CAN rig
+(`simulator/canbus.py`, `--adapter sim --sim-can ev`) emits seven of those
+ids so the multi-bus transport has something to listen to before the cable
+exists. Every byte is transcribed from public documentation and none has
+been seen on this car; the encoders and their decoders live in the
+simulator, not in `leaf_decoders.py`, on purpose. Source per id, as quoted in
+each encoder's docstring: `0x1DB` current 11-bit s two's complement × 0.5 A
+(bits 7|11@0, discharge negative — the DBC's [−400|200] range; OVMS negates
+for its own convention) and voltage 10-bit × 0.5 V (23|10@0), relay /
+full-charge / interlock flags — dalathegreat `EV-can_ZE0.dbc` + OVMS
+`vehicle_nissanleaf.cpp` case `0x1db`; `0x1DA` torque 11-bit × 0.5 Nm
+(18|11@0) and rpm 15-bit (39|15@0), both signed per OVMS where the ZE0 DBC
+says unsigned, bytes 0–1 DC-bus volts × 2 per 8dromeda; `0x1D4` torque
+request 12-bit × 0.25 Nm (23|12@0, signed per the AZE0 DBC and 8dromeda),
+byte 6 bit 7 charge running (OVMS); `0x55B` SOC 10-bit × 0.1 % (7|10@0,
+0x3FF invalid, OVMS); `0x5BC` gids 10-bit (7|10@0), full Wh (13|10@0,
+×80 + 250), bars mux, average temperature (byte 3 − 40), byte 4 bits 1–7 as
+SOH % (the DBC calls it `LB_Capacity_Deterioration_Rate`; the community reads
+it as SOH), minutes-to-full 13-bit (52|13@0, 8190 = none); `0x11A` gear
+nibble (4|4@1; P=1 R=2 N=3 D=4 is a community ordering, no value table in
+the DBC), Eco bit 12, car-on bits 13–15 (enum asserted); `0x1DC` discharge /
+charge limits 10-bit × 0.25 kW (7|10@0, 13|10@0), charger max 10-bit × 0.1 kW
+− 10 (19|10@0; OVMS drops the offset). The last byte of `1DB`/`1DA`/`1D4`/
+`55B`/`1DC` is CRC-8 poly 0x85 on the community's word. The comparison that
+will test all of this against the car is `tools/compare_sessions.py`.
+
 ## 2009 Mitsubishi Lancer ES
 
 Standard SAE J1979 mode-01 — no reverse engineering, so every PID here is

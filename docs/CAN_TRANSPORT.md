@@ -151,7 +151,7 @@ over the file, the way the BLE keys do.
 | Key | Meaning | Default |
 |---|---|---|
 | `can_bus` | `"car"` or `"ev"` — which OBD pins the board is wired to. **Required; never guessed.** The board cannot tell, and normal mode on EV-CAN would be a transmit-capable node on the battery bus. | — |
-| `can_interface` | `auto` (identify the firmware from the USB id), `slcan`, `gs_usb`, `socketcan`, `virtual` (tests) | `auto` |
+| `can_interface` | `auto` (identify the firmware from the USB id), `slcan`, `gs_usb`, `socketcan`, `virtual` (tests); `sim` is recognised and refused — the simulated bus is `--adapter sim --sim-can`, below | `auto` |
 | `can_channel` | slcan: the serial port (found by USB id or `/dev/cu.usbmodem*` when empty); gs_usb: device index; socketcan: `can0` | `""` |
 | `can_bitrate` | bit/s | `500000` |
 | `can_listen_only` | open silent even on Car-CAN (then no UDS, only the broadcast ids) | `false`; forced `true` on `ev` |
@@ -231,6 +231,46 @@ short interruption of USB power can leave the board in the bootloader
 transport recognises that state and says so instead of reporting "no
 adapter". Firmware changes are pending the owner's bench check.
 
+## The simulated bus — the same façade at the real frame rate, no board
+
+```bash
+python web/app.py --adapter sim --sim-can          # Car-CAN channel, ≈1,700 frames/s
+python web/app.py --adapter sim --sim-can ev       # plus the EV-CAN channel, listen-only
+python tools/bench_canrate.py                      # cycle time, intake, CPU, hit rate
+```
+
+`simulator/canbus.py` puts the model's ECUs on an in-process python-can
+`virtual` channel — every id the profile decodes at its surveyed period,
+filler ids to the surveyed volume, ISO-TP answers for the LBC and HVAC amp
+honouring BS/STmin, `7F xx 11` for any service but `0x21` — and this façade
+opens the same channel through `SimCanSource` / `SimCanFacade` (the block at
+the end of `cantransport.py`): `adapter_type = "sim"`, `simulated = True`,
+the marker carries scenario, seed and `sim_bus_load`, the rows go to the sim
+database. `can_interface: "sim"` through `--adapter can` is refused with that
+advice, because the database is chosen by `--adapter`. Full description,
+the pull scenario and the comparison tool: `docs/SIMULATOR.md`, "The
+simulated bus".
+
+What the bench measured (`tools/bench_canrate.py`, 10 s per load, the
+reader's `poll_once()` with every tile on, paced at `--interval 0.5`; Darwin
+arm64, Python 3.12, 2026-09-09) — **MEASURED ON THE LAPTOP, VIRTUAL BUS: no
+wire, no bit errors, no LBC pacing, no USB, no slcan parser**:
+
+| bus load | expected fps | broadcast fps | intake fps (incl. UDS) | sched. cycle med / p90 (ms) | full cycle med / p90 (ms) | CPU total / ECU / reader (%) | UDS misses |
+|---|---|---|---|---|---|---|---|
+| 0.1 | 525 | 526 | 572 | 3.9 / 4.6 | 13.5 / 14.1 | 17.3 / 9.7 / 7.7 | 0 |
+| 0.5 | 1,044 | 1,045 | 1,091 | 3.4 / 4.6 | 13.8 / 13.8 | 21.7 / 11.8 / 9.8 | 0 |
+| 1.0 | 1,693 | 1,693 | 1,739 | 3.9 / 4.3 | 15.3 / 18.2 | 30.6 / 15.7 / 14.9 | 0 |
+
+The reader's own cost at the full surveyed rate is ~15 % of one core (the
+ECU share is the simulated car); a scheduled cycle is ~4 ms and a cycle
+polling every item ~15 ms, against the ~50–150 ms modelled in the memo for
+the real bus (the difference is the LBC's own pacing, which this rig does
+not have); every passive item is hit at its own `secs` window at every
+load. What this cannot say: whether python-can's slcan byte reader keeps up
+on a real USB link, the board's error counters, the LBC's real turnaround.
+Those are still the arrival checklist's questions.
+
 ## Where things live
 
 | | |
@@ -240,4 +280,6 @@ adapter". Firmware changes are pending the owner's bench check.
 | `web/reader.py` | `--adapter can`; `passive_instant` in `estimate()`; the `marker()` stamp |
 | `mqttsource.py`, `docs/MQTT.md` | the second frame source: the same façade over a broker |
 | `tests/test_cantransport.py` | everything in "Verified" above |
+| `simulator/canbus.py`, `tests/test_sim_canbus.py` | the simulated bus: ECUs, periods, EV-CAN layouts (ASSERTED), the sim-can transport |
+| `tools/bench_canrate.py`, `tools/compare_sessions.py` | the bench above; the expected-vs-observed pull comparison for arrival day |
 | `research/canable_adapter_recommendation_20260908.md` | the design memo (local, gitignored) |

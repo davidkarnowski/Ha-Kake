@@ -63,7 +63,7 @@ def test_metrics_without_a_pull_or_without_data():
 def test_compare_lists_the_deltas_and_the_periods():
     a = [{"t": t, "current_a": -250.0 if t == 5 else -10.0 if t > 3 else -1.0, "pack_v": 380.0, "soc": 70.0}
          for t in range(10)]
-    b = [{"t": t, "current_a": -230.0 if t == 6 else -10.0 if t > 3 else -1.0, "pack_v": 378.0, "soc": 69.0}
+    b = [{"t": t, "current_a": {5: -50.0, 6: -230.0}.get(t, -10.0 if t > 3 else -1.0), "pack_v": 378.0, "soc": 69.0}
          for t in range(10)]
     r = cs.compare(series(a, periods={"1DB": 0.01}, counts={"1DB": 500}),
                    series(b, periods={"1DB": 0.0102, "421": 0.061}, counts={"1DB": 490, "421": 80}), amps=40)
@@ -83,34 +83,35 @@ def _lbc_lines(sim):
     return {"2101": encode.lbc_response("2101", st), "2102": encode.lbc_response("2102", st)}
 
 
-def _fixture_doc(states, synthetic=True):
-    frames = []
-    for t, sim in states:
-        st = sim.state()
-        frames.append({"t": t, "uds": {"79B": _lbc_lines(sim)},
-                       "passive": {"1DB": [encode.line("1DB", cb.enc_1db(st))],
-                                   "284": [encode.frame_line("284", st)] * 3}})
+def _fixture_doc(frames, synthetic=True):
     return {"hakake_replay": 1, "vehicle": "leaf_ze0", "title": "t", "adapter": "test",
             "synthetic": synthetic, "captured": "2026-01-01T00:00:00Z", "source": [], "notes": "",
             "frames": frames}
 
 
+def _frames(peak_pedal):
+    """Twelve one-second frames of a pull, each encoded from the state AT THAT
+    SECOND (the model is one object; lines must be taken as it goes)."""
+    out = []
+    sim = make_sim(vehicle="leaf_ze0", knobs={"noise": 0, "soc": 70, "gear": "D", "start_state": "ready"}, seed=1)
+    for t in range(0, 12):
+        pedal = peak_pedal if 4 <= t <= 7 else 0.0
+        sim.set(speed_mph=min(50.0, max(0.0, (t - 3) * 10.0)) if t > 3 else 0.0, accel_pedal_pct=pedal)
+        st = sim.state()
+        out.append({"t": float(t), "uds": {"79B": _lbc_lines(sim)},
+                    "passive": {"1DB": [encode.line("1DB", cb.enc_1db(st))],
+                                "284": [encode.frame_line("284", st)] * 3}})
+        sim.step(1.0)
+    return out
+
+
 @pytest.fixture
 def two_fixtures(tmp_path):
-    def states(peak_pedal):
-        out = []
-        sim = make_sim(vehicle="leaf_ze0", knobs={"noise": 0, "soc": 70, "gear": "D", "start_state": "ready"}, seed=1)
-        for t in range(0, 12):
-            pedal = peak_pedal if 4 <= t <= 7 else 0.0
-            sim.set(speed_mph=min(50.0, max(0.0, (t - 3) * 10.0)) if t > 3 else 0.0, accel_pedal_pct=pedal)
-            out.append((float(t), sim))
-            sim.step(1.0)
-        return out
     a, b = tmp_path / "expected.json", tmp_path / "observed.json"
     with open(a, "w") as f:
-        json.dump(_fixture_doc(states(100.0)), f)
+        json.dump(_fixture_doc(_frames(100.0)), f)
     with open(b, "w") as f:
-        json.dump(_fixture_doc(states(70.0), synthetic=False), f)
+        json.dump(_fixture_doc(_frames(70.0), synthetic=False), f)
     return str(a), str(b)
 
 

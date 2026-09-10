@@ -123,7 +123,8 @@ def test_the_fixture_is_synthetic_thinned_and_says_ev_can_is_asserted(pulled):
     assert any(fr["uds"].get("744", {}).get("2110") for fr in frames)          # the HVAC amp
     for fr in frames:
         for cid, lines in fr["passive"].items():
-            assert len(lines) <= pl.FIXTURE_LINES_PER_BUCKET, (cid, len(lines))
+            # a stride of k leaves ceil(n/k) per bucket, plus one where a bucket edge falls between strides
+            assert len(lines) <= pl.FIXTURE_LINES_PER_BUCKET + 1, (cid, len(lines))
     ids = {cid for fr in frames for cid in fr["passive"]}
     assert "1DB" in ids and "421" in ids and "284" in ids
     assert "002" not in ids and "1DA" not in ids                                  # thinned to what is decoded + 1DB

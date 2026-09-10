@@ -999,6 +999,157 @@ in wall-clock time, which is the right trade.
 
 ---
 
+## The simulated bus (`--sim-can`)
+
+The CANable had not arrived when the native CAN transport was written
+(`docs/CAN_TRANSPORT.md`), and nothing in the project had ever seen what a
+native controller delivers: **every frame on the bus, all the time** — about
+1,700 a second on the Leaf's Car-CAN, 790 on EV-CAN (the survey in the
+research memo, from dalathegreat's `canmsgs.xlsx`). `SimELM` answers one
+`ATMA` with a handful of lines; this rig answers the *bus*.
+
+```bash
+python web/app.py --adapter sim --sim-can            # the whole stack over the simulated bus
+python web/app.py --adapter sim --sim-can ev         # ... and the EV-CAN channel too (listen-only)
+python web/app.py --adapter sim --sim-can --scenario pull --knob bus_load=0.5
+```
+
+What runs: the model's ECUs (`simulator/canbus.py`, `SimCanEcu`) on an
+in-process python-can `virtual` channel (`hakake-car`), and the native CAN
+façade (`cantransport.CanFacade`) on the same channel — so the reader, the
+scheduler, the profile's `configure()` and `decode()`, the store, the API,
+the dashboard and the cockpit at `/sim` all run exactly as they would on the
+board, at the real frame rate, with no board and no car. The control API is
+in-process as before (`:8099`), and `bus_load` is a knob in its schema. It is
+still `--adapter sim`: never auto-detected, rows in the throwaway
+`web/sim_<profile>.db`, every record stamped `simulated: true` with the
+scenario, the seed and `sim_bus_load`. `can_interface: "sim"` through
+`--adapter can` is refused with that advice, because the reader chooses the
+database from `--adapter` and generated rows must never land next to real
+ones.
+
+**What is on the bus.** Every Car-CAN id the profile's passive items decode
+(`0x421`, `0x358`, `0x284`, `0x60D`, `0x5C5`, `0x385`, `0x5B3`, `0x5A9`,
+`0x355`, `0x292`, plus `0x174` / `0x180` / `0x625`) encoded from the model
+through `simulator/encode.py` — the one encoder, nothing duplicated — each at
+its surveyed period; and 33 FILLER ids (`0x002`, `0x1CA`, `0x245`, `0x510` …)
+at their surveyed periods with static, plausible payloads (this car's own
+February frames where one exists, zeros with a rolling counter nibble
+otherwise), so the bus carries the surveyed ≈1,690 frames/s. The `bus_load`
+knob (0–1, `rig` category) scales the filler only; the ids the profile decodes
+are always sent. The ECU thread is also the model's clock — behind the CAN
+façade there is no `SimELM.advance()` — stepping it by real time at the
+sim's own `time_scale`.
+
+**EV-CAN, all of it ASSERTED.** With `--sim-can ev` a second ECU broadcasts
+on `hakake-ev`: `0x1DB` (pack current 0.5 A and voltage 0.5 V, 10 ms),
+`0x1DA` (motor torque and rpm), `0x1D4` (torque request), `0x1DC` (power
+limits), `0x11A` (shifter), `0x55B` (SOC 0.1 %), `0x5BC` (gids, SOH, bars) and
+20 filler ids, ≈790 frames/s. The byte layouts are transcribed from the
+dalathegreat `EV-can_ZE0.dbc` and OVMS's `vehicle_nissanleaf.cpp` (each
+encoder's docstring quotes what it took from where, and where the two
+disagree — the `0x1DA` sign, the `0x1DC` charger offset, the meaning of the
+`0x5BC` "deterioration" byte); the rpm is derived from road speed through an
+asserted 7.94:1 reduction; the CRC in the last byte is CRC-8 poly 0x85 on
+the community's word. No adapter of this project has ever been on pins 13/12.
+The façade opens that channel listen-only, as it always does for EV-CAN, and
+the ECU there answers no request.
+
+**UDS.** The LBC (`0x79B` → `0x7BB`) and the HVAC amp (`0x744` → `0x764`)
+answer `21 NN` from `sim.respond()` — the same lines `SimELM` prints, sent as
+frames — honouring the requester's flow control: block size, STmin
+(`0x00`–`0x7F` ms and the `0xF1`–`0xF9` sub-millisecond codes), Wait and
+Overflow. The pairs come from the profile's `TARGETS`, not from the rig.
+Read-only at this layer too: the ECU implements service `0x21` only, and
+anything else gets a UDS negative response `7F <svc> 11`
+(serviceNotSupported) — never an exception, never invented data. A sleeping
+car (`fault.car_asleep`) puts nothing on the bus and answers nothing;
+`fault.bus_noise` puts error frames on it, which the façade counts.
+
+**What the bench measured** (`tools/bench_canrate.py`, 10 s per load, the
+reader's own `poll_once()` with every tile on, paced at its 0.5 s
+`--interval`; Darwin arm64, Python 3.12, 2026-09-09) — **MEASURED ON THE
+LAPTOP, VIRTUAL BUS**: no wire, no bit errors, no LBC pacing (the simulated
+LBC answers the 29-frame cell read in ~2 ms at STmin 0; the real one took
+0.36 s over USB), no USB stack, no slcan byte parser:
+
+| bus load | expected fps | broadcast fps | intake fps (incl. UDS) | sched. cycle med / p90 (ms) | full cycle med / p90 (ms) | CPU total / ECU / reader (%) | UDS misses |
+|---|---|---|---|---|---|---|---|
+| 0.1 | 525 | 526 | 572 | 3.9 / 4.6 | 13.5 / 14.1 | 17.3 / 9.7 / 7.7 | 0 |
+| 0.5 | 1,044 | 1,045 | 1,091 | 3.4 / 4.6 | 13.8 / 13.8 | 21.7 / 11.8 / 9.8 | 0 |
+| 1.0 | 1,693 | 1,693 | 1,739 | 3.9 / 4.3 | 15.3 / 18.2 | 30.6 / 15.7 / 14.9 | 0 |
+
+"Scheduled" is what the reader actually does each cycle (only the items
+whose period is due); "full" is every enabled item polled at once, the worst
+case. Intake exceeds the broadcast by the reader's own UDS answers. The ECU
+share of the CPU is the simulated car, which a real board would not cost;
+the reader's own share at the full surveyed rate is ~15 % of one core, and
+the ATMA hit rate is 100 % for every passive item at its own `secs` window
+at every load (a 0.2 s window catches a 500 ms id — `0x5A9`, `0x5B3` — only
+by phase, which is why the profile gives those 0.8 s). Nothing here is
+evidence about the board: the slcan byte-at-a-time reader, the USB link and
+the LBC's real turnaround are exactly what the bench cannot see. Run it
+yourself; it writes nothing outside a temporary directory.
+
+**The pull.** `simulator/scenarios/pull.json` is a standing-start
+acceleration: READY at rest, into D with the brake held, the pedal floored,
+0 to ~50 mph in eight seconds of half-second speed steps, a hold, a lift-off
+regen coast, a brake to a stop. It reaches **−270 A / −92 kW at 50 mph** with
+the pack at 75 % SOC, sagging to 340 V and the lowest pair to 3.52 V. The
+calibration point is one reading: the owner observed −271 A / −89 kW at
+54 mph on 2026-09-08 (OWNER REPORT, no logger). Getting there took the two
+smallest changes to the (ASSERTED) pedal term the motor note in
+`simulator/model.py` describes — the pedal's watts now go through
+`DRIVE_EFF` like the road load always did, and the envelope holds constant
+power from base speed to a knee at 60 mph instead of falling from 25 — and
+a scenario knob, `internal_resistance_ohm: 0.16`, which is what puts 271 A at
+328 V under load (89 kW) on a 35 %-SOH pack. Derived from that one report,
+not measured.
+
+```bash
+python hakake_sim.py --pull                # one command, three artefacts:
+#   web/sim_leaf_ze0.db                    a sim database with the cell log armed
+#   research/sim_pull_<date>.jsonl         both channels' frames, MQTT rx/# format (gitignored)
+#   tests/fixtures/session_leaf_ze0_pull_sim.json   a thinned replay fixture, synthetic: true
+python web/app.py --db web/sim_leaf_ze0.db --no-reader    # then Playback in the header
+```
+
+Playback shows the pull on the timeline strip, the cells sagging through it
+(a row with all 96 pairs every half second — the cell log), and an
+auto-detected pull flag (`Store.pulls()` keys on current below −40 A). The
+stream is the format the MQTT bridge publishes (`docs/MQTT.md` §3.1, plus the
+`tx/uds` request/ack pairs of §3.3–3.4 so the LBC answers are in it), with
+timestamps as offsets from zero. The fixture is derived from it by
+`record_session.py --from-mqtt`, thinned to the ids the profile decodes plus
+`0x1DB` (at most ten lines per id per half-second frame), and its `notes`
+field says every EV-CAN byte is ASSERTED. It replays (`--adapter replay
+--fixture tests/fixtures/session_leaf_ze0_pull_sim.json`) and it is the
+**expected** half of the comparison.
+
+**The comparison** — the tool the owner runs when the board arrives:
+
+```bash
+python tools/compare_sessions.py tests/fixtures/session_leaf_ze0_pull_sim.json observed.jsonl
+```
+
+Each side is a fixture, a readings database, or a captured `rx/#` stream
+(`mosquitto_sub -F '{"topic":"%t","payload":%p}'` on the bridge, or the rig's).
+It prints, side by side with the difference: peak current and its time,
+speed and power; time to peak from the pull's start; the lowest cell pair
+and which; pack sag from rest; SOC drop over the pull and the whole run;
+the `0x1DB` peak decoded with the ASSERTED bytes; and, for streams, each id's
+observed period against the survey. A match is consistency, not
+verification — and the differences are the point: they say where the model
+and the assumed bytes are wrong.
+
+**What is ASSERTED here, in one list.** Every EV-CAN layout and every value
+the model puts in one (rpm from speed, torque from power, gids from Wh,
+power limits from `output_avail`); the CRC polynomial; the `0x11A` enums; the
+filler payloads (except the four February frames); the surveyed periods for
+every id but `0x358` (the one rate this car has confirmed); the pedal term's
+shape and knee; `internal_resistance_ohm` 0.16 in the pull. MEASURED: the
+bench numbers, on this laptop, against this virtual bus, and nothing else.
+
 ## What is where
 
 | Piece | File |
@@ -1009,6 +1160,10 @@ in wall-clock time, which is the right trade.
 | °C/°F helpers | `simulator/units.py`, `util.c_to_f` / `util.fmt_temp` |
 | The encoder (state → UDS / CAN bytes) | `simulator/encode.py` |
 | Bulk history generation | `simulator/history.py` |
+| The simulated CAN bus: ECUs, the period tables, the EV-CAN layouts (ASSERTED) | `simulator/canbus.py` |
+| The pull, three ways (`--pull`) | `simulator/pull.py`, `simulator/scenarios/pull.json` |
+| The sim-can transport (`SimCanSource`, `SimCanFacade`, `open_sim_can`) | `cantransport.py` (the block at the end) |
+| The bench and the comparison | `tools/bench_canrate.py`, `tools/compare_sessions.py` |
 | Scenarios | `simulator/scenarios/*.json` |
 | The transports (`SimELM`, `SimSerialELM`), control-port fallback | `elm327.py` |
 | The rig: pty, control API, `--launch-dashboard`, CLI | `hakake_sim.py` |
@@ -1016,7 +1171,7 @@ in wall-clock time, which is the right trade.
 | The cockpit page | `web/templates/sim.html`, `web/static/sim.js`, `web/static/sim.css` |
 | The tiles the cockpit and dashboard share | `web/templates/tiles/*.html`, `web/static/tiles.js`, `web/static/tiles.css`, `web/static/tilestudio.js`, `web/static/alerts.js` (the cockpit's cards evaluate the same audible alert rules; the 🔔 mute is shared through localStorage) |
 | `--adapter sim`, `/sim`, `/api/sim/tiles`, the banner | `web/app.py`, `web/reader.py` |
-| Tests | `tests/test_simulator.py`, `test_sim_loads.py`, `test_sim_record.py`, `test_sim_lamps.py`, `test_sim_charge.py`, `test_sim_history.py`, `test_sim_stability.py`, `test_sim_timescale.py`, `test_sim_transport.py`, `test_sim_control.py`, `test_sim_launch.py`, `test_sim_panel.py`, `test_sim_page.py` |
+| Tests | `tests/test_simulator.py`, `test_sim_loads.py`, `test_sim_record.py`, `test_sim_lamps.py`, `test_sim_charge.py`, `test_sim_history.py`, `test_sim_stability.py`, `test_sim_timescale.py`, `test_sim_transport.py`, `test_sim_control.py`, `test_sim_launch.py`, `test_sim_panel.py`, `test_sim_page.py`, `test_sim_canbus.py`, `test_pull_scenario.py`, `test_compare_sessions.py`, `test_bench_canrate.py` |
 | A contract-only stand-in core | `tests/sim_stub.py` |
 | The contract everything above is built against | `docs/SIMULATOR_CONTRACT.md` |
 
@@ -1042,3 +1197,7 @@ a Lancer.
   a vehicle, because nothing here is connected to one.
 - The control API binds `127.0.0.1` and has no authentication. It can put a
   fault on a dashboard someone is reading. Do not expose it.
+- The simulated bus (`--sim-can`) is the same fixture one layer down: the
+  frames are the encoder's, the EV-CAN bytes are ASSERTED, and the bench
+  numbers are the laptop's. It exercises the transport at the real rate; it
+  says nothing about the board or the car.

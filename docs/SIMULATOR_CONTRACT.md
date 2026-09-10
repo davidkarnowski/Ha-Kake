@@ -196,6 +196,38 @@ and decoder — it would not have caught the ÷1024-vs-×0.001 scale bug. Say so
 in the docs; never let a green simulator run be mistaken for verification
 against a real car.
 
+## The ECU interface (the simulated bus)
+
+`simulator/canbus.py` drives a core through the contract above and nothing
+more — a stub core that has `state()`, `respond()`, `step()`, `get_knobs()`
+and `vehicle` broadcasts nothing (no period table for its profile) and still
+answers UDS. What the rig asks of a core, at real periods:
+
+- **`respond(cmd, tx, rx)` at the bus's pace.** Every `21 NN` single frame
+  heard on a profile `TARGETS` request id becomes one call; the lines come
+  back as frames, first frame first, then the consecutive frames at the
+  requester's BS/STmin. `["NO DATA"]` or `[]` is silence on the bus (a real
+  ECU that does not answer), a negative-response line is sent as its frame.
+  Any service but `0x21` never reaches the core: the rig answers
+  `7F <svc> 11` itself.
+- **`state()` every 10 ms** while frames are due, under the lock the control
+  API shares; it must stay cheap (the Leaf's is ~150 µs with 96 cells) and
+  JSON-plain. The Car-CAN encoders read it through `simulator/encode.py`; the
+  EV-CAN encoders (ASSERTED) read `current_a`, `pack_v`, `soc`, `speed_mph`,
+  `gear`, `start_state`, `charging`, `plugged_in`, `motor_kw`, `regen_kw`,
+  `temp_avg_c`, `capacity_ah`, `soh`, `insulation_kohm`, `output_avail`,
+  `discharging`, `accel_pedal_pct`, `brake_pct`.
+- **`step(dt)` from the broadcaster thread** when the rig is the clock
+  (`clock=True`, the default behind the CAN façade): real seconds in, the
+  core applies its own `time_scale()`. A caller that owns the clock passes
+  `clock=False`.
+- **`get_knobs()["bus_load"]`** if the core has it (the Leaf's `rig` group);
+  a core without it runs at load 1.0. `fault.car_asleep` silences the bus,
+  `fault.bus_noise` puts error frames on it.
+
+The rig never names a vehicle: the period tables and EV-CAN encoders are
+keyed by `sim.vehicle`, the UDS pairs come from the profile's `TARGETS`.
+
 ## Agent usability — a hard requirement, not a nice-to-have
 
 - `sim.knob_schema()` and `hakake-sim --dump-schema` emit JSON so an agent

@@ -141,6 +141,16 @@ specifics go in `config.local.json` (gitignored), never in code.
   generates every control from `/sim/schema`; the control API's own landing
   page (`simulator/panel.html`) is a curl-and-endpoints fallback. Neither
   names a knob — the schema is the only list, and tests enforce it.
+- The simulated CAN bus (`--adapter sim --sim-can`, `simulator/canbus.py`)
+  is that fixture one layer down: the model's ECUs on an in-process virtual
+  python-can channel at the surveyed frame rates behind the native CAN
+  façade. It is still `--adapter sim` (sim database, simulated stamp,
+  never auto-detected; `can_interface: "sim"` through `--adapter can` is
+  refused). Every EV-CAN byte it emits is ASSERTED from the dalathegreat
+  DBC / OVMS and says so in the encoder's docstring; the bench numbers
+  (`tools/bench_canrate.py`) are MEASURED ON THE LAPTOP, VIRTUAL BUS and
+  nothing else. `hakake_sim.py --pull` writes the expected pull three ways;
+  `tools/compare_sessions.py` is the comparison for the day the board comes.
 
 ## 6. Where to look
 
@@ -156,4 +166,6 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Draw another car's pack in 3D | `docs/PACK3D_GUIDE.md`: `PACK_*` in the profile (`split` / `group` / modes), the method, the checklist |
 | Replay a recorded afternoon on the dashboard | `docs/PLAYBACK.md`; the Playback button in the header, `?playback=1&from=&to=` for a link; frames come from `Store.frames()` |
 | Use a native CAN adapter / CANable | `docs/CAN_TRANSPORT.md`: arrival checklist, wiring (termination jumper OFF), `can_*` config keys, `--adapter can`, the ELM-command mapping, listen-only on EV-CAN; the façade is `cantransport.py` |
+| Test the app at native-CAN frame rates with no board | `docs/SIMULATOR.md` "The simulated bus": `python web/app.py --adapter sim --sim-can [ev]`, `python tools/bench_canrate.py`; the ECUs are `simulator/canbus.py` |
+| Generate the expected pull / compare it with the real one | `python hakake_sim.py --pull` (sim DB with the cell log, both channels' frames as JSONL, a synthetic fixture); `python tools/compare_sessions.py expected observed` |
 | Ingest a remote car over MQTT / build a gauge on the stream | `docs/MQTT.md` (the public wire protocol: topics, JSON schemas, `mosquitto_sub` examples, a Python and a browser gauge), `bridge/README.md` (the Raspberry Pi side); `--adapter mqtt`, `mqttsource.py`, the `mqtt` block in `config.local.json` |

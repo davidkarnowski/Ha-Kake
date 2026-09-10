@@ -38,7 +38,8 @@ was not.
 | `web/store.py` | SQLite time series; schema/insert/history/daily built from the profile's `HISTORY_COLS` |
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag/resize |
-| `simulator/`, `hakake_sim.py` | the simulated car: model, knobs, scenarios, encoder; rig, control API, history generator |
+| `simulator/`, `hakake_sim.py` | the simulated car: model, knobs, scenarios, encoder; rig, control API, history generator; `canbus.py` is the simulated CAN bus (ECUs at real frame rates) and `--pull` the scripted acceleration |
+| `tools/` | `bench_transport.py` (adapter round trips), `bench_canrate.py` (the app at CAN frame rates), `compare_sessions.py` (expected vs observed) |
 | `record_session.py` | record a drive, derive a fixture from raw captures, or convert a captured MQTT stream (`--from-mqtt`) |
 | `bridge/` | the Raspberry Pi side of MQTT ingestion: `hakake_bridge.py` (SocketCAN → broker, read-only enforced on the Pi, listen-only for EV-CAN), systemd unit, config example, install/sizing README. Standalone — nothing from the tree |
 | `tests/` | pytest, no hardware; `tests/fixtures/` holds real captured frames |
@@ -97,6 +98,11 @@ python web/app.py --db /tmp/ui.db --no-reader
 
 # The reader alone, same transports
 python web/reader.py --adapter replay --vehicle lancer_2009
+
+# Simulated ECUs on a virtual CAN bus, at the frame rates a real Leaf broadcasts
+python web/app.py --adapter sim --sim-can            # Car-CAN; add `ev` for both channels
+python tools/bench_canrate.py                        # what the app costs at those rates
+python hakake_sim.py --pull                          # a scripted acceleration + expected-curve fixture
 ```
 
 `--adapter replay` and `--adapter sim` each write to their own throwaway
