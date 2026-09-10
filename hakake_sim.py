@@ -27,6 +27,15 @@ one idea: *a car that is not there*.
      simulator/history.py and the "iterating on the UI" section of
      docs/SIMULATOR.md.
 
+  5. **The pull** (`--pull`). One scenario — a standing-start acceleration to
+     ~50 mph — run offline through the simulated CAN rig (simulator/canbus.py)
+     and written down three ways: a sim database with the cell log armed
+     (Playback shows the pull, the cells sagging, an auto-detected flag), the
+     raw frame stream of both CAN channels as JSON lines in the MQTT format
+     (research/, gitignored), and a thinned replay fixture that is the
+     EXPECTED half of `tools/compare_sessions.py` for the day the CANable
+     arrives. Every EV-CAN byte in it is ASSERTED. simulator/pull.py.
+
 Populate a database and point the dashboard at it:
 
     python hakake_sim.py --generate --days 180 --out /tmp/ui.db
@@ -686,6 +695,42 @@ def run_generate(args):
     return 0
 
 
+def run_pull(args):
+    """`--pull`: the simulated acceleration pull, three ways (simulator/pull.py)."""
+    from simulator import pull
+
+    t0 = time.monotonic()
+    try:
+        sm = pull.run_pull(scenario=args.scenario or "pull", seed=1 if args.seed is None else args.seed,
+                           vehicle=args.vehicle, out_db=args.out, jsonl=args.jsonl, fixture=args.fixture,
+                           bus_load=args.bus_load, write_fixture=not args.no_fixture,
+                           log=(lambda *a: None) if args.json else print)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    sm["seconds"] = round(time.monotonic() - t0, 2)
+    if args.json:
+        emit(sm, True)
+        return 0
+    pk = sm["peak"]
+    print(f"  wrote {sm['rows']:,} readings ({sm['cell_rows']:,} cell rows) over {sm['duration_s']} s "
+          f"of simulated time in {sm['seconds']}s")
+    print(f"  peak {pk['current_a']:.0f} A / {pk['power_kw']:.0f} kW at {pk['speed_mph']:.0f} mph, "
+          f"t = {pk['t']} s; lowest cell {pk.get('cell_min')} mV, pack {pk.get('pack_v')} V")
+    print(f"  database: {sm['db']}")
+    print(f"  stream:   {sm['jsonl']}  ({sm['stream_lines']:,} lines: {sm['frames_car']:,} Car-CAN, "
+          f"{sm['frames_ev']:,} EV-CAN frames, {sm['uds_requests']} UDS answers)")
+    if sm["fixture"]:
+        print(f"  fixture:  {sm['fixture']}  ({sm['fixture_frames']} timeline frames, synthetic: true)")
+    print("  *** SIMULATED DATA — not a reading from any vehicle; every EV-CAN byte is ASSERTED ***")
+    print("\n  Play it back:")
+    print(f"    {sm['playback']}     # then Playback in the header")
+    if sm["fixture"]:
+        print("  Compare with the real thing when the board arrives:")
+        print(f"    python tools/compare_sessions.py {os.path.relpath(sm['fixture'], _ROOT)} <observed.json|.db|.jsonl>")
+    return 0
+
+
 def build_sim(args):
     """The simulator core, with `--speed` installed as the clock override.
 
@@ -834,10 +879,24 @@ def main(argv=None):
                    help="Seconds between rows while it is parked (default 1800)")
     g.add_argument("--cells-per-day", type=int, default=4, dest="cells_per_day",
                    help="Full 96-cell reads written per simulated day (default 4)")
+    q = ap.add_argument_group("the simulated pull (--pull)")
+    q.add_argument("--pull", action="store_true",
+                   help="Run the acceleration pull offline through the simulated CAN rig and write "
+                        "a sim database (cell log armed), the raw frame stream of both channels "
+                        "(research/sim_pull_<date>.jsonl) and a replay fixture; --scenario/--seed/"
+                        "--out apply (defaults: pull, 1, web/sim_<vehicle>.db)")
+    q.add_argument("--jsonl", default=None, metavar="PATH", help="--pull: where the frame stream goes")
+    q.add_argument("--fixture", default=None, metavar="PATH",
+                   help="--pull: the replay fixture (default tests/fixtures/session_<vehicle>_pull_sim.json)")
+    q.add_argument("--no-fixture", action="store_true", help="--pull: skip the fixture")
+    q.add_argument("--bus-load", type=float, default=1.0, dest="bus_load",
+                   help="--pull: filler scaling for the stream, 0-1 (default 1 = the surveyed rate)")
     args = ap.parse_args(argv)
 
     if args.generate:
         return run_generate(args)
+    if args.pull:
+        return run_pull(args)
 
     try:
         sim = build_sim(args)

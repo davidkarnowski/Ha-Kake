@@ -952,6 +952,11 @@ if __name__ == "__main__":
     ap.add_argument("--sim-serial", default=None, metavar="DEV",
                     help="Talk to a simulator pty (hakake_sim.py --pty) over the real "
                          "serial transport (--adapter sim)")
+    ap.add_argument("--sim-can", nargs="?", const="car", choices=["car", "ev"], default=None,
+                    metavar="BUS",
+                    help="Run the model's ECUs on an in-process virtual CAN bus behind the native "
+                         "CAN façade at the real frame rate (--adapter sim); 'ev' also starts the "
+                         "EV-CAN channel (listen-only)")
     ap.add_argument("--db", default=None, help="SQLite file (default: the profile's; replay/sim get their own)")
     args = ap.parse_args()
     if args.vehicle:
@@ -978,6 +983,10 @@ if __name__ == "__main__":
             os.environ["HAKAKE_SIM_SEED"] = str(args.seed)
         if args.speed:
             os.environ["HAKAKE_SIM_SPEED"] = str(args.speed)
+        if args.sim_can and args.sim_serial:
+            ap.error("--sim-can and --sim-serial are two different rigs; pick one")
+        if args.sim_can:
+            os.environ["HAKAKE_SIM_CAN"] = args.sim_can
         if args.sim_serial:
             # The model lives in another process (hakake_sim.py --pty), and so
             # does its control API: --sim-control here names the port THAT rig

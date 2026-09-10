@@ -915,9 +915,167 @@ async def open_can(cfg=None, log=print, source_kwargs=None):
     """Build and connect the native CAN transport from configuration.
     Called by elm327.detect_adapter(prefer="can"); never by auto-detect."""
     opts = can_config(cfg)
+    if opts["interface"] == "sim":
+        raise ConnectionError(SIM_CAN_ADVICE)          # the simulated bus is `--adapter sim --sim-can`
     stmin_override = opts.pop("stmin_override")
     opts.update(source_kwargs or {})
     src = LocalSource(log=log, **opts)
     elm = CanFacade(src, stmin_override=stmin_override, log=log)
+    await elm.connect(log=log)
+    return elm
+
+
+# ── the simulated bus: `--adapter sim --sim-can` (simulator/canbus.py) ────
+#
+# The model's ECUs on an in-process python-can `virtual` channel, and this
+# façade on the same channel — the whole transport path exercised at the
+# real frame rate (≈1,700 frames/s on Car-CAN) with no board and no car.
+# Everything about it is a fixture, not evidence (CLAUDE.md §5): the rows go
+# to the throwaway sim database because the reader is in `--adapter sim`
+# mode, every record carries the simulated stamp, and `can_interface: "sim"`
+# through `--adapter can` is refused above rather than allowed to write
+# generated rows next to real ones. This block is additive; nothing above it
+# depends on it.
+
+SIM_CAN_ENV = "HAKAKE_SIM_CAN"           # "car" (or "1") | "ev": which channels to start
+SIM_CAN_ADVICE = ('can_interface "sim" is the simulated bus: run it as '
+                  '`python web/app.py --adapter sim --sim-can` (rows go to the sim database), '
+                  'never through --adapter can')
+
+
+def sim_can_mode(value=None):
+    """Normalise HAKAKE_SIM_CAN / --sim-can: None (off), "car" or "ev"."""
+    v = (value if value is not None else env(SIM_CAN_ENV)) or ""
+    v = str(v).strip().lower()
+    if v in ("", "0", "no", "false", "off"):
+        return None
+    if v in ("1", "yes", "true", "on", "car"):
+        return "car"
+    if v == "ev":
+        return "ev"
+    raise ConnectionError(f"{SIM_CAN_ENV} / --sim-can must be car or ev, not {v!r}")
+
+
+class SimCanSource(LocalSource):
+    """A `virtual` python-can channel with the simulator's ECUs running on it.
+
+    `bus` is the channel this source listens on ("car" normal, "ev"
+    listen-only as always); the Car-CAN ECU is always started because it is
+    the model's clock, the EV-CAN ECU when `ev=True` or `bus="ev"`."""
+
+    def __init__(self, sim, bus="car", ev=False, lock=None, bus_load=None, log=print, **kw):
+        from simulator.canbus import CHANNELS
+        super().__init__(interface="virtual", channel=CHANNELS[bus], bus=bus, log=log, **kw)
+        self.sim = sim
+        self.lock = lock if lock is not None else threading.RLock()
+        self.ev = bool(ev) or bus == "ev"
+        self._bus_load = bus_load
+        self.ecus = []
+
+    def _open(self):
+        from simulator.canbus import SimCanEcu
+        car = SimCanEcu(self.sim, bus="car", lock=self.lock, bus_load=self._bus_load,
+                        clock=True, log=self.log).start()
+        self.ecus.append(car)
+        if self.ev:
+            self.ecus.append(SimCanEcu(self.sim, bus="ev", lock=self.lock, bus_load=self._bus_load,
+                                       clock=False, log=self.log).start())
+        b = super()._open()
+        self.firmware = "sim"
+        self.name = f"python-can {can.__version__} virtual (simulated ECUs)"
+        self.port = f"sim-can:{self.channel}"
+        return b
+
+    def _close(self):
+        super()._close()
+        for e in self.ecus:
+            try:
+                e.stop()
+            except Exception:
+                pass
+        self.ecus = []
+
+    def bus_load(self):
+        return self.ecus[0].bus_load() if self.ecus else (self._bus_load if self._bus_load is not None else 1.0)
+
+
+class SimCanFacade(CanFacade):
+    """`CanFacade` over `SimCanSource`, labelled the way `SimELM` is: the
+    reader files its rows under `sim`, every record carries the simulated
+    stamp with scenario, seed and bus load, and the control API for the
+    cockpit runs in-process like `SimELM.serve_control()`."""
+
+    adapter_type = "sim"
+    simulated = True
+
+    def __init__(self, source, scenario=None, seed=None, vehicle=None, control_port=None, **kw):
+        super().__init__(source, **kw)
+        self.sim = source.sim
+        self.scenario = scenario or getattr(self.sim, "scenario", None) or "default"
+        self.seed = seed if seed is not None else getattr(self.sim, "seed", None)
+        self.vehicle = vehicle or getattr(self.sim, "vehicle", None)
+        self.control_port = control_port
+        self.control_url = None
+        self._control = None
+
+    async def connect(self, log=print):
+        log("  SIMULATOR on a simulated CAN bus — no adapter, no car. Every value below is generated.")
+        log(f"  model: {self.vehicle or 'unknown profile'}  scenario: {self.scenario}  seed: {self.seed}"
+            f"  bus load: {self.source.bus_load() if hasattr(self.source, 'bus_load') else 1.0:g}"
+            f"  channels: car{' + ev' if getattr(self.source, 'ev', False) else ''}")
+        await super().connect(log=log)
+        if self.control_port is not None:
+            self.serve_control(self.control_port, log=log)
+        log("  *** SIMULATED DATA — not a reading from any vehicle; EV-CAN bytes are ASSERTED ***")
+
+    async def close(self):
+        if self._control is not None:
+            try:
+                self._control.shutdown()
+            except Exception:
+                pass
+            self._control = None
+        await super().close()
+
+    def serve_control(self, port, log=print):
+        """The knob server, in-process, with SimELM's busy-port fallback."""
+        from hakake_sim import serve_control          # lazy: utility, not a dependency
+        wanted = int(port or 0)
+        try:
+            self._control = serve_control(self.sim, wanted, lock=self.source.lock, log=log)
+        except OSError as e:
+            if wanted == 0:
+                raise
+            self._control = serve_control(self.sim, 0, lock=self.source.lock, log=log)
+            log(f"  *** sim control port {wanted} is busy ({e.strerror or e}) — serving on "
+                f"{self._control.server_address[1]} instead ***")
+        self.control_port = self._control.server_address[1]
+        self.control_url = f"http://127.0.0.1:{self.control_port}"
+        log(f"  sim control API: {self.control_url}/sim/schema  (GET/POST — see docs/SIMULATOR.md)")
+        return self._control
+
+    def marker(self):
+        m = super().marker()
+        m.update({"simulated": True, "sim_scenario": self.scenario, "sim_seed": self.seed,
+                  "sim_vehicle": self.vehicle, "sim_control_url": self.control_url or "",
+                  "sim_transport": f"can {self.adapter_port}",
+                  "sim_bus_load": self.source.bus_load() if hasattr(self.source, "bus_load") else 1.0})
+        return m
+
+
+async def open_sim_can(log=print, mode=None, sim=None, scenario=None, seed=None, knobs=None,
+                       control_port=None, bus_load=None, bus="car", source_kwargs=None):
+    """Build and connect the simulated-bus transport.
+
+    Called by `elm327.detect_adapter(prefer="sim")` when HAKAKE_SIM_CAN is
+    set — the `--adapter sim --sim-can [ev]` launch — and by the bench and
+    the tests directly. Never by auto-detect, never by `--adapter can`."""
+    from elm327 import make_simulator                 # lazy: elm327 imports this module lazily too
+    mode = mode or sim_can_mode() or "car"
+    if sim is None:
+        sim = make_simulator(vehicle=None, scenario=scenario, seed=seed, knobs=knobs)
+    src = SimCanSource(sim, bus=bus, ev=(mode == "ev"), bus_load=bus_load, log=log,
+                       **(source_kwargs or {}))
+    elm = SimCanFacade(src, scenario=scenario, seed=seed, control_port=control_port, log=log)
     await elm.connect(log=log)
     return elm

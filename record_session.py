@@ -303,8 +303,12 @@ def mqtt_stream_events(path):
             yield ("frame", t, id_hex, frame_line(id_hex, data))
 
 
-def from_mqtt(path, out=None, vehicle=None, period=1.0, notes="", log=print):
-    """Build a replay fixture from a captured `rx/#` (and optionally `tx/uds`) stream."""
+def from_mqtt(path, out=None, vehicle=None, period=1.0, notes="", log=print,
+              synthetic=False, adapter="hakake-bridge (mqtt)"):
+    """Build a replay fixture from a captured `rx/#` (and optionally `tx/uds`) stream.
+
+    `synthetic=True` marks a stream that did not come from a car (the
+    simulated CAN rig's, `hakake_sim.py --pull`); replay reports it as such."""
     vehicle = get_vehicle(vehicle)
     period = max(0.05, float(period or 1.0))
     passive = []                    # (t, id_hex, line)
@@ -353,7 +357,7 @@ def from_mqtt(path, out=None, vehicle=None, period=1.0, notes="", log=print):
         fr["uds"].setdefault(tx, {})[cmd] = list(lines)
     ordered = [frames[k] for k in sorted(frames)]
 
-    doc = new_doc(vehicle, adapter="hakake-bridge (mqtt)",
+    doc = new_doc(vehicle, adapter=adapter, synthetic=synthetic,
                   source=[f"{os.path.basename(path)} — rx/# stream captured over MQTT "
                           f"(docs/MQTT.md), converted by record_session.py --from-mqtt"],
                   notes=notes or ("Converted from a captured MQTT stream: every line is a frame the "

@@ -434,7 +434,8 @@ _child = {"proc": None}
 
 def run_reader_supervised(interval, adapter_pref, fast, budget=1.5, vehicle=None,
                           fixture=None, speed=None, db=None, scenario=None,
-                          seed=None, knobs=None, sim_control=None, sim_serial=None):
+                          seed=None, knobs=None, sim_control=None, sim_serial=None,
+                          sim_can=None):
     """Run reader.py as a child process and restart it whenever it exits.
 
     The reader lives in its own process because CoreBluetooth callbacks on a
@@ -462,6 +463,8 @@ def run_reader_supervised(interval, adapter_pref, fast, budget=1.5, vehicle=None
         args += ["--sim-control", str(sim_control)]
     if sim_serial:
         args += ["--sim-serial", sim_serial]
+    if sim_can:
+        args += ["--sim-can", sim_can]
     if db:
         args += ["--db", db]
     backoff = 2
@@ -533,6 +536,11 @@ if __name__ == "__main__":
     ap.add_argument("--sim-serial", default=None, metavar="DEV",
                     help="Point the real serial transport at a simulator pty from "
                          "hakake_sim.py --pty (--adapter sim)")
+    ap.add_argument("--sim-can", nargs="?", const="car", choices=["car", "ev"], default=None,
+                    metavar="BUS",
+                    help="With --adapter sim: the model's ECUs on an in-process virtual CAN bus "
+                         "behind the native CAN façade, at the real frame rate (≈1,700 frames/s); "
+                         "'ev' also starts the EV-CAN channel. docs/SIMULATOR.md")
     ap.add_argument("--demo", nargs="?", const=DEMO_DIR, default=None,
                     help="Serve canned JSON from a demo directory (default: docs/demo), no reader")
     ap.add_argument("--db", default=None, metavar="PATH",
@@ -599,6 +607,9 @@ if __name__ == "__main__":
             print("SIMULATOR MODE — a running model, not a car. Nothing below is a reading from any vehicle.")
             if args.sim_serial:
                 print(f"  transport: real serial to a simulator pty at {args.sim_serial}")
+            if args.sim_can:
+                print(f"  transport: simulated CAN bus (python-can virtual, the model's ECUs at the "
+                      f"real frame rate; channels car{' + ev' if args.sim_can == 'ev' else ''})")
             print(f"  scenario: {args.scenario or 'default'}   seed: {args.seed}")
             print(f"  database: {db} (throwaway — the real one is untouched)")
         print("Starting reader in background...")
@@ -608,7 +619,7 @@ if __name__ == "__main__":
         threading.Thread(target=run_reader_supervised,
                          args=(args.interval, pref, args.fast, args.budget, args.vehicle,
                                args.fixture, args.speed, db, args.scenario, args.seed,
-                               args.knob, args.sim_control, args.sim_serial),
+                               args.knob, args.sim_control, args.sim_serial, args.sim_can),
                          daemon=True).start()
     else:
         print("Dashboard only — run reader.py separately.")

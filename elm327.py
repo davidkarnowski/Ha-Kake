@@ -493,6 +493,22 @@ async def detect_adapter(prefer=None, log=print):
     errors = []
 
     if prefer == "sim":
+        if env("HAKAKE_SIM_CAN"):
+            # `--adapter sim --sim-can [ev]`: the model's ECUs on an in-process
+            # virtual CAN bus behind the native-CAN façade (cantransport.py),
+            # so the whole stack runs at the real frame rate with no board.
+            # Still "sim": throwaway database, simulated stamp, never auto.
+            from cantransport import open_sim_can
+            seed = env("HAKAKE_SIM_SEED")
+            port = env("HAKAKE_SIM_CONTROL_PORT")
+            try:
+                knobs = json.loads(env("HAKAKE_SIM_KNOBS") or "{}")
+            except json.JSONDecodeError as e:
+                raise ConnectionError(f"HAKAKE_SIM_KNOBS is not valid JSON: {e}")
+            return await open_sim_can(log=log, scenario=env("HAKAKE_SIM_SCENARIO") or None,
+                                      seed=int(seed) if seed not in (None, "") else None,
+                                      knobs=knobs or None,
+                                      control_port=int(port) if port not in (None, "") else None)
         serial_path = env("HAKAKE_SIM_SERIAL")
         if serial_path:
             # The model is in another process, behind a pty published by

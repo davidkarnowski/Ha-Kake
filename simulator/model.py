@@ -399,11 +399,28 @@ COUPLING_VERDICTS = ("implemented", "kept", "not modelled")
 # then falling off linearly to nothing at MOTOR_ZERO_MPH. The largest
 # traction draw the drive ever saw was −23.8 kW at 26.6 mph, which bounds
 # MOTOR_PEAK_KW from below and nothing more.
+#
+# THE PEDAL TERM'S SHAPE — revised 2026-09-09 for the simulated pull, still
+# ASSERTED. Two changes, each the smallest that lets the model produce the
+# one hard number it has: the owner saw −271 A / −89 kW at 54 mph with the
+# pedal floored on 2026-09-08 (OWNER REPORT, one reading, no logger). (1) The
+# pedal term now goes through DRIVE_EFF like the road load already did — the
+# 80 kW is the motor's shaft rating and the pack pays the inverter and motor
+# losses on top, so a floored pedal asks the pack for 80 / 0.85 ≈ 94 kW.
+# (2) A motor's envelope is constant TORQUE below its base speed and constant
+# POWER above it, falling off only near maximum rpm; the old shape started
+# falling straight after MOTOR_BASE_MPH, which put the peak at 63 kW and made
+# the observed pull unreachable at any speed. MOTOR_KNEE_MPH is where the
+# fall-off now begins. With these, a floored pedal at 50–54 mph draws
+# 94 kW + road load ≈ 103–105 kW ≈ −265..−275 A at 75 % SOC — the observed
+# figure, by construction. Nothing above 41.4 mph has been logged, so the
+# knee and the fall-off are shapes, not measurements.
 ROAD_ROLL_W_PER_MS = 150.0
 ROAD_DRAG_W_PER_MS3 = 0.38
 DRIVE_EFF = 0.85
 MOTOR_PEAK_KW = 80.0
 MOTOR_BASE_MPH = 25.0
+MOTOR_KNEE_MPH = 60.0          # ASSERTED — constant power from base speed to here
 MOTOR_ZERO_MPH = 120.0
 # the pedal "carries" the road load: below PEDAL_HOLD_PCT the cruise term
 # ramps in, so lifting the pedal to 0 means coasting, not a 6 kW draw
@@ -626,6 +643,11 @@ def build_knobs():
       "Simulated seconds per real second. An explicit --speed OVERRIDES this "
       "rather than multiplying it; the effective figure is state()['time_scale']",
       "", 0.01, 3600.0, label="Clock speed")
+    a("bus_load", "float", 1.0,
+      "Simulated CAN bus load (the --sim-can rig only): scales the FILLER frames the "
+      "simulated ECUs put on the virtual bus, 1 = the surveyed rate (≈1,700 frames/s "
+      "on Car-CAN, ≈790 on EV-CAN); the ids the profile decodes are always sent",
+      "", 0.0, 1.0, label="CAN bus load")
 
     K.group("faults")
     a("fault.cell_degraded", "bool", False,
@@ -896,8 +918,11 @@ class LeafModel:
             return 0.0
         mph = max(0.0, k["speed_mph"])
         hold = _clamp01(k["accel_pedal_pct"] / PEDAL_HOLD_PCT)
-        envelope = _clamp01(mph / MOTOR_BASE_MPH) * _clamp01(1.0 - mph / MOTOR_ZERO_MPH)
-        return cruise_kw(mph) * hold + pedal * MOTOR_PEAK_KW * envelope
+        # torque-limited below base speed, constant power to the knee, then
+        # falling to nothing at MOTOR_ZERO_MPH (ASSERTED shape, see above)
+        envelope = (_clamp01(mph / MOTOR_BASE_MPH)
+                    * _clamp01((MOTOR_ZERO_MPH - mph) / (MOTOR_ZERO_MPH - MOTOR_KNEE_MPH)))
+        return cruise_kw(mph) * hold + pedal * MOTOR_PEAK_KW / DRIVE_EFF * envelope
 
     def regen_kw(self):
         """Energy going back in, kW (positive = into the pack). ASSERTED."""
@@ -1416,6 +1441,8 @@ class LeafModel:
             "turn_signal": k["turn_signal"],
             "start_state": k["start_state"],
             "units_miles": bool(k["units_miles"]),
+            # the rig: how busy the simulated CAN bus is (simulator/canbus.py)
+            "bus_load": round(float(k.get("bus_load", 1.0)), 3),
             "tpms_psi": [round(k[f"tpms_{t}"], 2) for t in TPMS_ORDER],
             # climate
             "hvac_on": bool(k["hvac_on"]),
