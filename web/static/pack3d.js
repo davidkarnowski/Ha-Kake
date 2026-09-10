@@ -33,7 +33,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 
 const VIEWS = { iso: [1500, 1300, 1700], top: [1, 2600, 1], rear: [-2100, 700, 0], driver: [200, 650, -2300] };
 // scale 'abs' is the cell grid's own colouring, so a pair reads the same colour side by side
-const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '', mode: '' };
+const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '', mode: '',
+                       fixedLo: '', fixedHi: '' };   // the fixed scale's bounds; blank = the profile's own range
 const WHITE = new THREE.Color(0xffffff), BLUE = new THREE.Color(0x42a5f5), ACCENT = 0x4fc3f7;
 const EDGE_RADIUS = 6;                                   // mm, the real module's rounded edge
 
@@ -186,7 +187,7 @@ function valuesOf(data) { const v = data && data[mode().key]; return Array.isArr
 function pairCss(val, f, i, sc) {
   const md = mode();
   if (state.opts.scale === 'abs' && !md.invert) return Tiles.cellColor(val, f.min, f.max);   // exactly the grid's call
-  let t = sc.t(val, f, i, state.rest, md);
+  let t = sc.t(val, f, i, state.rest, md, state.opts);
   if (md.invert) t = 1 - t;                                                                // temperatures: hot is red
   return Tiles.cellColor(t, 0, 1);
 }
@@ -226,7 +227,7 @@ function paint() {
     if (show) { labelled.add(b.v); l.element.textContent = `${b.v + 1} · ${cells[b.v]}`; l.element.classList.toggle('hot', b.v === f.imin); l.element.classList.toggle('high', b.v === f.imax); }
   }
   const ends = state.host.querySelectorAll('.pack3d-legend span');
-  if (ends.length === 2) { ends[0].textContent = sc.lo(f, md.unit, md); ends[1].textContent = sc.hi(f, md.unit, md); }
+  if (ends.length === 2) { ends[0].textContent = sc.lo(f, md.unit, md, state.opts); ends[1].textContent = sc.hi(f, md.unit, md, state.opts); }
   paintSensors(data);
   readout(state.hover >= 0 ? state.hover : state.pinned, cells, f);
   paintSelection(cells, f, sc);
@@ -498,6 +499,9 @@ if (window.TileStudio && TileStudio.menuExtra) {
     box.innerHTML = `<h5>3D pack</h5>
       ${MODES.length > 1 ? `<div class="row"><label>Show</label>${sel('mode', MODES.map(m => [m.id, `${m.name}s (${m.unit})`]))}</div>` : ''}
       <div class="row"><label>Colour by</label>${sel('scale', md.scales.map(k => [k, PackLayout.SCALES[k].label]))}</div>
+      <div class="row"><label>Fixed range</label><input type="number" data-k="fixedLo" step="1" value="${o.fixedLo ?? ''}" placeholder="${PackLayout.fixedRange(md, {})[0]}" style="width:78px">
+        <label style="min-width:0">to</label><input type="number" data-k="fixedHi" step="1" value="${o.fixedHi ?? ''}" placeholder="${PackLayout.fixedRange(md, {})[1]}" style="width:78px"> <span style="color:var(--dim)">${md.unit}</span></div>
+      <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Used by the <i>fixed range</i> scale, where one colour always means one ${md.unit} value. Blank uses the profile's range.</div>
       <div class="row"><label>Values</label>${sel('labels', [['minmax', 'lowest and highest pair'], ['hover', 'hover only'], ['all', 'every pair']])}</div>
       <div class="row"><label>Case</label><input type="range" data-k="case" min="0" max="60" value="${Math.round((o.case ?? DEFAULT_OPTS.case) * 100)}"> <span style="color:var(--dim)">opacity</span></div>
       <div class="row seg">${Object.keys(VIEWS).map(v => `<button data-view="${v}" class="${(o.view || DEFAULT_OPTS.view) === v ? 'on' : ''}">${v}</button>`).join('')}<span style="color:var(--dim)">view</span></div>

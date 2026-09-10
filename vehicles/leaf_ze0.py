@@ -225,8 +225,14 @@ PACK_LAYOUT = [
 # (`split: 2` is the layout default). A pack whose ECU reports temperatures per
 # module would add a second mode with `key` naming that list (docs/PACK3D_GUIDE.md).
 PACK_MODES = [
+    # `fixed` is the range a colour never moves off: the same bounds the signal
+    # registry declares for the lowest and highest pair below, which is what a
+    # ZE0 pair is ever expected to read — about 3.0 V deeply sagged under load
+    # to 4.2 V full. The `abs` scale rescales to each frame instead, so red is
+    # "the lowest pair right now"; both are offered and the tile chooses.
     {"id": "volt", "key": "cells", "name": "cell pair", "unit": "mV",
-     "scales": ["abs", "dev", "drop"], "dev": 50, "drop": 300},
+     "scales": ["abs", "fixed", "dev", "drop"],
+     "dev": 50, "drop": 300, "fixed": [3000, 4200]},
 ]
 PACK_SENSORS = [
     {"n": "T1", "x": -770, "y": 131, "z": 0,    "where": "rear block, centre back — usually the hottest"},

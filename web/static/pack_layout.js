@@ -70,17 +70,36 @@
     return { min, max, imin, imax, mean: n ? sum / n : 0 };
   }
 
+  // The `fixed` scale's bounds: the tile's own two numbers when the user has set
+  // them, else the range the profile declares for this mode (`fixed: [lo, hi]`).
+  // A reversed or equal pair falls back to the profile's, so a half-typed number
+  // in the menu cannot blank the tile.
+  function fixedRange(cfg, opts) {
+    const dflt = (cfg && cfg.fixed) || [0, 1];
+    const num = v => (v === '' || v == null || isNaN(+v)) ? null : +v;
+    const lo = num(opts && opts.fixedLo), hi = num(opts && opts.fixedHi);
+    const a = lo == null ? dflt[0] : lo, b = hi == null ? dflt[1] : hi;
+    return b > a ? [a, b] : [dflt[0], dflt[1]];
+  }
+
   // Colour scales: t ∈ [0, 1] feeds Tiles.cellColor (0 = red/low, 1 = blue/high);
   // a mode with `invert: true` (temperatures: hot should be red) flips t.
-  //   abs  — the grid's own scale: lowest value of the frame → highest
-  //   dev  — deviation from the mean at that instant; ±cfg.dev spans the scale
-  //          (the weak-cell view: under load every pair sags, this shows who sags more)
-  //   drop — drop from the value's own rest reading (first frame seen); cfg.drop → 0
-  //          (a per-pair internal-resistance proxy; voltage packs only)
+  //   abs   — the frame's own range: its lowest value → its highest. Rescales every
+  //           frame, so one colour means different voltages as the pack sags.
+  //   fixed — a range that never moves (cfg.fixed, or the tile's own two numbers):
+  //           red is always the same voltage, which is what a playback wants
+  //   dev   — deviation from the mean at that instant; ±cfg.dev spans the scale
+  //           (the weak-cell view: under load every pair sags, this shows who sags more)
+  //   drop  — drop from the value's own rest reading (first frame seen); cfg.drop → 0
+  //           (a per-pair internal-resistance proxy; voltage packs only)
   const SCALES = {
     abs:  { label: 'absolute (grid scale)',
             t: (v, f) => f.max === f.min ? 1 : (v - f.min) / (f.max - f.min),
             lo: (f, u) => `${f.min} ${u}`, hi: (f, u) => `${f.max} ${u}` },
+    fixed:{ label: 'fixed range',
+            t: (v, f, i, rest, cfg, opts) => { const r = fixedRange(cfg, opts); return clamp((v - r[0]) / (r[1] - r[0]), 0, 1); },
+            lo: (f, u, cfg, opts) => `${fixedRange(cfg, opts)[0]} ${u}`,
+            hi: (f, u, cfg, opts) => `${fixedRange(cfg, opts)[1]} ${u}` },
     dev:  { label: 'deviation from the mean',
             t: (v, f, i, rest, cfg) => clamp(0.5 + (v - f.mean) / (2 * ((cfg && cfg.dev) || 50)), 0, 1),
             lo: (f, u, cfg) => `−${(cfg && cfg.dev) || 50} ${u}`, hi: (f, u, cfg) => `+${(cfg && cfg.dev) || 50} ${u} vs mean` },
@@ -90,7 +109,8 @@
   };
 
   // the default mode when a profile declares none: the Leaf's cell pairs
-  const DEFAULT_MODE = { id: 'volt', key: 'cells', name: 'cell pair', unit: 'mV', scales: ['abs', 'dev', 'drop'], dev: 50, drop: 300, invert: false };
+  const DEFAULT_MODE = { id: 'volt', key: 'cells', name: 'cell pair', unit: 'mV', scales: ['abs', 'fixed', 'dev', 'drop'],
+                         dev: 50, drop: 300, fixed: [3000, 4200], invert: false };
 
-  window.PackLayout = { bodies, stats, SCALES, DEFAULT_MODE, clamp, TRAY };
+  window.PackLayout = { bodies, stats, SCALES, DEFAULT_MODE, clamp, fixedRange, TRAY };
 })();

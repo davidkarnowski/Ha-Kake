@@ -859,7 +859,7 @@
   </div>
   <div class="module-grid" id="module-grid"></div>
   <div class="tree-legend">
-    <span>Low</span><div class="legend-gradient"></div><span>High</span>
+    <span id="cell-legend-lo">Low</span><div class="legend-gradient"></div><span id="cell-legend-hi">High</span>
     <span style="margin-left:16px">Each box = 1 module (2 cell pairs)</span>
   </div>
 </div>
@@ -1093,6 +1093,17 @@ function updateDash(data) {
   // Cells
   if (data.cells && data.cells.length) {
     const min = data.cell_min, max = data.cell_max;
+    // Which colour scale this tile uses. `abs` (the default) rescales to the frame:
+    // red is the lowest pair *right now*, so one colour means different voltages as
+    // the pack sags. `fixed` holds the range still, from the profile's own bounds or
+    // the two numbers in the ⋯ menu, so a colour always means the same voltage.
+    const cellOpts = window.TileStudio ? TileStudio.opts('cells') : {};
+    const cellMode = ((window.PACK && PACK.modes && PACK.modes[0]) || PackLayout.DEFAULT_MODE);
+    const fixedCells = cellOpts.scale === 'fixed';
+    const range = fixedCells ? PackLayout.fixedRange(cellMode, cellOpts) : [min, max];
+    const legLo = document.getElementById('cell-legend-lo'), legHi = document.getElementById('cell-legend-hi');
+    if (legLo) legLo.textContent = fixedCells ? `${range[0]} mV` : 'Low';
+    if (legHi) legHi.textContent = fixedCells ? `${range[1]} mV` : 'High';
     document.getElementById('c-min').textContent = min + ' mV';
     document.getElementById('c-max').textContent = max + ' mV';
     document.getElementById('c-avg').textContent = data.cell_avg + ' mV';
@@ -1102,7 +1113,7 @@ function updateDash(data) {
       const el = document.getElementById(`cell-${i}`);
       if (el) {
         el.textContent = mv;
-        el.style.background = cellColor(mv, min, max);
+        el.style.background = cellColor(PackLayout.clamp(mv, range[0], range[1]), range[0], range[1]);
         el.style.color = '#fff';
         el.title = `Cell pair ${i + 1}: ${mv} mV (${(mv/1000).toFixed(3)} V)`;   // shown 1-based, as the service manual counts them
       }
@@ -1718,6 +1729,35 @@ requestAnimationFrame(pbLoop);
 // ⋯ menu rows shared by the cell grid and the 3D pack (TileStudio.menuExtra): arm the
 // cell log — the reader polls the cell voltages every cycle and stores every fresh
 // read. Persisted in the tile's opts; the reader picks it up from tiles.json.
+// Colour rows for the cell grid — the same choice the 3D pack offers, so the two
+// panels can be made to match. Display only: nothing here changes a stored value.
+window.cellColorMenu = function (box, o, commit) {
+  const md = ((window.PACK && PACK.modes && PACK.modes[0]) || PackLayout.DEFAULT_MODE);
+  const dflt = PackLayout.fixedRange(md, {});
+  const h = document.createElement('h5'); h.textContent = 'Colour';
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<label>Colour by</label>
+    <select id="tm-cellscale">
+      <option value="abs" ${o.scale !== 'fixed' ? 'selected' : ''}>${PackLayout.SCALES.abs.label}</option>
+      <option value="fixed" ${o.scale === 'fixed' ? 'selected' : ''}>${PackLayout.SCALES.fixed.label}</option>
+    </select>`;
+  const row2 = document.createElement('div'); row2.className = 'row';
+  row2.innerHTML = `<label>Fixed range</label>
+    <input type="number" id="tm-cellfixedlo" step="1" value="${o.fixedLo ?? ''}" placeholder="${dflt[0]}" style="width:78px">
+    <label style="min-width:0">to</label>
+    <input type="number" id="tm-cellfixedhi" step="1" value="${o.fixedHi ?? ''}" placeholder="${dflt[1]}" style="width:78px">
+    <span style="color:var(--dim)">${md.unit}</span>`;
+  const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
+  why.textContent = `On the frame's own range the lowest pair is always red, so a colour means a different voltage as the pack sags. `
+                  + `On a fixed range one colour is always one voltage. Blank uses the profile's ${dflt[0]}–${dflt[1]} ${md.unit}. Display only.`;
+  row.querySelector('#tm-cellscale').addEventListener('change', e => { o.scale = e.target.value; commit(); });
+  row2.querySelectorAll('input').forEach(inp => inp.addEventListener('change', e => {
+    o[e.target.id === 'tm-cellfixedlo' ? 'fixedLo' : 'fixedHi'] = e.target.value === '' ? '' : +e.target.value;
+    commit();
+  }));
+  box.append(h, row, row2, why);
+};
+
 window.cellLogMenu = function (box, o, commit) {
   const h = document.createElement('h5'); h.textContent = 'Cell log — for drive logs';
   const row = document.createElement('div'); row.className = 'row';
@@ -1844,6 +1884,6 @@ if (!SHOT) setInterval(pollHealth, 60000);
 <script src="/static/alerts.js"></script>
 <script src="/static/vendor/gridstack-all.js"></script>
 <script src="/static/tilestudio.js"></script>
-<script>TileStudio.menuExtra('power', powerMenu); TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init(); applyPowerSmoothing(TileStudio.opts('power'));</script>
+<script>TileStudio.menuExtra('power', powerMenu); TileStudio.menuExtra('cells', (box, o, commit) => { cellColorMenu(box, o, commit); cellLogMenu(box, o, commit); }); TileStudio.init(); applyPowerSmoothing(TileStudio.opts('power'));</script>
 </body>
 </html>

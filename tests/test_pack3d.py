@@ -205,7 +205,7 @@ def test_cell_log_is_offered_from_both_tile_menus_and_shown_in_the_header():
     with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
         page = f.read()
     assert "window.cellLogMenu = function (box, o, commit)" in page
-    assert "TileStudio.menuExtra('cells', cellLogMenu); TileStudio.init();" in page
+    assert "cellColorMenu(box, o, commit); cellLogMenu(box, o, commit);" in page   # both sets of rows, one registration
     assert 'id="celllog-badge"' in page
     assert "classList.toggle('on', !!data.celllog && !data.playback)" in page
     with open(os.path.join(STATIC, "pack3d.js")) as f:
@@ -256,3 +256,63 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     with open(os.path.join(STATIC, "tiles.css")) as f:
         css = f.read()
     assert ".pack3d-pane {" in css and ".pack3d-hint" not in css
+
+
+# ── the fixed colour scale (owner's request 2026-09-10) ──
+
+def test_fixed_scale_holds_its_range_and_clamps_outside_it():
+    """`abs` rescales to every frame, so one colour means different voltages as the
+    pack sags. `fixed` maps a value into bounds that never move — the profile's, or
+    the tile's own two numbers — and clamps anything beyond them."""
+    out = run_node(HARNESS + """
+      const S = P.SCALES, md = { fixed: [3000, 4200], unit: 'mV' }, f = P.stats([3900, 4000, 4100]);
+      const t = (v, o) => S.fixed.t(v, f, 0, null, md, o || {});
+      console.log(JSON.stringify({
+        ends:    [t(3000), t(4200), t(3600)],
+        clamps:  [t(2000), t(5000)],
+        tile:    t(3600, { fixedLo: 3500, fixedHi: 4200 }),
+        legend:  [S.fixed.lo(f, 'mV', md, {}), S.fixed.hi(f, 'mV', md, {})],
+        tileleg: [S.fixed.lo(f, 'mV', md, { fixedLo: 3500 }), S.fixed.hi(f, 'mV', md, { fixedHi: 4150 })],
+        blank:   P.fixedRange(md, { fixedLo: '', fixedHi: '' }),
+        bad:     P.fixedRange(md, { fixedLo: 4500, fixedHi: 3000 }),
+        junk:    P.fixedRange(md, { fixedLo: 'x' }),
+        // the same value keeps its colour as the frame moves; `abs` does not
+        steady:  [t(3900), t(3900)],
+        absmoves: [S.abs.t(3900, P.stats([3900, 4100])), S.abs.t(3900, P.stats([3800, 4100]))],
+      }));""")
+    assert out["ends"] == [0, 1, 0.5]
+    assert out["clamps"] == [0, 1]
+    assert abs(out["tile"] - (3600 - 3500) / (4200 - 3500)) < 1e-9
+    assert out["legend"] == ["3000 mV", "4200 mV"]
+    assert out["tileleg"] == ["3500 mV", "4150 mV"]
+    assert out["blank"] == [3000, 4200] and out["bad"] == [3000, 4200] and out["junk"] == [3000, 4200]
+    assert out["steady"][0] == out["steady"][1]
+    assert out["absmoves"][0] != out["absmoves"][1], "the frame-relative scale moves; that is the point"
+
+
+def test_leaf_declares_a_fixed_range_and_the_validator_demands_a_sane_one():
+    import vehicles
+    leaf = get_vehicle("leaf_ze0")
+    mode = next(m for m in leaf.PACK_MODES if m["id"] == "volt")
+    assert "fixed" in mode["scales"] and "abs" in mode["scales"]
+    lo, hi = mode["fixed"]
+    assert (lo, hi) == (3000, 4200), "the bounds the signal registry declares for a cell pair"
+    assert leaf.SIGNALS["cell_min"]["min"] == lo and leaf.SIGNALS["cell_max"]["max"] == hi
+    for bad in ([4200, 3000], [3000], "3000-4200", None, [True, False]):
+        assert vehicles._fixed_ok(bad) is False, bad
+    assert vehicles._fixed_ok([3000, 4200]) is True
+
+
+def test_both_tiles_offer_the_fixed_range_and_say_it_is_display_only():
+    with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
+        page = f.read()
+    assert "window.cellColorMenu = function (box, o, commit)" in page
+    assert "PackLayout.fixedRange(cellMode, cellOpts)" in page          # the grid resolves the same way
+    assert "cellColor(PackLayout.clamp(mv, range[0], range[1]), range[0], range[1])" in page
+    assert 'id="cell-legend-lo"' in page and 'id="cell-legend-hi"' in page
+    assert "Display only." in page
+    with open(os.path.join(STATIC, "pack3d.js")) as f:
+        src = f.read()
+    assert "sc.t(val, f, i, state.rest, md, state.opts)" in src          # opts reach the scale
+    assert "sc.lo(f, md.unit, md, state.opts)" in src
+    assert 'data-k="fixedLo"' in src and 'data-k="fixedHi"' in src

@@ -251,6 +251,15 @@ def active_vehicle(v=None):
 # Returns problems instead of raising per-problem: an author fixing a new
 # profile wants the whole list at once, and `assert` disappears under -O.
 
+def _fixed_ok(v):
+    """A pack mode's `fixed: [lo, hi]` — the bounds of the colour scale that never
+    moves. Two numbers, low first; anything else is a profile error, because a
+    reversed pair would paint every value the same colour."""
+    return (isinstance(v, (list, tuple)) and len(v) == 2
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
+            and v[0] < v[1])
+
+
 def validate_profile(mod):
     """Check a profile module against the contract. Returns a list of
     human-readable problems; empty means valid."""
@@ -375,8 +384,11 @@ def validate_profile(mod):
         for m in getattr(mod, "PACK_MODES", None) or []:
             if not isinstance(m, dict) or not {"id", "key", "name", "unit"} <= set(m):
                 p.append(f"{name}: PACK_MODES entries need id/key/name/unit, found {m!r}")
-            elif not set(m.get("scales", ["abs"])) <= {"abs", "dev", "drop"}:
+            elif not set(m.get("scales", ["abs"])) <= {"abs", "fixed", "dev", "drop"}:
                 p.append(f"{name}: PACK_MODES {m['id']!r} names an unknown scale")
+            elif "fixed" in m.get("scales", ["abs"]) and not _fixed_ok(m.get("fixed")):
+                p.append(f"{name}: PACK_MODES {m['id']!r} offers the 'fixed' scale, so it needs "
+                         f"'fixed': [lo, hi] — two numbers, lo < hi — found {m.get('fixed')!r}")
 
     # ── item bookkeeping ──
     for i, keys in mod.ITEM_KEYS.items():

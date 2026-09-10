@@ -1454,3 +1454,42 @@ A simulator checks consistency, not truth. Nothing here is evidence about a
 car, and the EV-CAN half is not even evidence about the bus — it is a
 statement of what we expect to find, written down early so it can be proved
 wrong.
+
+### A colour scale that holds still  2026-09-10
+
+Branch `feature/fixed-colour-scale`. The owner, watching a session
+play back, saw the cell colours re-scale as the pack sagged and said he had
+expected a static map from voltage to colour.
+
+He was right about the cause. Both cell tiles colour through `Tiles.cellColor`,
+which normalises a value between a low and a high the caller supplies, and both
+callers supply the *frame's own* lowest and highest pair. So red has always
+meant "the lowest pair in this frame", not a voltage, and in playback both ends
+of the scale slide down together under load. The two other scales the 3D tile
+offers avoid this in their span but not their reference: deviation is from the
+frame's mean, drop is from each pair's own first reading.
+
+So there is now a fourth scale, `fixed`, in the pure layout module beside the
+other three: it maps a value into bounds that never move and clamps outside
+them. The bounds come from the profile — `PACK_MODES` gains
+`fixed: [3000, 4200]`, the same numbers the signal registry already declares
+for the lowest and highest pair — and either tile can override them with two
+numbers in its ⋯ menu, blank meaning the profile's. The validator refuses a
+mode that offers the scale without a sane pair, because a reversed range would
+paint every pair one colour. The cell grid gained the same two menu rows and
+resolves its range through the same function the 3D tile uses, so the two
+panels can be put on one scale; each tile keeps its own setting. Both legends
+now name the active range instead of saying Low and High.
+
+**The default did not change**, at the owner's request: the frame-relative
+scale is still what a tile gets. The reason to keep it is the reason the fixed
+scale costs something — on fixed bounds a healthy resting pack occupies a
+narrow slice near the top of the ramp and every pair looks alike, while the
+frame-relative scale always spends the whole ramp on the spread that exists.
+One is for reading a voltage, the other for finding a weak pair.
+
+Display only, and it says so in the menu: no decoder, no record and no stored
+row changes, which is the same rule the power tile's smoothing follows.
+Node-tested for the clamp, the override, the fallback and the legend, plus the
+proof that a value keeps its colour across frames where the frame-relative
+scale moves. Not yet seen in the owner's browser.

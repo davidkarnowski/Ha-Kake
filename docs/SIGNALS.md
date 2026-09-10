@@ -61,6 +61,14 @@ discharging; the dashboard treats |I| < 0.6 A (|P| < 0.25 kW) as idle.
 default (`ITEMS["lbc02"]`, ~1.3 s a read over BLE); the *cell log* tile option
 moves it to every cycle and stores every read, for drive logs.
 
+**The range a pair is expected to hold** is 3000 … 4200 mV: the bounds the
+signal registry declares for `cell_min` and `cell_max`, and the bounds
+`PACK_MODES` gives the *fixed range* colour scale (`docs/PACK3D.md`). They
+are the design envelope, not a measurement — this car has been seen between
+about 3.3 V under a hard pull and 4.1 V at rest near full. Nothing clamps a
+stored reading to them; they only bound a colour, and a value outside them
+paints at the end of the ramp.
+
 ##### Cell order in the pack — verified at the section level
 
 The 3D pack tile places each of the 96 pairs in the car

@@ -52,8 +52,9 @@ to N−1 must be covered exactly once across the stacks — the validator checks
 
 ```python
 {"id": "volt", "key": "cells", "name": "cell pair", "unit": "mV",
- "scales": ["abs", "dev", "drop"],   # which colour scales the ⋯ menu offers
+ "scales": ["abs", "fixed", "dev", "drop"],   # which colour scales the ⋯ menu offers
  "dev": 50, "drop": 300,             # ± span of the deviation scale; the drop scale's full-red distance
+ "fixed": [3000, 4200],              # the fixed scale's bounds — required if "fixed" is offered
  "invert": False}                    # True for temperatures: hot should read red
 ```
 
@@ -65,6 +66,7 @@ chosen mode's unit. The scales:
 | Scale | Colour | For |
 |---|---|---|
 | `abs` | the frame's lowest value → highest, through the grid tile's own `cellColor`, so a voltage pair is the same colour in both panels | any mode |
+| `fixed` | a range that never moves: `fixed: [lo, hi]`, or the tile's own two numbers; outside values clamp | a colour that means the same value in every frame, for playback and drive logs |
 | `dev` | deviation from the frame's mean, ±`dev` | finding the value that departs from its siblings under load |
 | `drop` | drop from the value's own first reading this session, `drop` → full red | voltages: an internal-resistance proxy during a drive |
 

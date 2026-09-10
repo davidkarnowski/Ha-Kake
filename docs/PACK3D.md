@@ -24,9 +24,15 @@ it follows the recording; under `--demo` it shows the demo frame.
 
 | Scale | What `t = 0` (red) … `t = 1` (blue) means | Use it for |
 |---|---|---|
-| **absolute mV (grid scale)** (default) | the frame's lowest pair … its highest | Exactly the grid tile's colouring, so a pair is the same colour in both panels side by side. The slabs are lit so a top face shows its plain colour. |
+| **absolute mV (grid scale)** (default) | the frame's lowest pair … its highest | Exactly the grid tile's colouring, so a pair is the same colour in both panels side by side. The slabs are lit so a top face shows its plain colour. **It rescales every frame**: red is whichever pair is lowest *now*, so in playback the meaning of a colour slides as the pack sags. |
+| **fixed range** | a range that never moves: the profile's `fixed` bounds (3000 … 4200 mV on the Leaf), or the two numbers in the ⋯ menu | Watching a pull or a playback, where a colour must mean one voltage from the first frame to the last. Values outside the range clamp to the ends. The cost is contrast: at rest a healthy pack sits in a narrow slice near the top of the ramp and every pair looks alike, which is what the deviation scale is for. |
 | deviation from pack mean | −50 mV … +50 mV from the pack's mean at that instant | The weak-cell view. Under load every pair sags together; this shows who sags *more*. |
 | drop from own rest voltage | −300 mV … 0 mV below the pair's first value this session | A per-pair internal-resistance proxy during a drive log or playback. |
+
+*Fixed range* in the menu sets the two bounds the fixed scale uses; leave them
+blank for the profile's own. The cell grid carries the same two rows in its ⋯
+menu, so both panels can be put on the same scale — each tile keeps its own
+setting, so setting one does not move the other.
 
 Other options: *Values* (label the lowest and highest pair, hover only, or
 every pair), *Case* opacity, a view preset (iso, top, rear block, driver
