@@ -1366,6 +1366,41 @@ say the same. A test pins it: auth keys in config are ignored, never
 applied. The read-only whitelist is unchanged — it never was the thing
 protecting the broker; the private network is.
 
+### Timing, several adapters, provenance  2026-09-09
+
+Branch `arch/timing-multibus`, two commits, plan §8 and §10. First the
+timing architecture: every item is stamped with when its value was actually
+acquired (`item_ts` / `item_ts_epoch`, a UDS answer as it returned, a passive
+item by its newest frame's arrival), the row keeps the epoch and playback
+rebuilds the ISO, and the per-tile "read at" badge measures from the frame's
+own moment in playback. The native CAN façade keeps the source's timestamp
+beside the laptop's receive time and the reader publishes the median offset
+(`clock_offset_s`, stored on the session, never applied); `ts_source`
+(laptop / driver / bridge) is an additive column on every row. Signals a
+profile marks `peak` keep their min / max / time-of-each between stored
+rows in the row's `extra`, so a 5 s row holds the true peak of a pull and
+the timeline's auto-flags find it. `tools/bench_transport.py --timing` runs
+the reader's own cycle over any adapter and reports jitter, per-item timing
+and clock drift; `docs/TIMING.md` is the authority.
+
+Then the buses: items carry a `bus`, a profile may declare `BUSES`, and an
+`adapters` list in `config.local.json` (or `HAKAKE_ADAPTERS`) opens one
+transport per bus — `--adapter X` stays the shorthand and, deliberately,
+carries no overrides, so the file's `can_bus` still names the bus. The
+cycle's items are grouped by bus and polled under `asyncio.gather`, each
+bus with its own target state, timing and tri-state liveness; only the
+primary bus's silence means asleep; a secondary that raises is dropped and
+reconnected by its own task while the rest keep storing. The record lists
+every adapter (the old `adapter_*` keys stay, from the primary) and the
+header shows a chip per further bus. Provenance: a SIGNALS entry declares
+`sources` and a `tolerance`, the reader's generic resolver picks — pin,
+verified over tentative, fresher, faster — and stamps `<key>_src`; it never
+writes a key a decoder has produced (then `<key>_resolved`), and two fresh
+sources apart beyond tolerance set `<key>_disagree` and log a
+`source_disagree` event on the way in and out. The Leaf's pack current from
+groups 01 and 05 is the worked example — expect disagreements above ±32 A,
+where group 05 wraps, which is the point. 972 tests, fake transports only;
+nothing has run with two adapters or on a native board yet.
 ### A simulated CAN bus, and an acceleration to compare against  2026-09-09
 
 Branch `feature/sim-can-rig`. The CANable had not arrived, and the question

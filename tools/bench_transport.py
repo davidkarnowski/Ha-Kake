@@ -32,6 +32,17 @@ Usage:
 
 The port comes from --port, else HAKAKE_SERIAL_PORT, else the usual glob —
 the device path is machine-specific and never belongs in a committed file.
+
+The timing self-test (docs/TIMING.md) is a different measurement: it runs the
+reader's own `poll_once` over any adapter — the real one, or replay / sim
+with no car — against a throwaway in-memory store, and reports what the
+timestamps are made of: cycle jitter, the per-item `timing` distribution,
+and how the source's clock drifts against this machine's (native CAN, MQTT).
+The numbers the docs quote come from here, never from a model.
+
+  python tools/bench_transport.py --timing --adapter replay --seconds 20
+  python tools/bench_transport.py --timing --adapter usb --seconds 600
+  python tools/bench_transport.py --timing --adapter mqtt --seconds 600 --json
 """
 
 import argparse
@@ -311,9 +322,154 @@ def model_cycle(rows, baud, uds_short=7, uds_long=1, long_bytes=750,
     return uds, at, passive, fixed
 
 
+# ── the timing self-test (docs/TIMING.md §5) ─────────────────────────────
+
+def _pct(sorted_vals, p):
+    if not sorted_vals:
+        return None
+    k = min(len(sorted_vals) - 1, max(0, int(round((len(sorted_vals) - 1) * p))))
+    return sorted_vals[k]
+
+
+def _dist(vals):
+    """{n, min, med, p95, max} of a list of seconds (None-free), rounded to ms."""
+    v = sorted(x for x in vals if x is not None)
+    if not v:
+        return {"n": 0}
+    return {"n": len(v), "min": round(v[0], 4), "med": round(statistics.median(v), 4),
+            "p95": round(_pct(v, 0.95), 4), "max": round(v[-1], 4)}
+
+
+async def timing_run(adapter=None, seconds=20.0, interval=0.5, budget=1.5, fast=False, log=print):
+    """Run the reader's poll_once over `adapter` for `seconds` and measure.
+
+    Returns a dict: `adapter` (type / name / ts_source / clock the rows use),
+    `cycles` (count, the cycle-period distribution and its jitter = stdev),
+    `items` ({item: distribution of `timing`}), `ages` ({item: distribution of
+    item_age at emission}), `offset` (clock_offset_s samples over the run:
+    first / last / min / max / drift per minute — only a transport with a
+    source clock has one) and `rows` (how many the throwaway store took).
+    Nothing here touches the real database or the state file.
+    """
+    import asyncio
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web"))
+    import reader as rd                                  # noqa: E402
+    from store import Store                              # noqa: E402
+    from elm327 import detect_adapter                    # noqa: E402
+
+    class Quiet(rd.Reader):
+        def publish(self, status, message=None, **fields):   # no state file, no MQTT
+            pass
+
+    store = Store(":memory:")
+    r = Quiet(interval, adapter, fast=fast, store=store, budget=budget)
+    elm = await detect_adapter(prefer=adapter, log=log)
+    try:
+        await rd.configure_vehicle(elm)
+        r.target = None
+        r.speed = float(getattr(elm, "SPEED", 1.0) or 1.0)
+        r.passive_instant = bool(getattr(elm, "PASSIVE_INSTANT", False))
+        r.ts_source = str(getattr(elm, "ts_source", None) or "laptop")
+        r.session_id = store.start_session(elm.adapter_type, note="timing self-test")
+        r.refresh_items()
+        loop = asyncio.get_event_loop()
+        t_end = loop.time() + seconds
+        starts, periods, timings, ages, offsets = [], [], {}, {}, []
+        last_start = None
+        rows = 0
+        last_store = loop.time()
+        while loop.time() < t_end:
+            t0 = loop.time()
+            rec, alive = await r.poll_once(elm)
+            if not rec.get("timing"):
+                await asyncio.sleep(min(0.5, max(0.05, r.next_due(loop.time()))))
+                continue
+            if last_start is not None:
+                periods.append(t0 - last_start)
+            last_start = t0
+            starts.append(t0)
+            for i, t in rec["timing"].items():
+                timings.setdefault(i, []).append(t)
+            for i, a in (rec.get("item_age") or {}).items():
+                ages.setdefault(i, []).append(a)
+            if rec.get("clock_offset_s") is not None:
+                offsets.append((t0, rec["clock_offset_s"]))
+            if loop.time() - last_store >= rd.STORE_PERIOD:
+                row = dict(rec)
+                row.update(r.take_peaks())
+                store.insert_reading(row, adapter=elm.adapter_type, ts_source=r.ts_source)
+                rows += 1
+                last_store = loop.time()
+            await asyncio.sleep(max(0.0, interval - (loop.time() - t0)))
+    finally:
+        try:
+            await elm.close()
+        except Exception:
+            pass
+        store.close()
+
+    out = {
+        "adapter": {"type": getattr(elm, "adapter_type", "?"), "name": getattr(elm, "adapter_name", ""),
+                    "ts_source": r.ts_source, "passive_instant": r.passive_instant, "speed": r.speed},
+        "seconds": round(seconds, 1),
+        "cycles": {"n": len(starts), "period": _dist(periods),
+                   "jitter_s": round(statistics.pstdev(periods), 4) if len(periods) > 1 else None},
+        "items": {i: _dist(v) for i, v in sorted(timings.items())},
+        "ages": {i: _dist(v) for i, v in sorted(ages.items())},
+        "rows": rows,
+    }
+    if offsets:
+        first, last = offsets[0], offsets[-1]
+        span = last[0] - first[0]
+        vals = [o for _, o in offsets]
+        out["offset"] = {"n": len(offsets), "first_s": first[1], "last_s": last[1],
+                         "min_s": min(vals), "max_s": max(vals),
+                         "drift_s_per_min": round((last[1] - first[1]) / span * 60, 5) if span > 0 else None}
+    else:
+        out["offset"] = None
+    return out
+
+
+def print_timing(res):
+    a = res["adapter"]
+    print(f"adapter: {a['type']} ({a['name']})  rows stamped by the {a['ts_source']} clock"
+          f"{'  passive instant' if a['passive_instant'] else ''}  est x{a['speed']:g}")
+    c = res["cycles"]
+    p = c["period"]
+    if p.get("n"):
+        print(f"cycles:  {c['n']} in {res['seconds']}s — period min/med/p95/max "
+              f"{p['min']*1000:.0f}/{p['med']*1000:.0f}/{p['p95']*1000:.0f}/{p['max']*1000:.0f} ms, "
+              f"jitter (stdev) {c['jitter_s']*1000:.0f} ms")
+    else:
+        print(f"cycles:  {c['n']} (not enough for a period)")
+    print(f"{'item':<10} {'n':>4} {'min':>7} {'med':>7} {'p95':>7} {'max':>7}   {'age at emission (med/max)':>26}")
+    for i, d in res["items"].items():
+        ag = res["ages"].get(i) or {}
+        age = f"{ag.get('med', 0):.1f}s / {ag.get('max', 0):.1f}s" if ag.get("n") else ""
+        print(f"{i:<10} {d['n']:>4} {d['min']*1000:7.0f} {d['med']*1000:7.0f} {d['p95']*1000:7.0f} "
+              f"{d['max']*1000:7.0f}   {age:>26}")
+    o = res.get("offset")
+    if o:
+        print(f"source clock vs this machine: offset {o['first_s']:+.4f}s → {o['last_s']:+.4f}s over "
+              f"{o['n']} cycles (min {o['min_s']:+.4f}, max {o['max_s']:+.4f}), "
+              f"drift {o['drift_s_per_min']:+.5f} s/min")
+    else:
+        print("source clock: none (an ELM adapter has no timestamps of its own; rows use this machine's clock)")
+    print(f"rows the throwaway store took: {res['rows']}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--timing", action="store_true",
+                    help="the timing self-test: the reader's own cycle over --adapter (docs/TIMING.md)")
+    ap.add_argument("--adapter", default=None,
+                    help="--timing: usb | ble | replay | sim | can | mqtt (default auto)")
+    ap.add_argument("--seconds", type=float, default=20.0, help="--timing: how long to run (default 20)")
+    ap.add_argument("--interval", type=float, default=0.5,
+                    help="--timing: minimum seconds per cycle, the reader's own default (0.5)")
+    ap.add_argument("--fast", action="store_true", help="--timing: fast-lane primary item only")
+    ap.add_argument("--json", action="store_true", help="--timing: print the result as JSON")
     ap.add_argument("--port", help="serial device (default: $HAKAKE_SERIAL_PORT or glob)")
     ap.add_argument("--bauds", default="38400,115200,500000",
                     help="comma-separated baud rates to try (default 38400,115200,500000)")
@@ -325,6 +481,17 @@ def main():
     ap.add_argument("--compare-poll", action="store_true",
                     help="also time the old 50 ms sleep-polling loop")
     args = ap.parse_args()
+
+    if args.timing:
+        import asyncio
+        import json
+        pref = None if args.adapter in (None, "auto") else args.adapter
+        res = asyncio.run(timing_run(pref, seconds=args.seconds, interval=args.interval, fast=args.fast))
+        if args.json:
+            print(json.dumps(res, indent=1))
+        else:
+            print_timing(res)
+        return 0
 
     port = find_port(args.port)
     if not port:

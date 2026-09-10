@@ -369,6 +369,22 @@ only ones also **pending**, i.e. the live fault), `P0122`/`P0223` +
 `P1590` (CVT↔ECM torque-request comms), `P0868` (CVT secondary pressure).
 See the 2026-08-28 WORKLOG entry for interpretation.
 
+## Record keys every vehicle carries — time and provenance (2026-09-09)
+
+Not decoded from any byte; the reader stamps them on every record and row.
+`docs/TIMING.md` is the authority.
+
+| Key | Where | Meaning | Status |
+|---|---|---|---|
+| `timing[item]`, `item_age[item]` | record, `extra` | request duration; seconds since the item last ran at emission (monotonic) | in use since the scheduler |
+| `item_ts[item]` (ISO ms), `item_ts_epoch[item]` | record; `extra` keeps the epoch, playback rebuilds the ISO | when the item's value was acquired — a UDS answer as it returned, a passive item by its newest frame's arrival | test-verified |
+| `frame_ts[item]` | record, `extra` | the source's own timestamp of the newest frame behind a passive item; only on the native CAN / MQTT façade | test-verified in-process; no hardware yet |
+| `ts_source` | record, its own `readings` column | whose clock the row's time is: `laptop` \| `driver` \| `bridge`; NULL on rows from before the column | test-verified |
+| `clock_offset_s` | record, `sessions.clock_offset_s` | `median(t_rx − t_src)` over the last frames; absent on an ELM; never applied to a stored value | test-verified in-process |
+| `<key>_min`, `<key>_max`, `<key>_tmin`, `<key>_tmax`, `<key>_n` | stored row's `extra` only | the envelope of a `peak: True` key since the previous row (Leaf: `pack_v`, `current_a`, `power_kw`, `cell_min`); reset on every row | test-verified |
+| `adapters`, `bus_alive` | record, `extra`; `sessions.adapters` | one entry per bus ({bus, type, name, port, listen_only, speed, connected, alive, …}); the tri-state liveness per bus. The old `adapter_*` keys are the primary bus's | test-verified with fake transports; two real adapters not yet run |
+| `<key>_src`, `<key>_resolved`, `<key>_disagree` | record, `extra` | for a `SIGNALS` entry with `sources`: which source the resolver chose (`"bus:item"` or `"stale"`), its value when a decoder owns `<key>` itself, and `{a, b, delta}` when two fresh sources differ by more than `tolerance` (also a `source_disagree` event). Leaf: `current_a` from `hv_current2_a` (lbc01) and `g05_current_a` (lbc05), tolerance 3 A — expect disagreements while driving above ±32 A, where group 05 wraps | test-verified |
+
 ## Credits
 
 The Leaf CAN IDs, byte offsets and scalings above were cross-checked against

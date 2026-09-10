@@ -188,6 +188,66 @@ scheduled cycle ~4 ms, the reader's own CPU ~15 % of a core at the full rate,
 on the laptop with no wire), and the EV-CAN channel it can add is ASSERTED
 throughout — `docs/SIMULATOR.md`, "The simulated bus".
 
+## Several adapters at once, and where a value comes from
+
+Car-CAN (OBD pins 6/14) and EV-CAN (13/12) are two networks, so two
+adapters, of any kind — an ELM327 and a CANable, two CANables, an MQTT
+bridge per bus. Since 2026-09-09 the reader routes **by item, not by id**:
+
+- **The profile names the bus.** `ITEMS[i]["bus"]` (default `"car"`) and an
+  optional `BUSES` tuple (default `("car",)`); the validator holds every item
+  to it and requires the `FAST_ONLY` items to share one bus — the *primary*,
+  whose silence means the car is asleep.
+- **One transport per bus.** `config.local.json` `"adapters": [{"type":
+  "usb", "bus": "car"}, {"type": "can", "bus": "ev", "can_channel": …}]`
+  (`HAKAKE_ADAPTERS`, a JSON list, wins over the file); an entry's other keys
+  are per-adapter overrides that `detect_adapter(cfg=)` merges over the file
+  (`reader.adapter_entries()`, `reader.entry_cfg()`). `--adapter X` stays the
+  one-entry shorthand for the primary bus and carries no overrides, so the
+  file's `can_bus` still names the bus, as it always did. No list at all
+  means one auto-detected adapter — every run before this date.
+- **Buses poll concurrently.** `poll_once()` groups the cycle's items by bus
+  and runs one coroutine per bus under `asyncio.gather`, each serialising its
+  own commands with its own `ATSH`/`ATCAF` target state (`_targets`),
+  timing, `item_last` and acquisition stamps. A slow BLE cycle on Car no
+  longer holds up a table of 100 Hz EV frames.
+- **Liveness is per bus.** `bus_alive[bus]` is tri-state: `True` when the
+  bus answered with data this cycle, `False` when it answered nothing,
+  `None` before it was polled. Only the primary bus's silence puts the reader
+  to sleep; a silent secondary is reported (`bus_alive`, the header chip says
+  "silent") and nothing else. A secondary transport that *raises* is dropped,
+  reported (`adapters[i].error`), and reconnected by its own task with the
+  supervisor's back-off while the other buses keep polling and storing; the
+  primary raising still takes the whole reader through the supervisor, which
+  reopens every entry.
+- **The record lists every adapter.** `adapters: [{bus, type, name, port,
+  listen_only, speed, connected, alive, clock_offset_s, …marker}]`, one per
+  entry, primary first; the old single `adapter_type` / `adapter_name` /
+  `adapter_port` keys stay and are the primary bus's, so nothing downstream
+  changes. `sessions.adapters` (additive JSON column) keeps the static half.
+  The header shows one chip per further bus.
+
+**Provenance.** Some values are reachable two ways — the Leaf's pack current
+from group 01's sensor 2 and from group 05, one day pack voltage from group
+01 and from `0x1DB` on EV-CAN. The rule: **every source writes its own key,
+the registry names the canonical one and its sources, and a generic
+resolver picks.** A `SIGNALS` entry declares `sources: [{key, item,
+confidence, rate_hz}]` and a `tolerance`; before `apply_policy()` the reader
+runs `resolve_sources()` — a *fresh* source is one whose item ran within 3×
+its period (at least 3 s); precedence is a user pin (config `sources` or the
+tile's `opts.source`), then verified over tentative, then the fresher, then
+the faster. It writes `<key>_src` (`"car:lbc01"`, or `"stale"` when nothing
+is fresh and the last value stands), and the canonical key **only when no
+decoder has produced it** — otherwise `<key>_resolved`, because a stored
+value is the value the car reported (`tests/test_policy_raw.py`). Two fresh
+sources further apart than `tolerance` set `<key>_disagree = {a, b, delta}`
+and log a `source_disagree` event when the disagreement starts and when it
+clears — the February "group 05 against group 01" check, running all the
+time. The Leaf's `current_a` is the worked example (`current_a_resolved`,
+`current_a_src`, `current_a_disagree`, tolerance 3 A); its `apply_policy`
+fusion stays vehicle code beside it. Verified in-process with fake
+transports; nothing has run with two real adapters yet.
+
 ## Data model
 
 **Stored values are the values the car reported.** A profile's `apply_policy()`
@@ -243,6 +303,19 @@ durations independent of sample spacing.
 Never pruned; downsampled on read.
 All timestamps UTC ISO-8601 with `Z`; legacy naive-local data was converted on
 migration.
+
+**Time is three clocks, two of them stored** (`docs/TIMING.md`). The reader
+schedules on the monotonic clock (`item_last`, `item_age`, the store period)
+and stores on the wall clock (`ts` / `ts_epoch`), never mixing them. Each
+row's `extra` carries `item_ts_epoch` — when every item's value was actually
+acquired, which with the sticky cache can be seconds to minutes before the
+row — and the additive `ts_source` column says whose clock the row's time is
+(`laptop` for an ELM, `driver` for python-can, `bridge` for a Pi over MQTT).
+A transport with a clock of its own also yields `frame_ts` per passive item
+and a per-session `clock_offset_s` (`median(t_rx − t_src)`, on `sessions`),
+kept as evidence and never applied. The profile's `peak: True` columns get
+their envelope since the previous row (`<key>_min/_max/_tmin/_tmax/_n`) in
+`extra`, so a 5 s row still holds the true peak of a pull.
 
 **Playback frames go the other way.** `Store.frames(t_from, t_to)` rebuilds
 the `/api/status` shape from rows — the `extra` bag, the columns, the
@@ -429,4 +502,4 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 940 tests at the time of writing.
+that must stay green. 1018 tests at the time of writing.

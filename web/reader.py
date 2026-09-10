@@ -45,13 +45,14 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from elm327 import detect_adapter, set_uds_target, passive_capture  # noqa: E402
+from elm327 import detect_adapter, set_uds_target, passive_capture, load_local_config  # noqa: E402
 from store import Store, utc_now_iso, ev_norm                       # noqa: E402
 import mqttsource            # <prefix>/state + signal/<key> for gauges; no-op without mqtt.host  # noqa: E402
-from vehicles import get_vehicle                                    # noqa: E402
+from vehicles import get_vehicle, peak_keys, buses, item_bus, primary_bus, source_specs  # noqa: E402
 import signals                                                      # noqa: E402
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -107,6 +108,9 @@ STORE_PERIOD = 5.0          # seconds between SQLite rows (state file updates ev
 VEHICLE = None
 ITEMS, TILES, DEFAULT_SPAN, DEFAULT_TILES, ITEM_KEYS = {}, [], {}, {"tiles": []}, {}
 WATCH, KIND_ORDER, TARGETS, FAST_ONLY = (), (), {}, set()
+PEAK_KEYS = []                            # record keys whose envelope is kept between rows
+BUSES, PRIMARY_BUS = ("car",), "car"      # the profile's buses; the one whose silence means asleep
+SOURCE_SPECS = {}                         # canonical key → {sources, tolerance} for the resolver
 
 
 async def configure_vehicle(elm):        # module-level so tests can monkeypatch it
@@ -116,8 +120,12 @@ async def configure_vehicle(elm):        # module-level so tests can monkeypatch
 def set_vehicle(name=None):
     """Bind a vehicle profile (vehicles/<name>.py) to this module and the signal registry."""
     global VEHICLE, ITEMS, TILES, DEFAULT_SPAN, DEFAULT_TILES, ITEM_KEYS
-    global WATCH, KIND_ORDER, TARGETS, FAST_ONLY
+    global WATCH, KIND_ORDER, TARGETS, FAST_ONLY, PEAK_KEYS, BUSES, PRIMARY_BUS, SOURCE_SPECS
     VEHICLE = get_vehicle(name)
+    PEAK_KEYS = peak_keys(VEHICLE)
+    BUSES = buses(VEHICLE)
+    PRIMARY_BUS = primary_bus(VEHICLE)
+    SOURCE_SPECS = source_specs(VEHICLE)
     ITEMS = VEHICLE.ITEMS
     TILES = VEHICLE.TILES
     DEFAULT_SPAN = VEHICLE.DEFAULT_SPAN
@@ -484,6 +492,13 @@ def save_calibration(cal):
     return cal
 
 
+def _iso_ms(epoch):
+    """UTC ISO-8601 with milliseconds and a trailing Z — the acquisition-time
+    format (rows keep whole seconds; an item's read time needs better)."""
+    return (dt.datetime.fromtimestamp(epoch, dt.timezone.utc)
+            .isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+
+
 def write_state(record):
     tmp = STATE_FILE + ".tmp"
     with open(tmp, "w") as f:
@@ -542,6 +557,150 @@ def summary(rec):
     return "  ".join(parts) or "no fast-lane signals"
 
 
+# ── several adapters at once ─────────────────────────────────────────────
+# Car-CAN and EV-CAN are two networks, so two adapters, of any kind. Each
+# item names its bus (default "car"); the reader opens one adapter per bus
+# from the `adapters` list and polls the buses concurrently, each with its
+# own target state, liveness and reconnect. `--adapter X` stays the
+# one-entry shorthand. docs/ARCHITECTURE.md "Several adapters".
+
+ADAPTER_TYPES = ("usb", "ble", "replay", "sim", "can", "mqtt")
+
+
+def adapter_entries(pref=None, cfg=None):
+    """The adapters to open, one per bus, primary bus first:
+    [{"type": "usb"|"ble"|"can"|"mqtt"|"replay"|"sim"|None, "bus": ..., ...}].
+
+    `--adapter X` (pref) is the one-entry shorthand for the primary bus and
+    wins over any list. Otherwise the `adapters` list — HAKAKE_ADAPTERS (a
+    JSON list) over config.local.json — names them; the entry's other keys
+    are per-adapter overrides in the file's own shape (`can_channel`,
+    `host`, `serial_port`, …). Neither → one auto-detected adapter on the
+    primary bus, which is what every run before 2026-09-09 did."""
+    if pref:
+        return [{"type": pref, "bus": PRIMARY_BUS, "shorthand": True}]
+    raw = None
+    js = os.environ.get("HAKAKE_ADAPTERS")
+    if js:
+        try:
+            raw = json.loads(js)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"HAKAKE_ADAPTERS is not valid JSON: {e}")
+    if raw is None:
+        raw = (cfg if cfg is not None else load_local_config()).get("adapters")
+    if not raw:
+        return [{"type": None, "bus": PRIMARY_BUS, "shorthand": True}]
+    if not isinstance(raw, list):
+        raise ValueError('"adapters" must be a list of {"type": ..., "bus": ...} entries')
+    out, seen = [], set()
+    for e in raw:
+        if not isinstance(e, dict):
+            raise ValueError(f'"adapters" entry must be an object, found {e!r}')
+        t = e.get("type")
+        t = None if t in (None, "", "auto") else str(t).lower()
+        if t is not None and t not in ADAPTER_TYPES:
+            raise ValueError(f"adapter type {t!r} is not one of {', '.join(ADAPTER_TYPES)}")
+        bus = str(e.get("bus") or PRIMARY_BUS)
+        if bus not in BUSES:
+            raise ValueError(f"adapter {t or 'auto'} names bus {bus!r}; {VEHICLE.NAME} has {', '.join(BUSES)}")
+        if bus in seen:
+            raise ValueError(f"two adapters on bus {bus!r}; one per bus")
+        seen.add(bus)
+        out.append(dict(e, type=t, bus=bus))
+    out.sort(key=lambda e: 0 if e["bus"] == PRIMARY_BUS else 1)
+    return out
+
+
+def entry_cfg(entry):
+    """The detect_adapter(cfg=) overrides an entry implies, in
+    config.local.json's shape: a `can` entry's bus becomes `can_bus`, an
+    `mqtt` entry's bus / host / port / prefix go into an `mqtt` block, and
+    everything else (`can_channel`, `serial_port`, `ble_addr`, …) passes
+    through. Empty for a bare entry, and for the `--adapter X` shorthand —
+    there the file's own `can_bus` / `mqtt.bus` still name the bus, as
+    they did before the list existed."""
+    t = entry.get("type")
+    if entry.get("shorthand"):
+        return {}
+    over = {k: v for k, v in entry.items() if k not in ("type", "bus")}
+    if t == "can":
+        over["can_bus"] = entry["bus"]
+    elif t == "mqtt":
+        m = dict(over.pop("mqtt", None) or {})
+        for k in ("host", "port", "prefix", "subscribe", "batch"):
+            if k in over:
+                m[k] = over.pop(k)
+        m["bus"] = entry["bus"]
+        over["mqtt"] = m
+    return over
+
+
+# ── provenance: one canonical key, several sources ───────────────────────
+# A SIGNALS entry with `sources` is reachable more than one way. The resolver
+# is generic — the profile only declares — and runs before apply_policy():
+# a fresh source is one whose item ran within SOURCE_STALE_FACTOR × its
+# period (at least SOURCE_STALE_MIN s, which is also the bound for a passive
+# or instant item); precedence is a user pin (config `sources` or the tile's
+# opts.source), then verified over tentative, then the fresher, then the
+# faster. It writes the canonical key only when no decoder has ever written
+# it in this process; otherwise `<key>_resolved`, because the stored value
+# is the value the car reported. `<key>_src` is always written ("bus:item",
+# or "stale" when nothing is fresh — the last value stands); two fresh
+# sources further apart than `tolerance` set `<key>_disagree` and the reader
+# logs a `source_disagree` event on the way in and out.
+
+SOURCE_STALE_FACTOR = 3
+SOURCE_STALE_MIN = 3.0
+CONFIDENCE_RANK = {"verified": 0, "tentative": 1}
+
+
+def source_freshness_limit(period):
+    return max(SOURCE_STALE_MIN, SOURCE_STALE_FACTOR * float(period)) if period else SOURCE_STALE_MIN
+
+
+def resolve_sources(specs, cache, item_age, period, pins=None, decoded=(), bus_of=None):
+    """Pure. `specs` is vehicles.source_specs(); `cache` the merged record;
+    `item_age` {item: s}; `period(item)` the item's polling period; `pins`
+    {canonical: source key or "bus:item"}; `decoded` the keys decode() owns.
+    Returns (updates, disagreements): the keys to merge into the record, and
+    {canonical: disagree dict} for the ones in disagreement."""
+    pins = pins or {}
+    bus_of = bus_of or (lambda item: item_bus(VEHICLE, item))
+    updates, disagreements = {}, {}
+    for key, spec in specs.items():
+        cands = []
+        for s in spec.get("sources") or []:
+            v = cache.get(s.get("key"))
+            if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            age = item_age.get(s.get("item"))
+            if age is None or age > source_freshness_limit(period(s["item"])):
+                continue
+            cands.append((s, v, age))
+        if not cands:
+            updates[f"{key}_src"] = "stale"
+            continue
+        pin = pins.get(key)
+
+        def rank(c):
+            s, v, age = c
+            pinned = bool(pin) and (s["key"] == pin or f"{bus_of(s['item'])}:{s['item']}" == pin)
+            return (0 if pinned else 1, CONFIDENCE_RANK.get(s.get("confidence"), 1), age, -(s.get("rate_hz") or 0))
+
+        cands.sort(key=rank)
+        s, v, age = cands[0]
+        updates[f"{key}_resolved" if key in decoded else key] = v
+        updates[f"{key}_src"] = f"{bus_of(s['item'])}:{s['item']}"
+        tol = spec.get("tolerance")
+        if tol is not None and len(cands) > 1:
+            other = max(cands[1:], key=lambda c: abs(c[1] - v))
+            delta = round(v - other[1], 3)
+            if abs(delta) > tol:
+                updates[f"{key}_disagree"] = {"a": s["key"], "b": other[0]["key"], "delta": delta}
+                disagreements[key] = updates[f"{key}_disagree"]
+    return updates, disagreements
+
+
 class Reader:
     def __init__(self, interval, adapter_pref, fast=False, store=None, budget=1.5):
         self.interval = interval          # minimum cycle period
@@ -554,9 +713,32 @@ class Reader:
         self.cache = {}                   # latest decoded value of every key
         self.item_last = {}               # item → loop time of last successful run
         self.item_age = {}                # item → seconds since last run (published)
+        # ── the clocks (docs/TIMING.md) ──
+        # item_last / item_age are monotonic (scheduling); item_ts is the wall
+        # clock (storage): when each item's answer, or its newest passive
+        # frame, arrived. frame_ts is the *source's* clock for that frame
+        # (bridge / driver) where the transport has one; ELM adapters do not.
+        self.item_ts = {}                 # item → epoch seconds of acquisition
+        self.frame_ts = {}                # item → source-clock epoch of its newest frame
+        self.ts_source = "laptop"         # whose clock stamps the rows: laptop | driver | bridge
+        self._peaks = {}                  # key → envelope since the last stored row
+        self._stored_offset = None        # clock_offset_s last written to the session
         self.last_good = {k: v for k, v in load_state().items() if k not in ("status",)}
         self.session_id = None
-        self.target = None                # "lbc" / "hvac" / "passive"
+        # ── several adapters (one per bus) ──
+        self.entries = None               # adapter_entries(), resolved in run()
+        self.transports = {}              # bus → transport; empty until run() connects
+        self._targets = {}                # bus → kind its adapter is pointed at ("lbc" / "hvac" / "passive")
+        self.bus_alive = {}               # bus → True | False | None (tri-state, per bus)
+        self._bus_tasks = {}              # bus → reconnect task for a secondary bus that dropped
+        self._bus_errors = {}             # bus → why it is not connected
+        self._said = set()                # one log line per distinct complaint
+        # ── provenance ──
+        self._decoded = set()             # keys decode() has produced: the resolver never writes these
+        self._disagree = {}               # canonical key → currently in disagreement?
+        self.pins = {}                    # canonical key → pinned source (config `sources` + tile opts.source)
+        self._cfg_pins = {k: v for k, v in (load_local_config().get("sources") or {}).items()
+                          if isinstance(k, str) and isinstance(v, str)} if isinstance(load_local_config().get("sources"), dict) else {}
         self._tiles_mtime = None
         self._items = set()
         self._periods = {}                # item → period override from tile opts (cell log)
@@ -588,6 +770,7 @@ class Reader:
                     self.item_last.pop(it, None)
                 print(f"  [reader] polling {sorted(new)}", flush=True)
             self._items = new
+            self.refresh_pins(cfg)
             periods = period_overrides(cfg)
             if periods != self._periods:
                 armed = periods.get(CELLLOG_ITEM) == 0
@@ -598,6 +781,30 @@ class Reader:
     def period(self, i):
         """An item's polling period: the profile's, unless a tile option overrides it."""
         return self._periods.get(i, ITEMS[i]["period"])
+
+    @property
+    def target(self):
+        """The primary bus's adapter target (kept for the single-adapter
+        callers; each bus has its own in `_targets`)."""
+        return self._targets.get(PRIMARY_BUS)
+
+    @target.setter
+    def target(self, kind):
+        if kind is None:
+            self._targets.clear()
+        else:
+            self._targets[PRIMARY_BUS] = kind
+
+    def refresh_pins(self, cfg):
+        """User pins for the resolver: config.local.json `sources`
+        ({canonical: source key}) under a tile's `opts.source` for the
+        signal the tile shows."""
+        pins = dict(self._cfg_pins)
+        for t in cfg.get("tiles", []):
+            src = (t.get("opts") or {}).get("source") if t.get("enabled", True) else None
+            if t.get("signal") and isinstance(src, str) and src:
+                pins[t["signal"]] = src
+        self.pins = pins
 
     # ── state helpers ────────────────────────────────────────────────────
 
@@ -722,15 +929,21 @@ class Reader:
         if fn:
             fn(self.cache, self.calib, self.policy_state)
 
-    async def switch(self, elm, kind):
-        if kind == self.target:
+    async def switch(self, elm, kind, bus=None):
+        bus = bus or PRIMARY_BUS
+        if kind == self._targets.get(bus):
             return
         tgt = TARGETS[kind]
         if tgt:
             await set_uds_target(elm, tgt[0], tgt[1])
         else:
             await elm.send("ATCAF0", wait=0)
-        self.target = kind
+        self._targets[bus] = kind
+
+    def say_once(self, msg):
+        if msg not in self._said:
+            self._said.add(msg)
+            self.log(f"[reader] {msg}")
 
     # ── one cycle ────────────────────────────────────────────────────────
 
@@ -744,42 +957,257 @@ class Reader:
             return False
         return bool(r) and any(c.isdigit() for c in " ".join(r))
 
-    async def poll_once(self, elm):
+    async def poll_bus(self, bus, elm, items, timing, responses):
+        """One bus's share of a cycle, in order, on its own adapter. Runs
+        concurrently with the other buses' shares; a transport error
+        propagates to poll_once, which decides per bus."""
+        loop = asyncio.get_event_loop()
+        got_data = False
+        for i in items:
+            it = ITEMS[i]
+            t = loop.time()
+            await self.switch(elm, it["kind"], bus)
+            if TARGETS[it["kind"]] is None:
+                lines = await passive_capture(elm, it["id"], it["secs"], set_caf=False)
+            else:
+                lines = await elm.send(it["cmd"], wait=0.05, timeout=it.get("timeout", 8.0))
+            responses[i] = lines
+            timing[i] = round(loop.time() - t, 2)
+            self.item_last[i] = loop.time()
+            self.stamp(elm, i, it)
+            if any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines):
+                got_data = True
+        self.bus_alive[bus] = got_data
+
+    async def poll_once(self, elm=None):
+        """One cycle over every connected bus at once. `elm` alone (the
+        single-adapter callers and the tests) stands for the primary bus."""
         self.cycle += 1
         self.refresh_items()
         loop = asyncio.get_event_loop()
         timing = {}
         responses = {}
+        transports = self.transports or ({PRIMARY_BUS: elm} if elm is not None else {})
+        by_bus = {}
         for i in self.plan(loop.time()):
-            it = ITEMS[i]
-            t = loop.time()
-            await self.switch(elm, it["kind"])
-            if TARGETS[it["kind"]] is None:
-                responses[i] = await passive_capture(elm, it["id"], it["secs"], set_caf=False)
-            else:
-                responses[i] = await elm.send(it["cmd"], wait=0.05, timeout=it.get("timeout", 8.0))
-            timing[i] = round(loop.time() - t, 2)
-            self.item_last[i] = loop.time()
+            by_bus.setdefault(item_bus(VEHICLE, i), []).append(i)
+        jobs = []
+        for bus, items in by_bus.items():
+            t = transports.get(bus)
+            if t is None:
+                if bus not in self._bus_tasks:      # reconnecting buses already said so
+                    self.say_once(f"no adapter on bus {bus!r}: {', '.join(items)} not polled")
+                continue
+            jobs.append((bus, self.poll_bus(bus, t, items, timing, responses)))
+        if jobs:
+            results = await asyncio.gather(*(j for _, j in jobs), return_exceptions=True)
+            for (bus, _), res in zip(jobs, results):
+                if isinstance(res, BaseException):
+                    if bus == PRIMARY_BUS or isinstance(res, (asyncio.CancelledError, KeyboardInterrupt)):
+                        raise res                  # the supervisor reconnects everything
+                    self.bus_failed(bus, res)      # a secondary bus reconnects on its own
 
         alive = True
         if responses:
             rec, a = VEHICLE.decode(responses)
             self.cache.update(rec)
+            self._decoded.update(rec)
+            self.track_peaks(rec)
             if "cells" in rec:
                 self.cells_seq += 1           # a real cell read, as opposed to the sticky cache
             if a is not None:
                 alive = a
+                self.bus_alive[PRIMARY_BUS] = a
 
         self.item_age = {i: round(loop.time() - self.item_last[i], 1) for i in self.item_last}
+        self.resolve()
         self.apply_policy()
         self.emit_events()
         merged = dict(self.cache)
         merged["timing"] = timing
         merged["item_age"] = self.item_age
+        merged["item_ts"] = {i: _iso_ms(e) for i, e in self.item_ts.items()}
+        merged["item_ts_epoch"] = {i: round(e, 3) for i, e in self.item_ts.items()}
+        if self.frame_ts:
+            merged["frame_ts"] = {i: round(e, 3) for i, e in self.frame_ts.items()}
+        merged["ts_source"] = self.ts_source
+        off = elm.clock_offset() if hasattr(elm, "clock_offset") else None
+        if off is not None:
+            merged["clock_offset_s"] = off
+        else:
+            merged.pop("clock_offset_s", None)
         merged["items"] = sorted(self._items)
         merged["cells_seq"] = self.cells_seq
         merged["celllog"] = self._periods.get(CELLLOG_ITEM) == 0
+        merged["bus_alive"] = dict(self.bus_alive)
         return merged, alive
+
+    # ── provenance ───────────────────────────────────────────────────────
+
+    def resolve(self):
+        """Run the generic source resolver (module docstring above) and log
+        a `source_disagree` event when a canonical key's fresh sources start
+        or stop disagreeing."""
+        if not SOURCE_SPECS:
+            return
+        for key in SOURCE_SPECS:
+            self.cache.pop(f"{key}_disagree", None)
+        ups, dis = resolve_sources(SOURCE_SPECS, self.cache, self.item_age, self.period, self.pins, self._decoded)
+        self.cache.update(ups)
+        for key in SOURCE_SPECS:
+            now_bad = key in dis
+            was_bad = bool(self._disagree.get(key))
+            if now_bad and not was_bad:
+                d = dis[key]
+                self.store.insert_event("source_disagree", f"{key}: {d['a']} vs {d['b']} delta {d['delta']}", None)
+            elif was_bad and not now_bad:
+                self.store.insert_event("source_disagree", f"{key}: agree", "disagree")
+            self._disagree[key] = now_bad
+
+    # ── the buses ────────────────────────────────────────────────────────
+
+    async def open_entry(self, entry):
+        """Detect and configure the adapter an `adapters` entry describes."""
+        cfg = entry_cfg(entry)
+        kw = {"cfg": cfg} if cfg else {}
+        elm = await detect_adapter(prefer=entry["type"], log=self.log, **kw)
+        await configure_vehicle(elm)
+        return elm
+
+    def bus_failed(self, bus, exc):
+        """A secondary bus's transport raised mid-cycle: drop it, report it,
+        and reconnect it in the background while the others keep polling."""
+        self.log(f"[reader] bus {bus}: {type(exc).__name__}: {exc} — reconnecting it, other buses keep polling")
+        self.bus_alive[bus] = False
+        self._bus_errors[bus] = f"{type(exc).__name__}: {exc}"
+        old = self.transports.pop(bus, None)
+        self._targets.pop(bus, None)
+        if old is not None:
+            asyncio.ensure_future(self._close_quietly(old))
+        task = self._bus_tasks.get(bus)
+        if task is None or task.done():
+            self._bus_tasks[bus] = asyncio.ensure_future(self.reconnect_bus(bus))
+
+    async def _close_quietly(self, elm):
+        try:
+            await elm.close()
+        except Exception:
+            pass
+
+    async def reconnect_bus(self, bus):
+        entry = next((e for e in (self.entries or []) if e["bus"] == bus), None)
+        if entry is None:
+            return
+        backoff = BACKOFF_MIN
+        while not os.path.exists(PAUSE_FILE):
+            try:
+                elm = await self.open_entry(entry)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                raise
+            except Exception as e:
+                self._bus_errors[bus] = f"{type(e).__name__}: {e}"
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, BACKOFF_MAX)
+                continue
+            self.transports[bus] = elm
+            self._targets.pop(bus, None)
+            self._bus_errors.pop(bus, None)
+            self.bus_alive[bus] = None
+            self.log(f"[reader] bus {bus} reconnected: {elm.adapter_name} via {elm.adapter_type}")
+            return
+
+    async def close_transports(self):
+        for task in self._bus_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._bus_tasks = {}
+        for bus, t in list(self.transports.items()):
+            await self._close_quietly(t)
+        self.transports = {}
+        self._targets = {}
+
+    def adapters_info(self, static=False):
+        """One entry per bus for the record (and, with `static`, for the
+        session row: no liveness): bus, type, name, port, listen_only,
+        speed, plus the transport's marker (`can_bus`, `remote`, …)."""
+        out = []
+        for e in self.entries or []:
+            bus = e["bus"]
+            t = self.transports.get(bus)
+            d = {"bus": bus,
+                 "type": getattr(t, "adapter_type", None) if t is not None else e.get("type"),
+                 "name": getattr(t, "adapter_name", "") if t is not None else "",
+                 "port": getattr(t, "adapter_port", "") if t is not None else "",
+                 "listen_only": bool(getattr(t, "listen_only", False)),
+                 "speed": float(getattr(t, "SPEED", 1.0) or 1.0) if t is not None else None}
+            if t is not None and hasattr(t, "marker"):
+                d.update(t.marker())
+            if not static:
+                d["connected"] = t is not None
+                d["alive"] = self.bus_alive.get(bus)
+                if t is not None and hasattr(t, "clock_offset"):
+                    off = t.clock_offset()
+                    if off is not None:
+                        d["clock_offset_s"] = off
+                if t is None and self._bus_errors.get(bus):
+                    d["error"] = self._bus_errors[bus]
+            out.append(d)
+        return out
+
+    # ── acquisition time and the envelope (docs/TIMING.md) ───────────────
+
+    def stamp(self, elm, i, it):
+        """Record when item `i`'s value was actually acquired. A UDS answer is
+        stamped as it returns. A passive item on a transport that keeps a
+        frame table (`source_times()`: the native CAN façade, MQTT) is stamped
+        with its newest frame's *arrival* time — which may be older than this
+        cycle when nothing new came in — and its source-clock time goes to
+        `frame_ts`. On an ELM the frames arrived during the ATMA dwell that
+        just ended, so the return time is within `secs` of the truth."""
+        now = time.time()
+        self.item_ts[i] = now
+        if TARGETS[it["kind"]] is None and hasattr(elm, "source_times"):
+            pair = elm.source_times().get(str(it["id"]).upper())
+            if pair:
+                wall, src = pair
+                self.item_ts[i] = float(wall)
+                if src and src > 0:
+                    self.frame_ts[i] = float(src)
+                else:
+                    self.frame_ts.pop(i, None)
+
+    def track_peaks(self, rec):
+        """Keep min / max / time-of-each for the profile's `peak` keys over the
+        values decode() produced this cycle — never the sticky cache, so a
+        value read once is counted once. Reset by take_peaks() on store."""
+        if not PEAK_KEYS:
+            return
+        for k in PEAK_KEYS:
+            v = rec.get(k)
+            if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            it = signals.signal_item(k)
+            t = self.item_ts.get(it) if it else None
+            t = round(t if t is not None else time.time(), 3)
+            p = self._peaks.get(k)
+            if p is None:
+                self._peaks[k] = {"min": v, "max": v, "tmin": t, "tmax": t, "n": 1}
+            else:
+                p["n"] += 1
+                if v < p["min"]:
+                    p["min"], p["tmin"] = v, t
+                if v > p["max"]:
+                    p["max"], p["tmax"] = v, t
+
+    def take_peaks(self):
+        """The envelope since the last stored row, as record keys
+        (`<key>_min/_max/_tmin/_tmax/_n`), and start a new one."""
+        out = {}
+        for k, p in self._peaks.items():
+            out[f"{k}_min"], out[f"{k}_max"] = p["min"], p["max"]
+            out[f"{k}_tmin"], out[f"{k}_tmax"], out[f"{k}_n"] = p["tmin"], p["tmax"], p["n"]
+        self._peaks = {}
+        return out
 
     # ── supervisor ───────────────────────────────────────────────────────
 
@@ -794,19 +1222,31 @@ class Reader:
             elm = None
             try:
                 attempt += 1
-                self.log(f"[reader] detecting adapter (attempt {attempt}, prefer={self.adapter_pref or 'auto'})")
-                self.publish("connecting", f"Detecting adapter ({self.adapter_pref or 'auto'})…")
-                elm = await detect_adapter(prefer=self.adapter_pref, log=self.log)
-                await configure_vehicle(elm)
-                self.target = None
+                self.entries = adapter_entries(self.adapter_pref)
+                what = ", ".join(f"{e['type'] or 'auto'}@{e['bus']}" for e in self.entries)
+                self.log(f"[reader] detecting adapter(s) (attempt {attempt}: {what})")
+                self.publish("connecting", f"Detecting adapter ({what})…")
+                self.transports = {}
+                self._targets = {}
+                self.bus_alive = {}
+                for entry in self.entries:           # primary bus first; any failure retries them all
+                    self.transports[entry["bus"]] = await self.open_entry(entry)
+                elm = self.transports[PRIMARY_BUS]
                 self.speed = float(getattr(elm, "SPEED", 1.0) or 1.0)
                 self.passive_instant = bool(getattr(elm, "PASSIVE_INSTANT", False))
-                self.session_id = self.store.start_session(elm.adapter_type)
+                self.ts_source = str(getattr(elm, "ts_source", None) or "laptop")
+                self.frame_ts = {}
+                self._stored_offset = None
+                self.session_id = self.store.start_session(elm.adapter_type, adapters=self.adapters_info(static=True))
                 self.refresh_items()
                 self.log(f"[reader] configured {elm.adapter_name} via {elm.adapter_type}; "
                          f"min period {self.interval}s, slow budget {self.budget}s"
                          + (f", est x{self.speed:g}" if self.speed != 1.0 else "")
                          + (f" — RECONNECTED after {attempt - 1} failed attempt(s)" if attempt > 1 else ""))
+                for bus, t in self.transports.items():
+                    if bus != PRIMARY_BUS:
+                        self.log(f"[reader] bus {bus}: {t.adapter_name} via {t.adapter_type}"
+                                 + (" (listen-only)" if getattr(t, "listen_only", False) else ""))
                 attempt = 0
                 backoff = BACKOFF_MIN
                 if await self.poll_loop(elm) == "paused":
@@ -830,11 +1270,7 @@ class Reader:
                 if self.session_id:
                     self.store.end_session(self.session_id)
                     self.session_id = None
-                if elm:
-                    try:
-                        await elm.close()
-                    except Exception:
-                        pass
+                await self.close_transports()      # every bus, reconnect tasks included
 
     async def poll_loop(self, elm):
         asleep = False
@@ -880,6 +1316,9 @@ class Reader:
                 # it) can say so without guessing from the adapter name.
                 "replay": bool(getattr(elm, "replay", False)),
                 "simulated": bool(getattr(elm, "simulated", False)),
+                # every bus, one entry each; the adapter_* keys above are the
+                # primary bus's, so nothing downstream changes
+                "adapters": self.adapters_info(),
             })
             if getattr(elm, "replay", False):
                 rec["replay_fixture"] = getattr(elm, "fixture_name", "")
@@ -901,10 +1340,15 @@ class Reader:
             fresh_cells = rec.get("cells_seq") != self._stored_cells_seq
             due = loop.time() - self._last_store >= STORE_PERIOD
             if due or (rec.get("celllog") and fresh_cells):
-                row = rec if fresh_cells else {k: v for k, v in rec.items() if k != "cells"}
-                self.store.insert_reading(row, ts=now, adapter=elm.adapter_type)
+                row = dict(rec) if fresh_cells else {k: v for k, v in rec.items() if k != "cells"}
+                row.update(self.take_peaks())      # the envelope since the previous row
+                self.store.insert_reading(row, ts=now, adapter=elm.adapter_type, ts_source=self.ts_source)
                 self._stored_cells_seq = rec.get("cells_seq")
                 self._last_store = loop.time()
+                off = rec.get("clock_offset_s")
+                if self.session_id and off is not None and off != self._stored_offset:
+                    self.store.set_session_clock_offset(self.session_id, off)
+                    self._stored_offset = off
             self.last_good = rec
             self.last_good["last_ok"] = rec["timestamp"]
             self.publish("ok")

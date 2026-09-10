@@ -9,6 +9,14 @@ A profile is a module in this package exporting:
   ITEMS            dict id -> {kind, period, label, ...} — everything pollable.
                    kind maps into TARGETS; UDS-style kinds need "cmd" (+
                    optional "timeout", "est"); monitor kinds need "id"/"secs".
+                   Optional "bus" (default "car") names which network the
+                   item lives on; the reader polls each bus through its own
+                   adapter, concurrently (docs/ARCHITECTURE.md "Several
+                   adapters").
+  BUSES            optional tuple of bus names, default ("car",). Every
+                   item's bus must be one of them; the FAST_ONLY items must
+                   share one bus — that is the *primary* bus, whose silence
+                   means the car is asleep.
   TARGETS          dict kind -> (tx, rx) for UDS request/response headers, or
                    None for passive monitor capture (ATCAF0 + ATCRA + ATMA).
   KIND_ORDER       tuple — poll order within a cycle (minimise ECU switching)
@@ -24,7 +32,18 @@ A profile is a module in this package exporting:
   WATCH            tuple of record keys logged to the events table on change
   FAST_ONLY        set of item ids for --fast mode
   SIGNALS          dict key -> registry entry (label, unit, min/max, dec,
-                   item, color, hist, alt/alt_unit, kind) — what the UI offers
+                   item, color, hist, alt/alt_unit, kind) — what the UI offers.
+                   An entry reachable two ways adds `sources`: a list of
+                   {key, item, confidence: "verified"|"tentative", rate_hz}
+                   naming the record keys each source writes, plus an
+                   optional `tolerance` (in the signal's unit). The reader's
+                   generic resolver then picks one — a user pin, then
+                   verified over tentative, then freshness, then rate — and
+                   stamps `<key>_src`; two fresh sources apart by more than
+                   `tolerance` set `<key>_disagree` and log an event. Decoders
+                   never write the same key from two items; the resolver
+                   writes the canonical key only when no decoder does, else
+                   `<key>_resolved` (docs/SIGNALS.md, docs/TIMING.md).
   configure(elm)   async — full adapter setup for this vehicle
   decode(responses) -> (record, alive) — responses is {item_id: raw lines};
                    alive is False when the primary ECU gave nothing, None when
@@ -58,6 +77,12 @@ History columns (optional, but needed for anything graphable)
                                    column is NULL (one column at most)
                      index         name of a partial index on (ts_epoch) where
                                    this column is 1
+                     peak          True: the reader keeps a running min / max /
+                                   time-of-max of this key between stored rows
+                                   and writes <key>_min / _max / _tmax into the
+                                   row's `extra` (peak-preserving decimation,
+                                   docs/TIMING.md). Also accepted on a SIGNALS
+                                   entry. The key must be a plain record key.
   EXTRA_SKIP       optional tuple — record keys never worth storing in `extra`
                    (raw dumps, lists already stored in columns)
   DB_FILE          optional str — a database file of this profile's own, in
@@ -126,6 +151,66 @@ def history_cols(mod):
         s.setdefault("type", _SQL_TYPE.get(s["kind"], "REAL"))
         s.setdefault("key", col)
         out[col] = s
+    return out
+
+
+def buses(mod):
+    """The profile's bus names, ("car",) unless it declares BUSES."""
+    b = getattr(mod, "BUSES", None)
+    return tuple(b) if b else ("car",)
+
+
+def item_bus(mod, item):
+    """Which bus an item lives on ("car" unless the item says otherwise)."""
+    it = mod.ITEMS.get(item) if isinstance(getattr(mod, "ITEMS", None), dict) else None
+    return str((it or {}).get("bus") or "car")
+
+
+def primary_bus(mod):
+    """The bus whose silence means the car is asleep: the FAST_ONLY items'
+    bus, else the first of BUSES."""
+    for i in getattr(mod, "FAST_ONLY", ()) or ():
+        return item_bus(mod, i)
+    return buses(mod)[0]
+
+
+def source_specs(mod):
+    """{canonical key: {"sources": [{key, item, confidence, rate_hz}, …],
+    "tolerance": float | None}} for every SIGNALS entry that declares
+    `sources` — what the reader's resolver works from."""
+    out = {}
+    for key, s in (getattr(mod, "SIGNALS", None) or {}).items():
+        if not isinstance(s, dict) or not s.get("sources"):
+            continue
+        srcs = []
+        for src in s["sources"]:
+            if not isinstance(src, dict):
+                continue
+            srcs.append({"key": src.get("key"), "item": src.get("item"),
+                         "confidence": src.get("confidence", "tentative"),
+                         "rate_hz": src.get("rate_hz")})
+        tol = s.get("tolerance")
+        out[s.get("key", key)] = {"sources": srcs,
+                                  "tolerance": float(tol) if isinstance(tol, (int, float)) and not isinstance(tol, bool) else None}
+    return out
+
+
+def peak_keys(mod):
+    """Record keys the profile marks `peak: True` — in HISTORY_COLS (the
+    column's record key, when it is a plain string) or in SIGNALS (the entry's
+    key, when it is not a dotted list index). Declaration order, no duplicates.
+    The reader keeps their envelope between stored rows (docs/TIMING.md)."""
+    out = []
+    for col, spec in (getattr(mod, "HISTORY_COLS", None) or {}).items():
+        if isinstance(spec, dict) and spec.get("peak") is True:
+            key = spec.get("key", col)
+            if isinstance(key, str) and "." not in key and key not in out:
+                out.append(key)
+    for key, spec in (getattr(mod, "SIGNALS", None) or {}).items():
+        if isinstance(spec, dict) and spec.get("peak") is True:
+            k = spec.get("key", key)
+            if isinstance(k, str) and "." not in k and k not in out:
+                out.append(k)
     return out
 
 
@@ -198,6 +283,16 @@ def validate_profile(mod):
             if k not in mod.TARGETS:
                 p.append(f"{name}: KIND_ORDER lists kind {k!r}, which is not in TARGETS")
 
+    # ── buses ──
+    raw_buses = getattr(mod, "BUSES", None)
+    if raw_buses is not None:
+        if (not isinstance(raw_buses, (tuple, list)) or not raw_buses
+                or not all(isinstance(b, str) and b.strip() for b in raw_buses)):
+            p.append(f"{name}: BUSES must be a non-empty tuple of bus names, found {raw_buses!r}")
+        elif len(set(raw_buses)) != len(raw_buses):
+            p.append(f"{name}: BUSES lists a bus twice: {raw_buses!r}")
+    known_buses = set(buses(mod)) if not any("BUSES" in x for x in p) else None
+
     # ── ITEMS ──
     if not isinstance(mod.ITEMS, dict) or not mod.ITEMS:
         p.append(f"{name}: ITEMS must be a non-empty dict")
@@ -206,6 +301,12 @@ def validate_profile(mod):
         if not isinstance(it, dict):
             p.append(f"{name}: item {i!r} must be a dict, found {type(it).__name__}")
             continue
+        if "bus" in it:
+            if not isinstance(it["bus"], str) or not it["bus"].strip():
+                p.append(f"{name}: item {i!r} bus must be a bus name, found {it['bus']!r}")
+            elif known_buses is not None and it["bus"] not in known_buses:
+                p.append(f"{name}: item {i!r} is on bus {it['bus']!r}, which BUSES "
+                         f"({', '.join(map(repr, known_buses))}) does not declare")
         kind = it.get("kind")
         if kind not in mod.TARGETS:
             p.append(f"{name}: item {i!r} has kind {kind!r}, which is not a key of TARGETS "
@@ -290,6 +391,10 @@ def validate_profile(mod):
     for i in mod.FAST_ONLY:
         if i not in mod.ITEMS:
             p.append(f"{name}: FAST_ONLY names unknown item {i!r}")
+    fast_buses = {item_bus(mod, i) for i in mod.FAST_ONLY if i in mod.ITEMS}
+    if len(fast_buses) > 1:
+        p.append(f"{name}: FAST_ONLY items must share one bus (the primary), found "
+                 f"{', '.join(sorted(fast_buses))}")
 
     # ── signals ──
     for k, s in mod.SIGNALS.items():
@@ -310,6 +415,43 @@ def validate_profile(mod):
         if s.get("unit") == "°F" and not (s.get("alt") and s.get("alt_unit") == "°C"):
             p.append(f"{name}: °F signal {k!r} must carry its °C twin as "
                      f"'alt' + 'alt_unit': '°C' (house rule: always °C and °F)")
+        if "sources" in s:
+            srcs = s["sources"]
+            if not isinstance(srcs, (list, tuple)) or not srcs:
+                p.append(f"{name}: signal {k!r} sources must be a non-empty list of "
+                         f"{{key, item, confidence, rate_hz}}, found {srcs!r}")
+            else:
+                seen_keys = set()
+                for src in srcs:
+                    if not isinstance(src, dict) or not isinstance(src.get("key"), str) or not src["key"]:
+                        p.append(f"{name}: signal {k!r} has a source without a record 'key': {src!r}")
+                        continue
+                    if src["key"] in seen_keys:
+                        p.append(f"{name}: signal {k!r} lists source {src['key']!r} twice")
+                    seen_keys.add(src["key"])
+                    if src.get("item") not in mod.ITEMS:
+                        p.append(f"{name}: signal {k!r} source {src['key']!r} names unknown item {src.get('item')!r}")
+                    if src.get("confidence", "tentative") not in ("verified", "tentative"):
+                        p.append(f"{name}: signal {k!r} source {src['key']!r} confidence must be "
+                                 f"'verified' or 'tentative', found {src.get('confidence')!r}")
+                    rate = src.get("rate_hz")
+                    if rate is not None and (isinstance(rate, bool) or not isinstance(rate, (int, float)) or rate <= 0):
+                        p.append(f"{name}: signal {k!r} source {src['key']!r} rate_hz must be a positive number")
+            if kind != "number":
+                p.append(f"{name}: signal {k!r} has sources but is not a number signal; the resolver "
+                         f"compares numbers")
+        if "tolerance" in s:
+            tol = s["tolerance"]
+            if isinstance(tol, bool) or not isinstance(tol, (int, float)) or tol < 0:
+                p.append(f"{name}: signal {k!r} tolerance must be a number >= 0, found {tol!r}")
+            if "sources" not in s:
+                p.append(f"{name}: signal {k!r} has a tolerance but no sources to compare")
+        if "peak" in s:
+            if not isinstance(s["peak"], bool):
+                p.append(f"{name}: signal {k!r} peak must be True or False, found {s['peak']!r}")
+            elif s["peak"] and ("." in k or kind != "number"):
+                p.append(f"{name}: signal {k!r} cannot be a peak: only a plain number key "
+                         f"(no dotted index) has a min / max between rows")
 
     # ── history columns ──
     p += _validate_history(mod, name)
@@ -380,6 +522,12 @@ def _validate_history(mod, name):
         if "index" in spec and not (isinstance(spec["index"], str) and spec["index"].isidentifier()):
             p.append(f"{name}: HISTORY_COLS[{col!r}] index must be the index's name, "
                      f"found {spec['index']!r}")
+        if "peak" in spec:
+            if not isinstance(spec["peak"], bool):
+                p.append(f"{name}: HISTORY_COLS[{col!r}] peak must be True or False, found {spec['peak']!r}")
+            elif spec["peak"] and (not isinstance(key, str) or "." in key or kind not in ("real", "int")):
+                p.append(f"{name}: HISTORY_COLS[{col!r}] cannot be a peak: only a plain numeric "
+                         f"record key (no dotted index, no callable) has a min / max between rows")
     if len(filters) > 1:
         p.append(f"{name}: at most one HISTORY_COLS column may set daily_filter "
                  f"(found {', '.join(filters)})")
@@ -415,6 +563,10 @@ if __name__ == "__main__":                      # python vehicles/__init__.py [n
             for x in probs:
                 print(f"  - {x}")
         else:
-            print(f"{n}: OK ({m.TITLE}, {len(m.ITEMS)} items, {len(m.SIGNALS)} signals, "
-                  f"{len(history_cols(m))} history columns)")
+            pk = peak_keys(m)
+            multi = source_specs(m)
+            print(f"{n}: OK ({m.TITLE}, {len(m.ITEMS)} items on bus {'/'.join(buses(m))}, "
+                  f"{len(m.SIGNALS)} signals, {len(history_cols(m))} history columns"
+                  + (f", peaks kept for {', '.join(pk)}" if pk else "")
+                  + (f", resolved from several sources: {', '.join(multi)}" if multi else "") + ")")
     sys.exit(1 if bad else 0)
