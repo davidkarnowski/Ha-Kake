@@ -116,6 +116,7 @@ class Simulator:
         self._at_rx = None
         self._timeline = []
         self._fired = 0
+        self._ramps = []
         self.scenario = None
         self._bind(vehicle or DEFAULT_VEHICLE)
         env = _env_speed()
@@ -240,11 +241,92 @@ class Simulator:
             self._fire(self.model.t + h)
             self.model.step(h)
 
+    # ── the timeline, and the one entry kind that is not a step ──────────
+    #
+    # A timeline entry is a STEP: at its own `t` its knobs snap to their new
+    # values. That is the right shape for a gear change or a fault, and the
+    # wrong one for a pedal: `pulls.json` moves `speed_mph` every half second,
+    # so the current climbs in visible stairs however fast the dashboard
+    # samples it (the owner drove it on 2026-09-10 and said so).
+    #
+    # `"ramp": true` on an entry makes its NUMERIC knobs interpolate linearly
+    # from the value they had at the PREVIOUS timeline entry to this entry's
+    # value, across the interval between those two entries, landing exactly on
+    # the target at this entry's own `t`. Everything else about the entry is
+    # unchanged, including when it is allowed to start: the ramp arms only
+    # once simulated time reaches the previous entry, so the value it starts
+    # from is the value that entry left behind.
+    #
+    # Non-numeric knobs never interpolate — half of `D` is not a gear and 0.5
+    # of `handbrake` is not a brake — so a ramp entry's text and boolean knobs
+    # snap at the entry's own `t`, which keeps the timestamp's meaning.
+    #
+    # The interpolation is a function of ABSOLUTE simulated time, not of an
+    # increment, which is what makes it independent of `dt`, of the sub-step
+    # size and of the clock scale: `step(10)` once and 10 calls to `step(1)`
+    # put a ramp in the same place, and so does `--speed 120`.
+
     def _fire(self, t):
-        while self._fired < len(self._timeline) and self._timeline[self._fired][0] <= t + 1e-9:
-            _, sets = self._timeline[self._fired]
+        """Apply everything the timeline owes at simulated time `t`."""
+        while self._fired < len(self._timeline):
+            when, sets, ramp, since = self._timeline[self._fired]
+            begin = since if ramp else when
+            if begin > t + 1e-9:
+                break
+            # bring every armed ramp up to this entry's starting instant before
+            # anything new arms, so a ramp that ends here has landed on its
+            # target and the next one starts from that value rather than from
+            # where the previous sub-step left it
+            if self._ramps:
+                self._advance_ramps(begin)
             self._fired += 1
-            self.set(**sets)
+            if ramp and when - begin > 1e-9:
+                self._arm_ramp(begin, when, sets)
+            else:
+                # a plain entry, or a ramp with nowhere to ramp from (the first
+                # entry, or two entries sharing a timestamp): a step
+                self.set(**sets)
+        if self._ramps:
+            self._advance_ramps(t)
+
+    def _arm_ramp(self, begin, when, sets):
+        """Start one ramping entry: capture where each numeric knob is now.
+
+        The target is coerced once, here, rather than on every sub-step, so a
+        value outside a knob's range warns once and the ramp runs to the
+        clamped figure.
+        """
+        moving, snap = {}, {}
+        for name, value in sets.items():
+            knob = self.model.knobs.resolve(name)
+            if knob.type not in ("float", "int"):
+                snap[name] = value          # a gear, a boolean, any text
+                continue
+            target, warn = knob.coerce(value)
+            if warn:
+                self.warnings.append(warn)
+            try:
+                start = float(self.model.k.get(name, knob.default))
+            except (TypeError, ValueError):
+                snap[name] = value
+                continue
+            moving[name] = (start, float(target))
+        self._ramps.append({"start": begin, "end": when, "moving": moving, "snap": snap})
+
+    def _advance_ramps(self, t):
+        """Move every armed ramp to where absolute time `t` puts it."""
+        for r in list(self._ramps):
+            span = r["end"] - r["start"]
+            if span <= 0 or t >= r["end"] - 1e-9:
+                frac = 1.0
+            else:
+                frac = max(0.0, (t - r["start"]) / span)
+            vals = {n: a + (b - a) * frac for n, (a, b) in r["moving"].items()}
+            if frac >= 1.0:
+                vals.update(r["snap"])      # the non-numeric half, at the entry's own t
+                self._ramps.remove(r)
+            if vals:
+                self.set(**vals)
 
     def state(self):
         st = self.model.state()
@@ -307,12 +389,15 @@ class Simulator:
         exactly where it is (free-running from here)."""
         self._timeline = []
         self._fired = 0
+        self._ramps = []
         self.scenario = None
 
     def load_scenario(self, path_or_name):
         """Apply a scenario: a JSON object with optional `vehicle`, `seed`,
-        `knobs` and a `timeline` of {t, set} entries (t = seconds of simulated
-        time from now). Entries at t <= 0 fire immediately."""
+        `knobs` and a `timeline` of {t, set, ramp} entries (t = seconds of
+        simulated time from now). Entries at t <= 0 fire immediately; an entry
+        with `"ramp": true` interpolates its numeric knobs from the previous
+        entry's time to its own (see `_fire`)."""
         data = load_scenario_file(path_or_name)
         veh = data.get("vehicle")
         seed = data.get("seed")
@@ -325,10 +410,18 @@ class Simulator:
             self._bind(veh or self.vehicle)
         self.scenario = data.get("name") or str(path_or_name)
         self.model.t = 0.0
-        self._timeline = sorted(
-            ((float(e.get("t", 0.0)), dict(e.get("set") or {})) for e in data.get("timeline") or []),
-            key=lambda e: e[0])
+        entries = sorted(((float(e.get("t", 0.0)), dict(e.get("set") or {}),
+                           bool(e.get("ramp")))
+                          for e in data.get("timeline") or []), key=lambda e: e[0])
+        # each entry carries the time of the one before it, which is where a
+        # ramp starts (0.0 for the first entry, i.e. the start of the run)
+        self._timeline = []
+        prev_t = 0.0
+        for when, sets, ramp in entries:
+            self._timeline.append((when, sets, ramp, min(prev_t, when)))
+            prev_t = when
         self._fired = 0
+        self._ramps = []
         if data.get("knobs"):
             self.set(**dict(data["knobs"]))
         self._note_shadowed_clock()
@@ -451,6 +544,8 @@ def load_scenario_file(path_or_name):
     for e in data.get("timeline") or []:
         if not isinstance(e, dict) or "set" not in e:
             raise ValueError(f"{path}: every timeline entry needs 't' and 'set', got {e!r}")
+        if "ramp" in e and not isinstance(e["ramp"], bool):
+            raise ValueError(f"{path}: 'ramp' is true or false, got {e['ramp']!r}")
     return data
 
 

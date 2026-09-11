@@ -2,7 +2,7 @@
   "name": "pulls",
   "vehicle": "leaf_ze0",
   "seed": 7,
-  "description": "Five acceleration pulls in a row, for watching the pack sag in the 3D tile. Shaped from the owner's own drive of 2026-09-09, 14:05-14:08 PDT, every row of which carries a cell set because the cell log was armed. MEASURED from those 207 rows: rest pack 377.9 V at -5.9 A at SOC ~51 %, lowest pair 3918 mV, spread 35 mV; a regression of pack voltage on current gives OCV 376.9 V and R 0.186 ohm, which is the internal_resistance_ohm below; and the cell spread tracks current as spread_mV = 32 + 1.06 x |I| (35 mV at rest, 274 mV at -228 A). The real pulls peaked at -96, -228, -157 and -56 A and each pedal figure below was solved so the model reproduces one of them; the fourth is the harder -265 A case the owner reported on 2026-09-08 (OWNER REPORT, one reading). ASSERTED: the pedal-to-current shape is the model's own (simulator/model.py motor note), and cell_spread_mv is STEPPED BY THIS TIMELINE rather than emerging from per-pair resistance, because the model gives every pair one resistance and a fixed spread. So the pairs that go reddest are this seed's fixed shape, not the real pack's weak modules - in the real stretch those were pairs 66, 70, 72 and 76, sagging about 100 mV below the mean, and pairs 1, 48, 53-56 and 92 sagging least.",
+  "description": "Five acceleration pulls in a row, for watching the pack sag in the 3D tile. Shaped from the owner's own drive of 2026-09-09, 14:05-14:08 PDT, every row of which carries a cell set because the cell log was armed. MEASURED from those 207 rows: rest pack 377.9 V at -5.9 A at SOC ~51 %, lowest pair 3918 mV, spread 35 mV; a regression of pack voltage on current gives OCV 376.9 V and R 0.186 ohm, which is the internal_resistance_ohm below; and the cell spread tracks current as spread_mV = 32 + 1.06 x |I| (35 mV at rest, 274 mV at -228 A). The real pulls peaked at -96, -228, -157 and -56 A and each pedal figure below was solved so the model reproduces one of them; the fourth is the harder -265 A case the owner reported on 2026-09-08 (OWNER REPORT, one reading). ASSERTED: the pedal-to-current shape is the model's own (simulator/model.py motor note), and cell_spread_mv is STEPPED BY THIS TIMELINE rather than emerging from per-pair resistance, because the model gives every pair one resistance and a fixed spread. So the pairs that go reddest are this seed's fixed shape, not the real pack's weak modules - in the real stretch those were pairs 66, 70, 72 and 76, sagging about 100 mV below the mean, and pairs 1, 48, 53-56 and 92 sagging least. PRESENTATION: the speed, pedal and spread entries inside each pull carry \"ramp\": true, so those numbers slide from one entry to the next instead of stepping every half second - the owner drove the stepped version on 2026-09-10 and found the current curve very sharp. This is a presentation choice, not a measurement: the real car's current does rise over a fraction of a second rather than instantly, so a ramp is at least as honest as a step, but the shape between two timeline points is interpolation and nothing was measured there. The pedal press that starts each pull still snaps, and so do the gear, handbrake and brake entries; the peaks are unchanged (the ramp lands exactly on each entry's value at its own time), which is what keeps the calibration above true.",
   "knobs": {
     "soc": 51.5,
     "ambient_c": 22,
@@ -47,63 +47,72 @@
       "set": {
         "speed_mph": 4,
         "cell_spread_mv": 51
-      }
+      },
+      "ramp": true
     },
     {
       "t": 6.0,
       "set": {
         "speed_mph": 7,
         "cell_spread_mv": 64
-      }
+      },
+      "ramp": true
     },
     {
       "t": 6.5,
       "set": {
         "speed_mph": 10,
         "cell_spread_mv": 78
-      }
+      },
+      "ramp": true
     },
     {
       "t": 7.0,
       "set": {
         "speed_mph": 12,
         "cell_spread_mv": 87
-      }
+      },
+      "ramp": true
     },
     {
       "t": 7.5,
       "set": {
         "speed_mph": 14,
         "cell_spread_mv": 96
-      }
+      },
+      "ramp": true
     },
     {
       "t": 8.0,
       "set": {
         "speed_mph": 17,
         "cell_spread_mv": 110
-      }
+      },
+      "ramp": true
     },
     {
       "t": 8.5,
       "set": {
         "speed_mph": 20,
         "cell_spread_mv": 124
-      }
+      },
+      "ramp": true
     },
     {
       "t": 9.0,
       "set": {
         "speed_mph": 22,
         "cell_spread_mv": 134
-      }
+      },
+      "ramp": true
     },
     {
       "t": 10.5,
       "set": {
         "accel_pedal_pct": 10,
         "cell_spread_mv": 62
-      }
+      },
+      "ramp": true
     },
     {
       "t": 11.5,
@@ -111,7 +120,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 16,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 12.5,
@@ -119,7 +129,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 11,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 13.5,
@@ -127,7 +138,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 6,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 14.5,
@@ -135,7 +147,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 0,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 15.5,
@@ -164,70 +177,80 @@
       "set": {
         "speed_mph": 6,
         "cell_spread_mv": 88
-      }
+      },
+      "ramp": true
     },
     {
       "t": 29.5,
       "set": {
         "speed_mph": 10,
         "cell_spread_mv": 125
-      }
+      },
+      "ramp": true
     },
     {
       "t": 30.0,
       "set": {
         "speed_mph": 14,
         "cell_spread_mv": 163
-      }
+      },
+      "ramp": true
     },
     {
       "t": 30.5,
       "set": {
         "speed_mph": 18,
         "cell_spread_mv": 200
-      }
+      },
+      "ramp": true
     },
     {
       "t": 31.0,
       "set": {
         "speed_mph": 22,
         "cell_spread_mv": 238
-      }
+      },
+      "ramp": true
     },
     {
       "t": 31.5,
       "set": {
         "speed_mph": 26,
         "cell_spread_mv": 267
-      }
+      },
+      "ramp": true
     },
     {
       "t": 32.0,
       "set": {
         "speed_mph": 30,
         "cell_spread_mv": 269
-      }
+      },
+      "ramp": true
     },
     {
       "t": 32.5,
       "set": {
         "speed_mph": 34,
         "cell_spread_mv": 271
-      }
+      },
+      "ramp": true
     },
     {
       "t": 33.0,
       "set": {
         "speed_mph": 38,
         "cell_spread_mv": 274
-      }
+      },
+      "ramp": true
     },
     {
       "t": 35.5,
       "set": {
         "accel_pedal_pct": 10,
         "cell_spread_mv": 74
-      }
+      },
+      "ramp": true
     },
     {
       "t": 36.5,
@@ -235,7 +258,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 28,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 37.5,
@@ -243,7 +267,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 19,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 38.5,
@@ -251,7 +276,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 10,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 39.5,
@@ -259,7 +285,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 0,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 40.5,
@@ -288,49 +315,56 @@
       "set": {
         "speed_mph": 6,
         "cell_spread_mv": 74
-      }
+      },
+      "ramp": true
     },
     {
       "t": 54.5,
       "set": {
         "speed_mph": 9,
         "cell_spread_mv": 94
-      }
+      },
+      "ramp": true
     },
     {
       "t": 55.0,
       "set": {
         "speed_mph": 13,
         "cell_spread_mv": 122
-      }
+      },
+      "ramp": true
     },
     {
       "t": 55.5,
       "set": {
         "speed_mph": 17,
         "cell_spread_mv": 149
-      }
+      },
+      "ramp": true
     },
     {
       "t": 56.0,
       "set": {
         "speed_mph": 20,
         "cell_spread_mv": 170
-      }
+      },
+      "ramp": true
     },
     {
       "t": 56.5,
       "set": {
         "speed_mph": 24,
         "cell_spread_mv": 198
-      }
+      },
+      "ramp": true
     },
     {
       "t": 58.0,
       "set": {
         "accel_pedal_pct": 10,
         "cell_spread_mv": 65
-      }
+      },
+      "ramp": true
     },
     {
       "t": 59.0,
@@ -338,7 +372,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 18,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 60.0,
@@ -346,7 +381,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 12,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 61.0,
@@ -354,7 +390,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 6,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 62.0,
@@ -362,7 +399,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 0,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 63.0,
@@ -391,119 +429,136 @@
       "set": {
         "speed_mph": 5,
         "cell_spread_mv": 85
-      }
+      },
+      "ramp": true
     },
     {
       "t": 77.0,
       "set": {
         "speed_mph": 8,
         "cell_spread_mv": 116
-      }
+      },
+      "ramp": true
     },
     {
       "t": 77.5,
       "set": {
         "speed_mph": 11,
         "cell_spread_mv": 147
-      }
+      },
+      "ramp": true
     },
     {
       "t": 78.0,
       "set": {
         "speed_mph": 14,
         "cell_spread_mv": 179
-      }
+      },
+      "ramp": true
     },
     {
       "t": 78.5,
       "set": {
         "speed_mph": 17,
         "cell_spread_mv": 210
-      }
+      },
+      "ramp": true
     },
     {
       "t": 79.0,
       "set": {
         "speed_mph": 20,
         "cell_spread_mv": 242
-      }
+      },
+      "ramp": true
     },
     {
       "t": 79.5,
       "set": {
         "speed_mph": 23,
         "cell_spread_mv": 274
-      }
+      },
+      "ramp": true
     },
     {
       "t": 80.0,
       "set": {
         "speed_mph": 26,
         "cell_spread_mv": 296
-      }
+      },
+      "ramp": true
     },
     {
       "t": 80.5,
       "set": {
         "speed_mph": 29,
         "cell_spread_mv": 297
-      }
+      },
+      "ramp": true
     },
     {
       "t": 81.0,
       "set": {
         "speed_mph": 32,
         "cell_spread_mv": 299
-      }
+      },
+      "ramp": true
     },
     {
       "t": 81.5,
       "set": {
         "speed_mph": 35,
         "cell_spread_mv": 300
-      }
+      },
+      "ramp": true
     },
     {
       "t": 82.0,
       "set": {
         "speed_mph": 38,
         "cell_spread_mv": 302
-      }
+      },
+      "ramp": true
     },
     {
       "t": 82.5,
       "set": {
         "speed_mph": 41,
         "cell_spread_mv": 305
-      }
+      },
+      "ramp": true
     },
     {
       "t": 83.0,
       "set": {
         "speed_mph": 44,
         "cell_spread_mv": 307
-      }
+      },
+      "ramp": true
     },
     {
       "t": 83.5,
       "set": {
         "speed_mph": 47,
         "cell_spread_mv": 310
-      }
+      },
+      "ramp": true
     },
     {
       "t": 84.0,
       "set": {
         "speed_mph": 50,
         "cell_spread_mv": 313
-      }
+      },
+      "ramp": true
     },
     {
       "t": 87.0,
       "set": {
         "accel_pedal_pct": 10,
         "cell_spread_mv": 84
-      }
+      },
+      "ramp": true
     },
     {
       "t": 88.0,
@@ -511,7 +566,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 38,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 89.0,
@@ -519,7 +575,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 25,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 90.0,
@@ -527,7 +584,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 12,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 91.0,
@@ -535,7 +593,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 0,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 92.0,
@@ -564,70 +623,80 @@
       "set": {
         "speed_mph": 4,
         "cell_spread_mv": 44
-      }
+      },
+      "ramp": true
     },
     {
       "t": 106.0,
       "set": {
         "speed_mph": 6,
         "cell_spread_mv": 50
-      }
+      },
+      "ramp": true
     },
     {
       "t": 106.5,
       "set": {
         "speed_mph": 8,
         "cell_spread_mv": 56
-      }
+      },
+      "ramp": true
     },
     {
       "t": 107.0,
       "set": {
         "speed_mph": 10,
         "cell_spread_mv": 62
-      }
+      },
+      "ramp": true
     },
     {
       "t": 107.5,
       "set": {
         "speed_mph": 12,
         "cell_spread_mv": 67
-      }
+      },
+      "ramp": true
     },
     {
       "t": 108.0,
       "set": {
         "speed_mph": 14,
         "cell_spread_mv": 73
-      }
+      },
+      "ramp": true
     },
     {
       "t": 108.5,
       "set": {
         "speed_mph": 16,
         "cell_spread_mv": 79
-      }
+      },
+      "ramp": true
     },
     {
       "t": 109.0,
       "set": {
         "speed_mph": 18,
         "cell_spread_mv": 85
-      }
+      },
+      "ramp": true
     },
     {
       "t": 109.5,
       "set": {
         "speed_mph": 20,
         "cell_spread_mv": 91
-      }
+      },
+      "ramp": true
     },
     {
       "t": 110.5,
       "set": {
         "accel_pedal_pct": 10,
         "cell_spread_mv": 59
-      }
+      },
+      "ramp": true
     },
     {
       "t": 111.5,
@@ -635,7 +704,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 15,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 112.5,
@@ -643,7 +713,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 10,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 113.5,
@@ -651,7 +722,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 5,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 114.5,
@@ -659,7 +731,8 @@
         "accel_pedal_pct": 0,
         "speed_mph": 0,
         "cell_spread_mv": 40
-      }
+      },
+      "ramp": true
     },
     {
       "t": 115.5,

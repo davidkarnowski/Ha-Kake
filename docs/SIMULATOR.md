@@ -903,6 +903,63 @@ pedals**, and let the load model produce the current; one that sets
 `current_a` is adding to it. Load one mid-run with `POST /sim/scenario`,
 clear it with `{"name": ""}`, or pass it at startup with `--scenario`.
 
+### Ramping between two timeline points
+
+A timeline is a **step function**: at an entry's `t`, its knobs snap. That is
+right for a gear change, a fault or a door, and wrong for a pedal — `pulls.json`
+moves `speed_mph` every half second, so the current climbs in visible stairs
+however fast the dashboard samples it. (The owner drove it on 2026-09-10 and
+said exactly that.)
+
+`"ramp": true` on an entry makes its **numeric** knobs slide instead:
+
+```json
+{"timeline": [{"t": 5,  "set": {"speed_mph": 0,  "gear": "D"}},
+              {"t": 10, "set": {"speed_mph": 40}, "ramp": true}]}
+```
+
+`speed_mph` here is 0 at t = 5, 20 at t = 7.5 and **exactly** 40 at t = 10.
+
+The rules, all four of them:
+
+* **From the previous timeline entry to this one.** The ramp starts at the
+  previous entry's `t` (0.0 for the first entry) and from whatever value that
+  entry left the knob at — so a ramp always begins where the timeline actually
+  was, not where the JSON says it was.
+* **Numbers only.** A text or boolean knob on a ramping entry **snaps at the
+  entry's own `t`**, because half of `D` is not a gear and 0.5 of `handbrake`
+  is not a brake. An entry may mix the two: the gear change lands on the
+  timestamp while the speed has been sliding towards it.
+* **Any `dt`, any clock.** The value is a function of *absolute simulated
+  time*, so `step(10)` once, ten `step(1)`s and `--speed 3600` all put the ramp
+  in the same place, and a step that jumps clean over the entry still lands on
+  the target. It lands on the target *exactly* — no accumulated drift — which
+  is why a calibrated scenario like `pulls` keeps its peaks.
+* **Nothing else changes.** An entry with no `ramp` is the step function it
+  always was; `clear_scenario()` stops a ramp where it stands and
+  `load_scenario()` starts it over. `tests/test_scenario_ramp.py` pins all of
+  it, including the no-`ramp` behaviour, as a compatibility guarantee for
+  every scenario ever written.
+
+It is **per entry, not per knob**. A single entry that wants one knob to slide
+and another to jump is written as two entries sharing a timestamp — the plain
+one has nothing to ramp across and steps:
+
+```json
+{"t": 12, "set": {"speed_mph": 50}, "ramp": true},
+{"t": 12, "set": {"fault.cell_degraded": true}}
+```
+
+Only `pulls` ships ramped. A stepped scenario that tests something specific —
+`drive` and `commute` are step *shapes*, and `degraded_pack` injects a fault at
+an instant — stays stepped on purpose.
+
+**A ramp is presentation, not measurement.** Interpolating between two
+timeline points is a choice about how the number gets from one to the other; a
+real car's current does rise over a fraction of a second rather than instantly,
+so a ramp is at least as honest as a step, but nothing was measured in between
+and the scenario's description should say so (`pulls.json` does).
+
 ### Compressing time
 
 There are two ways to ask for a faster clock and **exactly one of them wins**.
@@ -1017,7 +1074,38 @@ python web/app.py --adapter sim --scenario pulls
 ```
 
 Open the dashboard, turn on **Battery pack (3D)**, and arm the **cell log** from
-its ⋯ menu so every cycle stores its own cell set. On the *fixed range* colour
+its ⋯ menu so every cycle stores its own cell set. For a curve with real
+resolution, ask for a fine cadence and put the rig behind the simulated bus:
+
+```bash
+python web/app.py --adapter sim --sim-can --scenario pulls --interval 0.1
+```
+
+**MEASURED ON THE LAPTOP, 2026-09-10** (against a virtual bus — this is a
+statement about the software, never about a car): that command produced **8.6
+rows a second with a cell set on every row** — 197 rows over 23 s, median gap
+0.10 s — against roughly **1 row a second** at the default interval over a
+slow transport. Ten times the resolution, for one flag.
+
+Why it works: over BLE a cycle is 1.5–3 s of adapter round trips, so a
+six-second pull gets three or four samples and draws as a staircase whatever
+`--interval` says. Behind the simulated bus a cycle is *milliseconds*, so
+`--interval` stops being a floor and becomes the only governor — the reader
+sleeps for it and nothing else. And with the cell log armed, `lbc02` joins the
+fast lane and **every fresh cell read gets its own row** (`cells_seq` marks
+freshness, so the sticky cache is never stored twice), which is why the cell
+count keeps up with the row count. The same cadence is what the real CANable
+should give on the car, where the numbers would mean something.
+
+The other half of the sharpness was the scenario's own half-second steps, and
+that one is fixed in the scenario: `pulls.json` now carries `"ramp": true` on
+the entries inside each pull ([above](#ramping-between-two-timeline-points)),
+so the speed, pedal and spread slide between timeline points instead of
+jumping. Sampled at 0.1 s, the biggest jump in current between two consecutive
+samples fell from **217 A to 20 A**, while the peak of the hardest pull moved
+by 0.3 A — the calibration is untouched, and `tests/test_pulls_scenario.py`
+still pins it. The pedal press that *starts* each pull still snaps, because
+that is what a foot does. On the *fixed range* colour
 scale a colour means one voltage all the way through, which is what makes the
 sag legible; on the frame-relative scale the pack re-normalises each frame and
 the sag mostly disappears (`docs/PACK3D.md`).

@@ -126,12 +126,25 @@ fault):
 {"name": "example", "vehicle": "leaf_ze0", "seed": 1,
  "knobs": {"soc": 80, "ambient_c": 22, "gear": "P", "start_state": "ready"},
  "timeline": [{"t": 0,  "set": {"gear": "D", "handbrake": false}},
-              {"t": 15, "set": {"speed_mph": 45, "accel_pedal_pct": 35}},
+              {"t": 15, "set": {"speed_mph": 45, "accel_pedal_pct": 35}, "ramp": true},
               {"t": 60, "set": {"fault.cell_degraded": true}}]}
 ```
 
-`t` is seconds of simulated time from start; entries fire per sub-step, in
-order, whatever the clock scale. A scenario drives `speed_mph`,
+A timeline entry is `{"t", "set"}` plus an optional `"ramp"` (a boolean,
+default false). `t` is seconds of simulated time from start; entries fire per
+sub-step, in order, whatever the clock scale.
+
+`"ramp": true` makes the entry's **numeric** knobs interpolate linearly from
+the value they held at the previous timeline entry to this entry's value,
+across the interval between those two entries, landing exactly on the target at
+this entry's own `t`; a core is free to implement it, but if it does, these are
+the semantics. Non-numeric knobs (text, boolean) never interpolate — they snap
+at the entry's own `t`. A ramp on the first entry, or on one sharing a
+timestamp with the entry before it, has no interval and is a step. The
+interpolation is a function of absolute simulated time, so it is independent of
+`dt`, of the sub-step size and of the clock scale. An entry without `ramp` is
+the step function it has always been — a compatibility guarantee for every
+scenario written before the flag existed. A scenario drives `speed_mph`,
 `accel_pedal_pct`, `brake_pct` and the HVAC knobs and lets the load model
 produce the current; one that sets `current_a` is adding to it (see
 *Load and motion* above). `clear_scenario()` stops the timeline and leaves
