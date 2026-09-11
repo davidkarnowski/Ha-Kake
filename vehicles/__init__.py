@@ -25,6 +25,13 @@ A profile is a module in this package exporting:
                    profile. Optional `signals` lists the SIGNALS keys the tile
                    displays: what its ⋯ menu offers for audible alerts. Absent,
                    every non-text signal whose `item` is in `items` is offered.
+                   A profile declares only the tiles that describe *its car*.
+                   The framework adds its own on top (FRAMEWORK_TILES below):
+                   tiles that describe the *transport* rather than a vehicle,
+                   so a second car does not have to opt in to a debug view.
+                   `tiles(mod)`, `default_span(mod)` and `default_tiles(mod)`
+                   are the merged views the reader binds; a profile that
+                   declares a framework tile's id is rejected.
   DEFAULT_SPAN     dict tile id -> span (built-ins only)
   DEFAULT_TILES    list — the out-of-the-box tile config (built-in and/or
                    signal tiles)
@@ -124,6 +131,51 @@ _REQUIRED = ("NAME", "TITLE", "ITEMS", "TARGETS", "KIND_ORDER", "TILES",
              "FAST_ONLY", "SIGNALS", "configure", "decode")
 
 _SQL_TYPE = {"real": "REAL", "int": "INTEGER", "bool": "INTEGER", "text": "TEXT"}
+
+
+# ── framework tiles: built-in tiles that belong to the transport ─────────
+#
+# A built-in tile is normally the profile's: it knows which items feed it and
+# which SVG draws it, and a profile that cannot drive it simply does not
+# declare it (the Lancer's TILES is empty). The raw output console is the
+# exception the owner decided on (the 2026-09-10 feature plan): it shows what
+# the *transport* is saying — frames, UDS answers, adapter replies, text
+# signals, reader events — so it is useful on any car, and requiring every
+# profile to declare it would be asking each author to opt in to a debug view
+# they did not write.
+#
+# So the framework carries its own small list and merges it over the profile's.
+# The three merged views below are what reader.set_vehicle() binds; nothing
+# else in the project reads FRAMEWORK_TILES directly, and validate_profile()
+# refuses a profile that tries to declare one of these ids itself (two
+# definitions of one tile would silently disagree about its items).
+#
+# `items` is empty on purpose: the console polls nothing. It taps what the
+# reader is already doing, which is why enabling it costs no bandwidth.
+
+FRAMEWORK_TILES = [
+    {"id": "console", "name": "Raw output", "items": [], "signals": []},
+]
+FRAMEWORK_SPAN = {"console": 12}          # full width: it is a terminal
+FRAMEWORK_DEFAULTS = [{"id": "console", "enabled": False, "span": 12, "h": 12}]
+FRAMEWORK_IDS = frozenset(t["id"] for t in FRAMEWORK_TILES)
+
+
+def tiles(mod):
+    """The profile's built-in tiles plus the framework's, profile first."""
+    return list(getattr(mod, "TILES", ()) or []) + [dict(t) for t in FRAMEWORK_TILES]
+
+
+def default_span(mod):
+    """DEFAULT_SPAN with the framework tiles' spans merged in."""
+    return dict(FRAMEWORK_SPAN, **(getattr(mod, "DEFAULT_SPAN", None) or {}))
+
+
+def default_tiles(mod):
+    """DEFAULT_TILES with the framework tiles appended — disabled, so a new
+    install polls exactly what it polled before this existed."""
+    return [dict(t) for t in (getattr(mod, "DEFAULT_TILES", None) or [])] + \
+           [dict(t) for t in FRAMEWORK_DEFAULTS]
 
 
 def _config_vehicle():
@@ -355,7 +407,15 @@ def validate_profile(mod):
                             p.append(f"{name}: tile {t['id']!r} lists unknown signal {k!r}")
             if t["id"] not in mod.DEFAULT_SPAN:
                 p.append(f"{name}: tile {t['id']!r} has no DEFAULT_SPAN entry")
-    builtin = {t["id"] for t in mod.TILES if isinstance(t, dict) and "id" in t}
+            if t["id"] in FRAMEWORK_IDS:
+                p.append(f"{name}: tile {t['id']!r} is a framework tile (vehicles/__init__.py "
+                         f"FRAMEWORK_TILES); a profile may not declare it")
+    for tid in FRAMEWORK_IDS:
+        if tid in (getattr(mod, "DEFAULT_SPAN", None) or {}):
+            p.append(f"{name}: DEFAULT_SPAN may not set a span for the framework tile {tid!r}")
+        if any(isinstance(t, dict) and t.get("id") == tid for t in mod.DEFAULT_TILES):
+            p.append(f"{name}: DEFAULT_TILES may not list the framework tile {tid!r}")
+    builtin = {t["id"] for t in tiles(mod) if isinstance(t, dict) and "id" in t}
     for t in mod.DEFAULT_TILES:
         if not isinstance(t, dict) or "id" not in t:
             p.append(f"{name}: every DEFAULT_TILES entry needs an 'id', found {t!r}")
