@@ -141,6 +141,11 @@
     el.ids.addEventListener('input', function () { state.idFilter = el.ids.value; redraw(); });
     el.known.addEventListener('change', function () { state.known = el.known.checked; redraw(); });
     el.out.addEventListener('click', function (e) {
+      // A drag-select ends in a click, and copying the whole line then would
+      // throw away the selection the person just made by hand. Click-to-copy is
+      // the convenience; selecting text with the mouse still works normally.
+      var sel = window.getSelection && window.getSelection();
+      if (sel && !sel.isCollapsed && String(sel)) return;
       var line = e.target.closest ? e.target.closest('.console-line') : null;
       if (line) copy(line);
     });

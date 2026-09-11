@@ -143,7 +143,24 @@ CAN id where one is meaningful and `""` where it is not.
 - **A byte that changed** from that id's previous frame is highlighted. That is
   how a human finds a signal. A first sighting highlights nothing: "everything
   changed" says nothing.
-- **Click a line to copy it** as `ID B0 B1 …` — straight into a fixture.
+- **Click a line to copy it** as `ID B0 B1 …` — straight into a fixture. The
+  pane is ordinary selectable text as well, so a hand-made selection and a
+  normal copy work too; a click that ends a drag-select is ignored rather than
+  replacing what you just selected.
+
+## With no car: both simulator rigs already feed it
+
+Nothing simulator-side had to be added — the console taps what a transport is
+already producing, and the two rigs produce genuinely different views, which
+makes them the place to see the difference:
+
+| Rig | What the console shows |
+|---|---|
+| `python web/app.py --adapter sim` | the `SimELM` transport is ELM-shaped, so you get exactly what an ELM327 gives: the polled ids only, during their dwell, plus the grouped UDS answers — and the pane carries the "partial view of the bus" line, because it genuinely is one |
+| `python web/app.py --adapter sim --sim-can` | the model's ECUs run on a virtual CAN bus behind the native façade, so every id the model broadcasts appears (a one-second sample shows ~47 distinct ids), the per-id rate cap starts doing visible work, and the drop counts become the interesting number |
+
+That contrast — the same car, two transports, two honest answers about what can
+be seen — is worth looking at once before trusting the pane on real hardware.
 
 ## Turning it on
 

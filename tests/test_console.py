@@ -774,6 +774,13 @@ def test_console_js_keeps_the_pane_read_only():
     assert js.count("fetch(") == 2, "one poll and one registry read, both GET"
 
 
+def test_click_to_copy_never_eats_a_hand_made_selection():
+    """A drag-select ends in a click; copying the whole line then would throw
+    away the selection the person just made."""
+    js = read(CONSOLE_JS)
+    assert "isCollapsed" in js and "getSelection" in js
+
+
 def test_console_js_says_what_the_pane_is_not():
     js = read(CONSOLE_JS)
     assert "record_session.py" in js and "not a capture tool" in js
