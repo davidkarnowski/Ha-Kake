@@ -16,6 +16,9 @@ API:
                                  (&max=3600 thins to the last row per bucket; &cells=1 joins cells)
   /api/bookmarks                 GET ?from&to / PUT {t,label} / DELETE ?t — timeline flags (web/bookmarks.json)
   /api/bookmarks/auto?from=&to=  discharge pulls found in the readings, as candidate flags
+  /api/console?since=&kind=&ids=&limit=
+                                 the raw output console's entries after an opaque
+                                 cursor (docs/CONSOLE.md); a window, not a capture
   /api/tiles                     GET/PUT tile layout (drives what the reader polls)
   /api/signals                   signal registry, colour scales, tile types
   /api/layouts[/<name>[/load]]   named layouts (save / load / delete)
@@ -59,6 +62,7 @@ from flask import Flask, jsonify, render_template, request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from store import Store                 # noqa: E402
+import console as consolelog           # the raw output console's file reader  # noqa: E402
 import dtc                               # noqa: E402  (trouble-code dictionary; absent is normal)
 import reader                            # noqa: E402  (vehicle-bound globals: reader.ITEMS etc.)
 import signals                           # noqa: E402
@@ -345,6 +349,45 @@ def api_signals():
         "vehicle": {"name": reader.VEHICLE.NAME, "title": reader.VEHICLE.TITLE},
         "demo": bool(DEMO),
     })
+
+
+# ── the raw output console (docs/CONSOLE.md) ─────────────────────────────
+
+@app.route("/api/console")
+def api_console():
+    """Console entries after an opaque cursor.
+
+    `since` is a cursor and not a timestamp, because two frames can share a
+    millisecond. `kind` and `ids` are comma-separated filters; `limit` caps the
+    answer to the newest matches, so a pane that fell behind gets the end of the
+    stream rather than the start of a backlog. The reader writes the file
+    (web/console.jsonl, gitignored, size-capped) only while the tile is on; when
+    it is off the file is absent and this answers an empty window, which is the
+    honest thing rather than a 404.
+
+    `stats` rides along from the state file — kept, dropped, dropped per id, and
+    the `partial` line when the transport can only show part of the bus. A pane
+    that silently thinned its own data would be worse than no pane.
+    """
+    if DEMO:
+        return jsonify({"entries": [], "cursor": "0", "stats": {"on": False, "demo": True}})
+    since = request.args.get("since", 0, type=int) or 0
+    limit = min(max(request.args.get("limit", consolelog.LIMIT_DEFAULT, type=int), 1),
+                consolelog.LIMIT_MAX)
+    kinds = [k for k in (request.args.get("kind") or "").split(",") if k in consolelog.KINDS] or None
+    ids = [i.strip().upper() for i in (request.args.get("ids") or "").split(",") if i.strip()] or None
+    log = consolelog.ConsoleLog(reader.CONSOLE_FILE)
+    entries = log.read(since=since, kind=kinds, ids=ids, limit=limit)
+    try:
+        with open(STATE_FILE) as f:
+            stats = json.load(f).get("console") or {"on": False}
+    except (FileNotFoundError, json.JSONDecodeError, AttributeError):
+        stats = {"on": False}
+    # The cursor to ask with next time: the newest entry served, or the caller's
+    # own — never the ring's, which may be ahead of what this file holds.
+    cursor = str(entries[-1]["seq"]) if entries else str(since)
+    return jsonify({"entries": entries, "cursor": cursor, "stats": stats,
+                    "kinds": list(consolelog.KINDS)})
 
 
 @app.route("/api/cells")

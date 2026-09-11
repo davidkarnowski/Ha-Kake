@@ -567,3 +567,119 @@ def test_a_cycle_flushes_the_ring_to_the_file(armed):
     asyncio.run(r.poll_once(ElmLike({"2101": ["7BB 10 29 61 01"]})))
     rows = con.ConsoleLog(rd.CONSOLE_FILE).read()
     assert any(e["kind"] == "uds" for e in rows), [e["text"] for e in rows]
+
+
+# ── the endpoint ──
+
+@pytest.fixture
+def api(tmp_path, monkeypatch, leaf_profile):
+    """The Flask test client with every file under tmp_path, plus a writer that
+    fills the console file the way the reader would."""
+    import app as webapp
+    import reader as rd
+    monkeypatch.setattr(webapp, "DEMO", None)
+    monkeypatch.setattr(webapp, "STATE_FILE", str(tmp_path / "state.json"))
+    monkeypatch.setattr(rd, "CONSOLE_FILE", str(tmp_path / "console.jsonl"))
+    webapp.app.config["TESTING"] = True
+
+    def write(entries=(), stats=None):
+        c = con.Console(rd.CONSOLE_FILE, ids=["421", "5B3", "7BB"], rate_cap=10_000)
+        for kind, cid, text in entries:
+            c.add(kind, text, cid=cid, bus="car")
+        c.flush()
+        with open(webapp.STATE_FILE, "w") as f:
+            json.dump({"status": "ok", "console": stats if stats is not None else c.stats()}, f)
+        return c
+
+    with webapp.app.test_client() as client:
+        yield client, write
+
+
+ROWS = [("frame", "421", "421 08 00 00"), ("frame", "5B3", "5B3 01 02"),
+        ("uds", "7BB", "2101 -> 7BB 10 29 61 01"), ("event", "", "connected: ELM327 v1.5"),
+        ("frame", "421", "421 09 00 00")]
+
+
+def test_the_endpoint_serves_the_window_and_a_cursor(api):
+    client, write = api
+    write(ROWS)
+    body = client.get("/api/console").get_json()
+    assert [e["text"] for e in body["entries"]] == [r[2] for r in ROWS]
+    assert body["cursor"] == str(body["entries"][-1]["seq"])
+    assert body["kinds"] == list(con.KINDS)
+    assert body["stats"]["on"] is True
+
+
+def test_the_cursor_asks_only_for_what_is_new(api):
+    """How the tile polls: take what is there, then keep asking from the cursor
+    it was handed. A limit always takes the *newest* matches — a pane that fell
+    behind wants the end of the stream, not the start of a backlog."""
+    client, write = api
+    c = write(ROWS)
+    first = client.get("/api/console?limit=2").get_json()
+    assert [e["text"] for e in first["entries"]] == ["connected: ELM327 v1.5", "421 09 00 00"]
+
+    idle = client.get(f"/api/console?since={first['cursor']}").get_json()
+    assert idle["entries"] == [] and idle["cursor"] == first["cursor"], \
+        "nothing new keeps the cursor where it was"
+
+    c.add("frame", "421 0A 00 00", cid="421", bus="car")
+    c.flush()
+    fresh = client.get(f"/api/console?since={first['cursor']}").get_json()
+    assert [e["text"] for e in fresh["entries"]] == ["421 0A 00 00"]
+    assert int(fresh["cursor"]) == int(first["cursor"]) + 1
+    assert client.get("/api/console?since=0").get_json()["entries"][0]["text"] == "421 08 00 00"
+
+
+def test_the_endpoint_filters_by_kind_and_id(api):
+    client, write = api
+    write(ROWS)
+    assert [e["text"] for e in client.get("/api/console?kind=frame").get_json()["entries"]] == \
+        ["421 08 00 00", "5B3 01 02", "421 09 00 00"]
+    assert [e["text"] for e in client.get("/api/console?ids=421").get_json()["entries"]] == \
+        ["421 08 00 00", "421 09 00 00"]
+    assert [e["text"] for e in client.get("/api/console?kind=uds,event").get_json()["entries"]] == \
+        ["2101 -> 7BB 10 29 61 01", "connected: ELM327 v1.5"]
+    assert client.get("/api/console?ids=999").get_json()["entries"] == []
+    # a kind nobody defined is ignored rather than obeyed
+    assert len(client.get("/api/console?kind=nonsense").get_json()["entries"]) == len(ROWS)
+
+
+def test_the_limit_takes_the_newest_and_is_capped(api):
+    client, write = api
+    write(ROWS)
+    assert [e["text"] for e in client.get("/api/console?limit=2").get_json()["entries"]] == \
+        ["connected: ELM327 v1.5", "421 09 00 00"]
+    body = client.get(f"/api/console?limit={con.LIMIT_MAX * 100}").get_json()
+    assert len(body["entries"]) == len(ROWS)        # capped, not refused
+
+
+def test_the_stats_say_what_was_thrown_away(api):
+    client, write = api
+    write(ROWS, stats={"on": True, "kept": 5, "dropped": 1200, "dropped_by_id": {"1DB": 1200},
+                       "partial": "ELM327: …", "everything": False, "rate_cap": 10})
+    stats = client.get("/api/console").get_json()["stats"]
+    assert stats["dropped"] == 1200 and stats["dropped_by_id"] == {"1DB": 1200}
+    assert stats["partial"].startswith("ELM327")
+
+
+def test_a_console_that_was_never_armed_is_an_empty_window_not_an_error(api):
+    client, _ = api
+    body = client.get("/api/console").get_json()
+    assert body["entries"] == [] and body["stats"] == {"on": False}
+    assert client.get("/api/console").status_code == 200
+
+
+def test_demo_mode_never_opens_the_file(api, monkeypatch):
+    import app as webapp
+    client, write = api
+    write(ROWS)
+    monkeypatch.setattr(webapp, "DEMO", "docs/demo")
+    body = client.get("/api/console").get_json()
+    assert body["entries"] == [] and body["stats"] == {"on": False, "demo": True}
+
+
+def test_the_endpoint_is_read_only(api):
+    client, _ = api
+    for method in ("post", "put", "delete"):
+        assert getattr(client, method)("/api/console").status_code == 405
