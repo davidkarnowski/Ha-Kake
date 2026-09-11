@@ -269,6 +269,12 @@ class MqttSource:
         self._pending = {}                     # req → Future
         self._rx_counts = {}                   # id_hex → frames seen
         self._lock = threading.Lock()
+        # Optional console event tap (docs/CONSOLE.md), set by the reader while
+        # the raw output tile is enabled: tap(kind, text, id="", t=None). It
+        # carries what the façade never sees — a bridge message this source had
+        # to throw away. Frames are NOT tapped here: they reach the console
+        # through CanFacade's own tap, and tapping both would print each twice.
+        self.event_tap = None
 
     # ── identity ─────────────────────────────────────────────────────────
 
@@ -488,6 +494,16 @@ class MqttSource:
                 self._deliver(*parse_frame(_loads(msg.payload), topic_id=tail[3:]))
         except (ValueError, TypeError) as e:
             self.log(f"  mqtt: dropped message on {topic}: {e}")
+            self._tap_event(f"mqtt: dropped message on {topic}: {e}")
+
+    def _tap_event(self, text):
+        tap = self.event_tap
+        if tap is None:
+            return
+        try:
+            tap("event", text, "")
+        except Exception:                  # a console bug is not a transport fault
+            self.event_tap = None
 
     def _take_status(self, obj):
         if not isinstance(obj, dict):

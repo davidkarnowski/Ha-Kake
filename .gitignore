@@ -57,6 +57,13 @@ config.local.json
 web/calibration.json
 web/calibration.json.tmp
 
+# The raw output console's window (docs/CONSOLE.md): a rolling JSON-lines file
+# the reader writes only while the tile is on. It is a debug window, not a
+# capture — record_session.py and the MQTT bridge are the capture tools — and
+# it holds raw frames from the owner's own car, so it never leaves the machine.
+web/console.jsonl
+web/console.jsonl.tmp
+
 # Named tile layouts (personal)
 web/layouts.json
 web/layouts.json.tmp

@@ -55,12 +55,14 @@ import mqttsource            # <prefix>/state + signal/<key> for gauges; no-op w
 from vehicles import (get_vehicle, peak_keys, buses, item_bus, primary_bus, source_specs,  # noqa: E402
                       tiles as vehicle_tiles, default_span, default_tiles)
 import signals                                                      # noqa: E402
+import console as consolelog        # the raw output console's ring and file (docs/CONSOLE.md)  # noqa: E402
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(DIR, "battery_state.json")
 PAUSE_FILE = os.path.join(DIR, "reader.pause")
 TILES_FILE = os.path.join(DIR, "tiles.json")
 CALIB_FILE = os.path.join(DIR, "calibration.json")   # per-car offsets (gitignored)
+CONSOLE_FILE = os.path.join(DIR, "console.jsonl")    # the raw output console's window (gitignored)
 # Replay writes to its own files, per profile: it must never touch the real
 # database (years of irreplaceable readings) or the last real state, and two
 # profiles have different `readings` columns, so they get different files.
@@ -430,6 +432,61 @@ def period_overrides(tiles_cfg):
     return out
 
 
+# ── the raw output console (docs/CONSOLE.md) ──────────────────────────────
+# A framework tile (vehicles/__init__.py FRAMEWORK_TILES), off by default. The
+# reader learns from web/tiles.json that it is on — the same mtime path
+# period_overrides() uses — and only then taps the transports. No tile, no
+# object, no tap, no file: enabling it is the only thing that costs anything.
+#
+# Its two options live in the tile's `opts`, like the cell log's:
+#   everything  show every id on the bus and say that it is lossy
+#   rate        frames of one id kept per second (the per-id cap)
+
+CONSOLE_TILE = "console"
+CONSOLE_RATE_MIN, CONSOLE_RATE_MAX = 1, 200
+# What an ELM327 can honestly show, said in the pane itself. It is not a
+# limitation of this code: the adapter only sees the ids the profile filtered
+# for, only while ATMA is running, plus whatever it says back.
+CONSOLE_PARTIAL_ELM = ("ELM327: only the ids this profile polls, and only during each ATMA dwell, "
+                       "plus the adapter's own replies. A partial view of the bus.")
+
+
+def console_options(tiles_cfg):
+    """The console tile's options, or None when the tile is not enabled."""
+    for t in (tiles_cfg or {}).get("tiles", []):
+        if t.get("id") != CONSOLE_TILE:
+            continue
+        if not t.get("enabled", True):
+            return None
+        opts = t.get("opts") or {}
+        try:
+            rate = int(opts.get("rate", consolelog.RATE_CAP))
+        except (TypeError, ValueError):
+            rate = consolelog.RATE_CAP
+        return {"everything": bool(opts.get("everything")),
+                "rate": min(CONSOLE_RATE_MAX, max(CONSOLE_RATE_MIN, rate))}
+    return None
+
+
+def console_ids(items):
+    """The CAN ids the given items put on the wire: a passive item's own id, a
+    UDS item's response header. This is what the console shows by default —
+    the ids the enabled tiles poll, which is 10–15 of them rather than the
+    whole bus."""
+    out = set()
+    for i in items:
+        it = ITEMS.get(i)
+        if not it:
+            continue
+        tgt = TARGETS.get(it["kind"])
+        if tgt is None:
+            out.add(str(it.get("id", "")).upper())
+        elif tgt:
+            out.add(str(tgt[1]).upper())
+    out.discard("")
+    return out
+
+
 # ── timeline bookmarks ────────────────────────────────────────────────────
 # A flag the owner drops on a moment — "start of the pull" — kept in
 # web/bookmarks.json like the other per-machine files, so playback can jump
@@ -708,6 +765,10 @@ def resolve_sources(specs, cache, item_age, period, pins=None, decoded=(), bus_o
 
 
 class Reader:
+    # Class default so a bare Reader.__new__(Reader) — how a couple of transport
+    # tests borrow probe_alive() — still knows the console is off.
+    console = None
+
     def __init__(self, interval, adapter_pref, fast=False, store=None, budget=1.5):
         self.interval = interval          # minimum cycle period
         self.budget = budget              # slow-lane seconds per cycle
@@ -748,6 +809,9 @@ class Reader:
         self._tiles_mtime = None
         self._items = set()
         self._periods = {}                # item → period override from tile opts (cell log)
+        self.console = None               # consolelog.Console while the raw output tile is on
+        self._console_opts = None         # the options it was armed with
+        self._console_text = {}           # text signal → last value put in the console
         self.cells_seq = 0                # bumps on every real cell-voltage decode
         self._stored_cells_seq = None     # the cells_seq the last stored row carried
         self._last_store = 0.0
@@ -783,6 +847,102 @@ class Reader:
                 print(f"  [reader] cell log {'armed: cell voltages every cycle, every fresh read stored' if armed else 'off'}",
                       flush=True)
                 self._periods = periods
+            self.refresh_console(cfg)
+
+    # ── the raw output console (docs/CONSOLE.md) ─────────────────────────
+
+    def refresh_console(self, cfg):
+        """Arm or disarm the console from the tile's enabled flag and options.
+
+        Re-armed (a fresh ring, a fresh file) whenever an option changes, so
+        the drop counts on screen always belong to the rules on screen.
+        """
+        opts = console_options(cfg)
+        ids = console_ids(self._items)
+        want = dict(opts, ids=sorted(ids)) if opts else None
+        if want == self._console_opts:
+            return
+        self._console_opts = want
+        if want is None:
+            self.console = None
+            print("  [reader] raw output console off", flush=True)
+        else:
+            self.console = consolelog.Console(CONSOLE_FILE, ids=ids,
+                                              everything=want["everything"], rate_cap=want["rate"])
+            scope = "every id on the bus (lossy)" if want["everything"] else f"{len(ids)} polled id(s)"
+            print(f"  [reader] raw output console armed: {scope}, "
+                  f"{want['rate']}/s per id -> {CONSOLE_FILE}", flush=True)
+            self.console_event(f"console armed: {scope}, at most {want['rate']} frames per id per second")
+        self.attach_console(self.transports)
+
+    def attach_console(self, transports):
+        """Point every transport's tap at the console — or at nothing.
+
+        `tap` is a plain attribute on the CAN façade (native CAN, MQTT and the
+        simulated bus all reach the reader through it); an ELM327 has none, and
+        that is exactly the partial view the pane has to admit to.
+        """
+        c = self.console
+        for bus, t in (transports or {}).items():
+            if hasattr(t, "tap"):
+                t.tap = c.tap(bus=bus) if c else None
+            src = getattr(t, "_mqtt_source", None)
+            if src is not None and hasattr(src, "event_tap"):
+                src.event_tap = c.tap(bus=bus) if c else None
+        if c is not None:
+            primary = (transports or {}).get(PRIMARY_BUS)
+            c.partial = "" if (primary is not None and hasattr(primary, "tap")) else CONSOLE_PARTIAL_ELM
+
+    def console_event(self, text, bus=""):
+        """A reader event — connect, reconnect, bus down, asleep, paused."""
+        if self.console is not None:
+            self.console.add("event", text, bus=bus or PRIMARY_BUS)
+
+    def console_item(self, bus, elm, i, it, lines):
+        """What one polled item put on the console.
+
+        A passive capture on a transport whose façade is already tapped adds
+        nothing — every frame went in as it arrived. On an ELM327 these lines
+        *are* the only frames there will ever be, so they go in here. A UDS
+        item becomes one `uds` entry per request, its answer grouped with the
+        command that asked for it, which is the pairing that makes a decoded
+        value trustworthy rather than magic; an answer that is not an answer
+        (NO DATA, "?", silence) is what the adapter said, so it is `adapter`.
+        """
+        c = self.console
+        if c is None:
+            return
+        tgt = TARGETS[it["kind"]]
+        if tgt is None:
+            if hasattr(elm, "tap"):
+                return
+            for line in lines:
+                c.add("frame", line, cid=line.split()[0] if line.split() else "", bus=bus)
+            if not lines:
+                c.add("adapter", f"{it['id']}: nothing in a {it.get('secs', 0)}s dwell",
+                      cid=str(it.get("id", "")), bus=bus)
+            return
+        rx = str(tgt[1]).upper()
+        said = " / ".join(l for l in lines if l) or "no answer"
+        empty = not any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines)
+        c.add("adapter" if empty else "uds", f"{it['cmd']} -> {said}", cid=rx, bus=bus)
+
+    def console_text(self):
+        """Every `text`-kind signal the profile carries, as it changes — the
+        Lancer's stored codes appear the moment mode 03 answers, with the raw
+        frames that produced them directly above."""
+        c = self.console
+        if c is None:
+            return
+        for key, sig in signals.SIGNALS.items():
+            if sig.get("kind") != "text":
+                continue
+            v = signals.get_value(self.cache, key)
+            if v is None or v == "":
+                continue
+            if self._console_text.get(key) != v:
+                self._console_text[key] = v
+                c.add("text", f"{sig.get('label', key)}: {v}", bus=PRIMARY_BUS)
 
     def period(self, i):
         """An item's polling period: the profile's, unless a tile option overrides it."""
@@ -960,7 +1120,11 @@ class Reader:
         try:
             r = await elm.send("ATI", wait=0.1, timeout=3.0)
         except Exception:
+            if self.console is not None:
+                self.console.add("adapter", "ATI -> nothing (the link is gone)")
             return False
+        if self.console is not None:
+            self.console.add("adapter", f"ATI -> {' / '.join(x for x in r if x) or 'silence'}")
         return bool(r) and any(c.isdigit() for c in " ".join(r))
 
     async def poll_bus(self, bus, elm, items, timing, responses):
@@ -978,6 +1142,7 @@ class Reader:
             else:
                 lines = await elm.send(it["cmd"], wait=0.05, timeout=it.get("timeout", 8.0))
             responses[i] = lines
+            self.console_item(bus, elm, i, it, lines)
             timing[i] = round(loop.time() - t, 2)
             self.item_last[i] = loop.time()
             self.stamp(elm, i, it)
@@ -994,6 +1159,7 @@ class Reader:
         timing = {}
         responses = {}
         transports = self.transports or ({PRIMARY_BUS: elm} if elm is not None else {})
+        self.attach_console(transports)
         by_bus = {}
         for i in self.plan(loop.time()):
             by_bus.setdefault(item_bus(VEHICLE, i), []).append(i)
@@ -1046,6 +1212,10 @@ class Reader:
         merged["cells_seq"] = self.cells_seq
         merged["celllog"] = self._periods.get(CELLLOG_ITEM) == 0
         merged["bus_alive"] = dict(self.bus_alive)
+        self.console_text()
+        merged["console"] = self.console.stats() if self.console is not None else {"on": False}
+        if self.console is not None:
+            self.console.flush()           # the file is a cycle behind at worst
         return merged, alive
 
     # ── provenance ───────────────────────────────────────────────────────
@@ -1084,6 +1254,7 @@ class Reader:
         """A secondary bus's transport raised mid-cycle: drop it, report it,
         and reconnect it in the background while the others keep polling."""
         self.log(f"[reader] bus {bus}: {type(exc).__name__}: {exc} — reconnecting it, other buses keep polling")
+        self.console_event(f"bus {bus} down: {type(exc).__name__}: {exc} — reconnecting it", bus=bus)
         self.bus_alive[bus] = False
         self._bus_errors[bus] = f"{type(exc).__name__}: {exc}"
         old = self.transports.pop(bus, None)
@@ -1120,6 +1291,8 @@ class Reader:
             self._bus_errors.pop(bus, None)
             self.bus_alive[bus] = None
             self.log(f"[reader] bus {bus} reconnected: {elm.adapter_name} via {elm.adapter_type}")
+            self.console_event(f"bus {bus} reconnected: {elm.adapter_name} via {elm.adapter_type}", bus=bus)
+            self.attach_console(self.transports)
             return
 
     async def close_transports(self):
@@ -1253,6 +1426,9 @@ class Reader:
                     if bus != PRIMARY_BUS:
                         self.log(f"[reader] bus {bus}: {t.adapter_name} via {t.adapter_type}"
                                  + (" (listen-only)" if getattr(t, "listen_only", False) else ""))
+                self.attach_console(self.transports)
+                self.console_event(f"connected: {elm.adapter_name} via {elm.adapter_type}"
+                                   + (f" (reconnected after {attempt - 1} failed attempt(s))" if attempt > 1 else ""))
                 attempt = 0
                 backoff = BACKOFF_MIN
                 if await self.poll_loop(elm) == "paused":
@@ -1269,6 +1445,7 @@ class Reader:
                     self.publish("reconnecting", "Restarting reader (Bluetooth reset after sleep)…")
                     return True
                 self.log(f"[reader] {type(e).__name__}: {e} — retrying in {backoff}s")
+                self.console_event(f"transport lost: {type(e).__name__}: {e} — retrying in {backoff}s")
                 self.publish("reconnecting", f"{type(e).__name__}: {e}", retry_in=backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, BACKOFF_MAX)
@@ -1298,15 +1475,19 @@ class Reader:
                 if not await self.probe_alive(elm):
                     # adapter not answering at all → link dropped (sleep/lid). Reconnect.
                     self.log("[reader] adapter stopped responding (ATI silent) — link dropped, reconnecting")
+                    self.console_event("adapter stopped responding (ATI silent) — link dropped, reconnecting")
                     raise ConnectionError("adapter not responding — link dropped")
                 if not asleep:
                     print(f"  [{now.strftime('%H:%M:%S')}] adapter OK but no CAN data — car asleep? polling every {ASLEEP_INTERVAL}s")
+                    self.console_event(f"adapter answers but the bus is silent — car asleep? "
+                                       f"polling every {ASLEEP_INTERVAL}s")
                 asleep = True
                 self.publish("asleep", "Adapter connected, no CAN data — car off?")
                 await asyncio.sleep(ASLEEP_INTERVAL)
                 continue
             if asleep:
                 print("  car awake again")
+                self.console_event("the bus is talking again")
                 asleep = False
 
             self.readings += 1

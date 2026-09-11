@@ -213,6 +213,12 @@ class CanFacade:
         self.status = {"online": None}
         self._offline = None                               # reason, when the source says so
         self._said = set()                                 # one log line per distinct refusal
+        # Optional console tap (docs/CONSOLE.md), set by the reader only while
+        # the raw output tile is enabled: tap(kind, text, id="", t=None). It is
+        # a plain callable so this module never imports the console, and every
+        # call is wrapped — a debug pane must not be able to take a bus down.
+        # None is the normal state and costs one attribute read per frame.
+        self.tap = None
 
     # ── source callbacks (source thread) ─────────────────────────────────
 
@@ -235,14 +241,32 @@ class CanFacade:
                 cap.append(can_line(cid, data))
         self.frames += 1
         self.t_last = now
+        # A frame the console can show. Frames being captured for a UDS request
+        # are skipped: the reader emits those as one `uds` entry per request,
+        # grouped, rather than as loose bytes printed twice.
+        if self.tap is not None and cap is None:
+            self._tap("frame", can_line(cid, data), cid)
 
     def _on_status(self, status):
         status = dict(status or {})
         self.status = status
         if status.get("online") is False:
             self._offline = status.get("error") or "frame source offline"
+            self._tap("event", f"{self.bus}: frame source offline — {self._offline}")
         elif status.get("online"):
+            if self._offline:
+                self._tap("event", f"{self.bus}: frame source back online")
             self._offline = None
+
+    def _tap(self, kind, text, cid=""):
+        """Hand one line to the console tap, if one is armed. Never raises."""
+        tap = self.tap
+        if tap is None:
+            return
+        try:
+            tap(kind, text, cid)
+        except Exception:                 # a console bug is not a transport fault
+            self.tap = None
 
     # ── transport interface ──────────────────────────────────────────────
 
@@ -457,6 +481,10 @@ class CanFacade:
         return ["NO DATA"]
 
     def _say(self, msg):
+        # Every refusal and every complaint also goes to the console, each one
+        # once — "refused 2101: the ev bus is listen-only" is exactly the line a
+        # person staring at an empty tile needs to see.
+        self._tap("adapter", msg)
         if msg not in self._said:
             self._said.add(msg)
             self._log(f"  [can] {msg}")

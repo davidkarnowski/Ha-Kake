@@ -15,6 +15,7 @@ import pytest
 
 from conftest import ROOT  # noqa: E402  (sys.path is set up there)
 
+import cantransport as ct  # noqa: E402
 import console as con  # noqa: E402  (web/console.py)
 import vehicles  # noqa: E402
 from vehicles import get_vehicle, validate_profile  # noqa: E402
@@ -247,3 +248,322 @@ def test_the_module_cannot_send_anything():
     for forbidden in ("send", "write_uds", "socket", "requests", "serial"):
         assert f"def {forbidden}" not in src
     assert "import" in src and "elm327" not in src and "cantransport" not in src
+
+
+# ── the taps: what each transport can honestly give ──
+
+class StubSource(ct.FrameSource):
+    """Just enough of the FrameSource contract for the façade to exist."""
+    name = "stub source 1"
+    bus = "car"
+    port = "mem"
+
+
+def facade():
+    return ct.CanFacade(StubSource(), settle=0)
+
+
+def test_the_can_facade_taps_every_broadcast_frame(tmp_path):
+    """Native CAN, MQTT and the simulated bus all reach the reader through this
+    façade, so one tap covers all three."""
+    c = con.Console(str(tmp_path / "c.jsonl"), ids=["421", "5B3"], rate_cap=1000)
+    f = facade()
+    f.tap = c.tap(bus="car")
+    f._on_frame(time.time(), "421", b"\x08\x00\x00", {})
+    f._on_frame(time.time(), "5b3", b"\x01\x02", {})
+    rows = c.ring.entries()
+    assert [(e["kind"], e["id"], e["text"], e["bus"]) for e in rows] == [
+        ("frame", "421", "421 08 00 00", "car"),
+        ("frame", "5B3", "5B3 01 02", "car")]
+
+
+def test_frames_captured_for_a_uds_request_are_not_tapped_twice(tmp_path):
+    """The reader emits one `uds` entry per request, grouped with the command
+    that asked; printing the same 7BB bytes again as loose frames would be noise."""
+    c = con.Console(str(tmp_path / "c.jsonl"), ids=["7BB"], rate_cap=1000)
+    f = facade()
+    f.tap = c.tap(bus="car")
+    f._captures["7BB"] = []
+    f._on_frame(time.time(), "7BB", b"\x10\x29\x61\x01", {})
+    assert c.ring.entries() == []
+    assert f._captures["7BB"] == ["7BB 10 29 61 01"], "the request still gets its frame"
+
+
+def test_a_refusal_reaches_the_console_as_an_adapter_line(tmp_path):
+    c = con.Console(str(tmp_path / "c.jsonl"), ids=[])
+    f = facade()
+    f.listen_only = True
+    f.tap = c.tap(bus="ev")
+    f.commands = 0
+    import asyncio
+    assert asyncio.run(f.send("2101")) == ["NO DATA"]
+    rows = [e for e in c.ring.entries() if e["kind"] == "adapter"]
+    assert rows and "listen-only" in rows[0]["text"]
+    assert rows[0]["bus"] == "ev"
+
+
+def test_the_source_going_offline_and_back_is_an_event(tmp_path):
+    c = con.Console(str(tmp_path / "c.jsonl"), ids=[])
+    f = facade()
+    f.tap = c.tap(bus="car")
+    f._on_status({"online": False, "error": "bridge gone"})
+    f._on_status({"online": True})
+    texts = [e["text"] for e in c.ring.entries() if e["kind"] == "event"]
+    assert "bridge gone" in texts[0] and "back online" in texts[1]
+
+
+def test_a_broken_tap_never_takes_the_transport_down():
+    f = facade()
+
+    def explode(*a, **kw):
+        raise RuntimeError("console bug")
+
+    f.tap = explode
+    f._on_frame(time.time(), "421", b"\x08", {})      # must not raise
+    assert f.tap is None, "the tap is dropped, the bus keeps running"
+    assert f.frames == 1
+
+
+def test_the_mqtt_source_taps_what_the_facade_never_sees(tmp_path):
+    """A bridge message this source had to throw away is real information and
+    reaches nothing else. Frames are not tapped here — they arrive through the
+    façade, and tapping both would print every frame twice."""
+    import mqttsource
+    c = con.Console(str(tmp_path / "c.jsonl"), ids=["421"], rate_cap=1000)
+    src = mqttsource.MqttSource(cfg={"host": "broker.invalid", "prefix": "hakake", "bus": "car"},
+                                log=lambda *a: None)
+    src.event_tap = c.tap(bus="car")
+    seen = []
+    src._on_frame = lambda *a: seen.append(a)
+
+    class Msg:
+        topic = "hakake/car/rx/421"
+        payload = b"not json at all"
+
+    src._on_message(None, None, Msg())
+    rows = c.ring.entries()
+    assert [e["kind"] for e in rows] == ["event"]
+    assert "dropped message" in rows[0]["text"] and "hakake/car/rx/421" in rows[0]["text"]
+    assert seen == [], "a message that did not parse is not a frame"
+
+
+# ── the reader: armed by the tile, and only by the tile ──
+
+@pytest.fixture
+def armed(tmp_path, monkeypatch, leaf_profile):
+    """A Reader with its files in tmp_path and a tiles.json the test writes."""
+    import reader as rd
+    from store import Store
+    for attr, name in (("STATE_FILE", "state.json"), ("PAUSE_FILE", "reader.pause"),
+                       ("TILES_FILE", "tiles.json"), ("CALIB_FILE", "calibration.json"),
+                       ("CONSOLE_FILE", "console.jsonl")):
+        monkeypatch.setattr(rd, attr, str(tmp_path / name))
+    store = Store(str(tmp_path / "t.db"))
+
+    def make(tiles):
+        """`tiles` names the tiles to enable; every other default is written out
+        disabled, because load_tiles() appends any default the file omits."""
+        want = {t["id"]: t for t in tiles}
+        out = []
+        for d in rd.DEFAULT_TILES["tiles"]:
+            out.append(dict(d, **want.pop(d["id"], {"enabled": False})))
+        out.extend(want.values())
+        with open(rd.TILES_FILE, "w") as f:
+            json.dump({"tiles": out}, f)
+        r = rd.Reader(0.1, "fake", store=store)
+        r.refresh_items()
+        return r
+
+    yield make
+    store.close()
+
+
+class ElmLike:
+    """An ELM327-shaped transport: no `tap` attribute, which is precisely what
+    makes its view of the bus partial."""
+    adapter_type = "ble"
+    adapter_name = "ELM327 v1.5"
+    adapter_port = "mem"
+
+    def __init__(self, answers=None):
+        self.answers = answers or {}
+        self.sent = []
+
+    async def send(self, cmd, wait=0, timeout=0):
+        self.sent.append(cmd)
+        return self.answers.get(cmd.strip().upper(), [])
+
+    async def close(self):
+        pass
+
+
+def test_the_tap_stays_off_while_the_tile_is_disabled(armed):
+    import reader as rd
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": False}])
+    assert r.console is None
+    f = facade()
+    r.attach_console({"car": f})
+    assert f.tap is None, "no tile, no tap"
+    f._on_frame(time.time(), "421", b"\x08", {})
+    assert not os.path.exists(rd.CONSOLE_FILE), "and no file either"
+
+
+def test_enabling_the_tile_arms_the_ring_with_the_polled_ids(armed):
+    r = armed([{"id": "vehicle", "enabled": True}, {"id": "console", "enabled": True}])
+    assert r.console is not None
+    ids = set(r.console.ring.ids)
+    assert {"421", "358", "284", "60D", "5C5", "5B3", "5A9", "355"} == ids, \
+        "the ids the enabled tiles poll, and no others"
+    assert r.console.ring.everything is False
+    f = facade()
+    r.attach_console({"car": f})
+    assert callable(f.tap)
+
+
+def test_a_uds_tile_arms_the_ring_with_the_response_headers(armed):
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    assert set(r.console.ring.ids) == {"7BB"}, "a UDS item's id on the wire is its rx header"
+
+
+def test_the_tile_options_choose_the_rules(armed):
+    r = armed([{"id": "soc", "enabled": True},
+               {"id": "console", "enabled": True, "opts": {"everything": True, "rate": 2}}])
+    assert r.console.ring.everything is True and r.console.ring.rate_cap == 2
+    stats = r.console.stats()
+    assert stats["everything"] is True and stats["rate_cap"] == 2
+
+
+def test_an_absurd_rate_is_clamped_not_obeyed(armed):
+    r = armed([{"id": "soc", "enabled": True},
+               {"id": "console", "enabled": True, "opts": {"rate": 10 ** 9}}])
+    assert r.console.ring.rate_cap == rd_console_max()
+    r2 = armed([{"id": "soc", "enabled": True},
+                {"id": "console", "enabled": True, "opts": {"rate": "nonsense"}}])
+    assert r2.console.ring.rate_cap == con.RATE_CAP
+
+
+def rd_console_max():
+    import reader as rd
+    return rd.CONSOLE_RATE_MAX
+
+
+def test_turning_the_tile_off_drops_the_object_and_the_taps(armed, tmp_path, monkeypatch):
+    import reader as rd
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    f = facade()
+    r.transports = {"car": f}
+    r.attach_console(r.transports)
+    assert callable(f.tap)
+    with open(rd.TILES_FILE, "w") as fh:
+        json.dump({"tiles": [{"id": "soc", "enabled": True}, {"id": "console", "enabled": False}]}, fh)
+    r._tiles_mtime = None                      # the mtime path, forced for the test
+    r.refresh_items()
+    assert r.console is None and f.tap is None
+
+
+# ── what each transport puts in it, through the reader ──
+
+def test_an_elm327_contributes_its_polled_frames_and_says_the_view_is_partial(armed):
+    import reader as rd
+    r = armed([{"id": "vehicle", "enabled": True}, {"id": "console", "enabled": True}])
+    elm = ElmLike()
+    r.attach_console({"car": elm})
+    assert r.console.partial and "ATMA dwell" in r.console.partial
+    r.console_item("car", elm, "p421", rd.ITEMS["p421"], ["421 08 00 00", "421 09 00 00"])
+    rows = [e for e in r.console.ring.entries() if e["kind"] == "frame"]
+    assert [(e["kind"], e["id"], e["text"]) for e in rows] == [
+        ("frame", "421", "421 08 00 00"), ("frame", "421", "421 09 00 00")]
+    assert r.console.stats()["partial"] == rd.CONSOLE_PARTIAL_ELM
+
+
+def test_a_tapped_transport_does_not_repeat_its_frames_through_the_poller(armed):
+    """Behind the façade every frame already went in as it arrived; replaying
+    the ATMA answer would double each one. And there the view is not partial."""
+    import reader as rd
+    r = armed([{"id": "vehicle", "enabled": True}, {"id": "console", "enabled": True}])
+    f = facade()
+    r.attach_console({"car": f})
+    assert r.console.partial == ""
+    assert "partial" not in r.console.stats()
+    r.console_item("car", f, "p421", rd.ITEMS["p421"], ["421 08 00 00"])
+    assert [e for e in r.console.ring.entries() if e["kind"] == "frame"] == []
+
+
+def test_a_silent_dwell_is_reported_rather_than_left_blank(armed):
+    import reader as rd
+    r = armed([{"id": "vehicle", "enabled": True}, {"id": "console", "enabled": True}])
+    r.console_item("car", ElmLike(), "p385", rd.ITEMS["p385"], [])
+    e = r.console.ring.entries()[-1]
+    assert e["kind"] == "adapter" and e["id"] == "385" and "nothing in a" in e["text"]
+
+
+def test_a_uds_answer_is_grouped_with_the_request_that_asked_for_it(armed):
+    import reader as rd
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    r.console_item("car", ElmLike(), "lbc01", rd.ITEMS["lbc01"],
+                   ["7BB 10 29 61 01", "7BB 21 00 00 00"])
+    e = r.console.ring.entries()[-1]
+    assert e["kind"] == "uds" and e["id"] == "7BB"
+    assert e["text"] == "2101 -> 7BB 10 29 61 01 / 7BB 21 00 00 00"
+
+
+def test_an_answer_that_is_not_an_answer_is_what_the_adapter_said(armed):
+    import reader as rd
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    for lines, expect in ((["NO DATA"], "2101 -> NO DATA"), (["?"], "2101 -> ?"), ([], "2101 -> no answer")):
+        r.console_item("car", ElmLike(), "lbc01", rd.ITEMS["lbc01"], lines)
+        e = r.console.ring.entries()[-1]
+        assert e["kind"] == "adapter" and e["text"] == expect
+
+
+def test_a_text_signal_appears_when_it_changes_and_not_again(armed, use_vehicle):
+    """The Lancer's stored codes are the case that makes the console worth
+    having on a car that is not the Leaf."""
+    import reader as rd
+    use_vehicle("lancer_2009")
+    r = armed([{"id": "console", "enabled": True}])
+    r.cache["dtc_stored"] = "P0420"
+    r.console_text()
+    r.console_text()
+    rows = [e for e in r.console.ring.entries() if e["kind"] == "text"]
+    assert [e["text"] for e in rows] == ["Engine codes: P0420"]
+    r.cache["dtc_stored"] = "P0420, P0171"
+    r.console_text()
+    assert [e["text"] for e in r.console.ring.entries() if e["kind"] == "text"][-1] == \
+        "Engine codes: P0420, P0171"
+    use_vehicle("leaf_ze0")
+
+
+def test_a_reader_event_carries_the_bus(armed):
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    r.console_event("connected: FakeELM via fake")
+    e = r.console.ring.entries()[-1]
+    assert e["kind"] == "event" and e["bus"] == "car" and e["id"] == ""
+
+
+def test_arming_itself_is_an_event_so_the_pane_is_never_blank(armed):
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    first = r.console.ring.entries()[0]
+    assert first["kind"] == "event" and "console armed" in first["text"]
+
+
+def test_the_record_carries_the_console_stats_or_says_it_is_off(armed):
+    import asyncio
+    r = armed([{"id": "console", "enabled": False}])
+    rec, _ = asyncio.run(r.poll_once(ElmLike()))
+    assert rec["console"] == {"on": False}
+
+    r2 = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    rec2, _ = asyncio.run(r2.poll_once(ElmLike({"2101": ["NO DATA"]})))
+    assert rec2["console"]["on"] is True
+    assert rec2["console"]["cursor"] != "0" and "dropped" in rec2["console"]
+    assert rec2["console"]["partial"]
+
+
+def test_a_cycle_flushes_the_ring_to_the_file(armed):
+    import asyncio
+    import reader as rd
+    r = armed([{"id": "soc", "enabled": True}, {"id": "console", "enabled": True}])
+    asyncio.run(r.poll_once(ElmLike({"2101": ["7BB 10 29 61 01"]})))
+    rows = con.ConsoleLog(rd.CONSOLE_FILE).read()
+    assert any(e["kind"] == "uds" for e in rows), [e["text"] for e in rows]
