@@ -1066,6 +1066,13 @@ in wall-clock time, which is the right trade.
 
 ## Watching the pack sag
 
+> Both rigs feed the **Raw output** console, and they answer differently on purpose:
+> `--adapter sim` is ELM-shaped, so the console shows only the polled ids during their
+> dwell and says the view is partial; `--adapter sim --sim-can` puts the model's ECUs on a
+> virtual bus and the console sees the whole thing, ~47 distinct ids in a one-second
+> sample. Same car, two transports, two honest answers — `docs/CONSOLE.md`.
+
+
 `--scenario pulls` runs five accelerations in a row so the 3D pack tile can be
 watched going red and recovering, over and over, without a car.
 
