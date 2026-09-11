@@ -1569,3 +1569,49 @@ the whole suite before it uploads.
 Three findings were left as code questions rather than doc edits, and are on
 the roadmap: the legend not inverting, the `f` key not working live, and the
 auto-pull flag not using the peak time the store already returns.
+
+### Five pulls from a real drive, for the 3D pack  2026-09-10
+
+Branch `feature/pulls-scenario`. The owner wanted the voltage-drop
+visualisation to have something to show: a simulation of an acceleration
+repeated several times, built from real drive data rather than invented.
+
+**The drive.** 2026-09-09, 14:05–14:08 PDT, 207 rows, every one of them
+carrying a cell set because the cell log was armed. Four pulls in three
+minutes, peaking at −96, −228, −157 and −56 A, with the car dropping from
+51.5 % to 46.3 % SOC across the stretch. What that data gives, measured:
+
+- at rest, 377.9 V drawing 5.9 A, lowest pair 3918 mV, spread 35 mV;
+- a regression of pack voltage on current over all 207 rows: open-circuit
+  376.9 V, series resistance 0.186 Ω (single rows scatter from 0.09 to 0.38,
+  which is the acquisition lag between group 01 and group 02 showing up
+  exactly where yesterday's follow-up said it would);
+- and the thing that matters most for the tile: **the spread tracks the load**,
+  `spread_mV = 32 + 1.06 × |I|`, from 35 mV parked to 274 mV at −228 A.
+
+Under the deepest sag the mean pair fell 581 mV; the worst fell 681 mV
+(pairs 66, 70, 72, 76 — the modules under the front seats) and the best 501 mV
+(pairs 1, 48, 53–56, 92). Worth noting against February and August, when pairs
+54 and 56 were the *weakest* on the bench: under load here they are among the
+strongest, which is a different question from resting voltage and worth
+watching.
+
+**The scenario.** `simulator/scenarios/pulls.json`: five pulls, twelve seconds
+of rest between them, about two minutes end to end. Each pull's pedal
+percentage was solved by bisection so the model lands on one of the currents
+the car actually reached, and each timeline step also sets `cell_spread_mv`
+from the fitted line. The result tracks the drive: −96/−228/−157/−266/−56 A
+against the car's −96/−228/−157/−265/−56, with cell floors of
+3666/3334/3508/3230/3747 mV against the car's 3683/3345/3552/–/3765.
+
+**What it does not do, and the doc says so.** The widening spread is stepped by
+the timeline, not produced by physics, because the model gives every pair one
+resistance and a fixed spread. So the magnitude of the sag is the car's but the
+*pattern* is the seed's — the reddest pairs are not the pack's real weak
+modules. Giving each pair its own resistance is now a roadmap item, and the
+drive above is enough to derive a measured pattern for this pack when it is.
+
+`tests/test_pulls_scenario.py` pins the calibration: each pull's peak against
+the car's, the cell floor within 60 mV, the spread against the fitted line, and
+a tight pack when parked. 519 simulator tests still pass. Nothing here has run
+on a car; it is the simulator reproducing numbers a car produced.

@@ -1,0 +1,686 @@
+{
+  "name": "pulls",
+  "vehicle": "leaf_ze0",
+  "seed": 7,
+  "description": "Five acceleration pulls in a row, for watching the pack sag in the 3D tile. Shaped from the owner's own drive of 2026-09-09, 14:05-14:08 PDT, every row of which carries a cell set because the cell log was armed. MEASURED from those 207 rows: rest pack 377.9 V at -5.9 A at SOC ~51 %, lowest pair 3918 mV, spread 35 mV; a regression of pack voltage on current gives OCV 376.9 V and R 0.186 ohm, which is the internal_resistance_ohm below; and the cell spread tracks current as spread_mV = 32 + 1.06 x |I| (35 mV at rest, 274 mV at -228 A). The real pulls peaked at -96, -228, -157 and -56 A and each pedal figure below was solved so the model reproduces one of them; the fourth is the harder -265 A case the owner reported on 2026-09-08 (OWNER REPORT, one reading). ASSERTED: the pedal-to-current shape is the model's own (simulator/model.py motor note), and cell_spread_mv is STEPPED BY THIS TIMELINE rather than emerging from per-pair resistance, because the model gives every pair one resistance and a fixed spread. So the pairs that go reddest are this seed's fixed shape, not the real pack's weak modules - in the real stretch those were pairs 66, 70, 72 and 76, sagging about 100 mV below the mean, and pairs 1, 48, 53-56 and 92 sagging least.",
+  "knobs": {
+    "soc": 51.5,
+    "ambient_c": 22,
+    "pack_temp_c": 26,
+    "cabin_temp_c": 23,
+    "gear": "P",
+    "speed_mph": 0,
+    "accel_pedal_pct": 0,
+    "brake_pct": 0,
+    "internal_resistance_ohm": 0.186,
+    "cell_spread_mv": 35,
+    "noise": 0.4,
+    "locked": false,
+    "handbrake": true,
+    "start_state": "ready"
+  },
+  "timeline": [
+    {
+      "t": 2.0,
+      "set": {
+        "gear": "D",
+        "handbrake": false,
+        "brake_pct": 20
+      }
+    },
+    {
+      "t": 3.5,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 5.0,
+      "set": {
+        "accel_pedal_pct": 40.8,
+        "speed_mph": 2,
+        "cell_spread_mv": 42
+      }
+    },
+    {
+      "t": 5.5,
+      "set": {
+        "speed_mph": 4,
+        "cell_spread_mv": 51
+      }
+    },
+    {
+      "t": 6.0,
+      "set": {
+        "speed_mph": 7,
+        "cell_spread_mv": 64
+      }
+    },
+    {
+      "t": 6.5,
+      "set": {
+        "speed_mph": 10,
+        "cell_spread_mv": 78
+      }
+    },
+    {
+      "t": 7.0,
+      "set": {
+        "speed_mph": 12,
+        "cell_spread_mv": 87
+      }
+    },
+    {
+      "t": 7.5,
+      "set": {
+        "speed_mph": 14,
+        "cell_spread_mv": 96
+      }
+    },
+    {
+      "t": 8.0,
+      "set": {
+        "speed_mph": 17,
+        "cell_spread_mv": 110
+      }
+    },
+    {
+      "t": 8.5,
+      "set": {
+        "speed_mph": 20,
+        "cell_spread_mv": 124
+      }
+    },
+    {
+      "t": 9.0,
+      "set": {
+        "speed_mph": 22,
+        "cell_spread_mv": 134
+      }
+    },
+    {
+      "t": 10.5,
+      "set": {
+        "accel_pedal_pct": 10,
+        "cell_spread_mv": 62
+      }
+    },
+    {
+      "t": 11.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 16,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 12.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 11,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 13.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 6,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 14.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 0,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 15.5,
+      "set": {
+        "speed_mph": 0,
+        "brake_pct": 50,
+        "cell_spread_mv": 35
+      }
+    },
+    {
+      "t": 16.5,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 28.5,
+      "set": {
+        "accel_pedal_pct": 85.4,
+        "speed_mph": 2,
+        "cell_spread_mv": 51
+      }
+    },
+    {
+      "t": 29.0,
+      "set": {
+        "speed_mph": 6,
+        "cell_spread_mv": 88
+      }
+    },
+    {
+      "t": 29.5,
+      "set": {
+        "speed_mph": 10,
+        "cell_spread_mv": 125
+      }
+    },
+    {
+      "t": 30.0,
+      "set": {
+        "speed_mph": 14,
+        "cell_spread_mv": 163
+      }
+    },
+    {
+      "t": 30.5,
+      "set": {
+        "speed_mph": 18,
+        "cell_spread_mv": 200
+      }
+    },
+    {
+      "t": 31.0,
+      "set": {
+        "speed_mph": 22,
+        "cell_spread_mv": 238
+      }
+    },
+    {
+      "t": 31.5,
+      "set": {
+        "speed_mph": 26,
+        "cell_spread_mv": 267
+      }
+    },
+    {
+      "t": 32.0,
+      "set": {
+        "speed_mph": 30,
+        "cell_spread_mv": 269
+      }
+    },
+    {
+      "t": 32.5,
+      "set": {
+        "speed_mph": 34,
+        "cell_spread_mv": 271
+      }
+    },
+    {
+      "t": 33.0,
+      "set": {
+        "speed_mph": 38,
+        "cell_spread_mv": 274
+      }
+    },
+    {
+      "t": 35.5,
+      "set": {
+        "accel_pedal_pct": 10,
+        "cell_spread_mv": 74
+      }
+    },
+    {
+      "t": 36.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 28,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 37.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 19,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 38.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 10,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 39.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 0,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 40.5,
+      "set": {
+        "speed_mph": 0,
+        "brake_pct": 50,
+        "cell_spread_mv": 35
+      }
+    },
+    {
+      "t": 41.5,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 53.5,
+      "set": {
+        "accel_pedal_pct": 62.4,
+        "speed_mph": 2,
+        "cell_spread_mv": 46
+      }
+    },
+    {
+      "t": 54.0,
+      "set": {
+        "speed_mph": 6,
+        "cell_spread_mv": 74
+      }
+    },
+    {
+      "t": 54.5,
+      "set": {
+        "speed_mph": 9,
+        "cell_spread_mv": 94
+      }
+    },
+    {
+      "t": 55.0,
+      "set": {
+        "speed_mph": 13,
+        "cell_spread_mv": 122
+      }
+    },
+    {
+      "t": 55.5,
+      "set": {
+        "speed_mph": 17,
+        "cell_spread_mv": 149
+      }
+    },
+    {
+      "t": 56.0,
+      "set": {
+        "speed_mph": 20,
+        "cell_spread_mv": 170
+      }
+    },
+    {
+      "t": 56.5,
+      "set": {
+        "speed_mph": 24,
+        "cell_spread_mv": 198
+      }
+    },
+    {
+      "t": 58.0,
+      "set": {
+        "accel_pedal_pct": 10,
+        "cell_spread_mv": 65
+      }
+    },
+    {
+      "t": 59.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 18,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 60.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 12,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 61.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 6,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 62.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 0,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 63.0,
+      "set": {
+        "speed_mph": 0,
+        "brake_pct": 50,
+        "cell_spread_mv": 35
+      }
+    },
+    {
+      "t": 64.0,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 76.0,
+      "set": {
+        "accel_pedal_pct": 96.2,
+        "speed_mph": 2,
+        "cell_spread_mv": 53
+      }
+    },
+    {
+      "t": 76.5,
+      "set": {
+        "speed_mph": 5,
+        "cell_spread_mv": 85
+      }
+    },
+    {
+      "t": 77.0,
+      "set": {
+        "speed_mph": 8,
+        "cell_spread_mv": 116
+      }
+    },
+    {
+      "t": 77.5,
+      "set": {
+        "speed_mph": 11,
+        "cell_spread_mv": 147
+      }
+    },
+    {
+      "t": 78.0,
+      "set": {
+        "speed_mph": 14,
+        "cell_spread_mv": 179
+      }
+    },
+    {
+      "t": 78.5,
+      "set": {
+        "speed_mph": 17,
+        "cell_spread_mv": 210
+      }
+    },
+    {
+      "t": 79.0,
+      "set": {
+        "speed_mph": 20,
+        "cell_spread_mv": 242
+      }
+    },
+    {
+      "t": 79.5,
+      "set": {
+        "speed_mph": 23,
+        "cell_spread_mv": 274
+      }
+    },
+    {
+      "t": 80.0,
+      "set": {
+        "speed_mph": 26,
+        "cell_spread_mv": 296
+      }
+    },
+    {
+      "t": 80.5,
+      "set": {
+        "speed_mph": 29,
+        "cell_spread_mv": 297
+      }
+    },
+    {
+      "t": 81.0,
+      "set": {
+        "speed_mph": 32,
+        "cell_spread_mv": 299
+      }
+    },
+    {
+      "t": 81.5,
+      "set": {
+        "speed_mph": 35,
+        "cell_spread_mv": 300
+      }
+    },
+    {
+      "t": 82.0,
+      "set": {
+        "speed_mph": 38,
+        "cell_spread_mv": 302
+      }
+    },
+    {
+      "t": 82.5,
+      "set": {
+        "speed_mph": 41,
+        "cell_spread_mv": 305
+      }
+    },
+    {
+      "t": 83.0,
+      "set": {
+        "speed_mph": 44,
+        "cell_spread_mv": 307
+      }
+    },
+    {
+      "t": 83.5,
+      "set": {
+        "speed_mph": 47,
+        "cell_spread_mv": 310
+      }
+    },
+    {
+      "t": 84.0,
+      "set": {
+        "speed_mph": 50,
+        "cell_spread_mv": 313
+      }
+    },
+    {
+      "t": 87.0,
+      "set": {
+        "accel_pedal_pct": 10,
+        "cell_spread_mv": 84
+      }
+    },
+    {
+      "t": 88.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 38,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 89.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 25,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 90.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 12,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 91.0,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 0,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 92.0,
+      "set": {
+        "speed_mph": 0,
+        "brake_pct": 50,
+        "cell_spread_mv": 35
+      }
+    },
+    {
+      "t": 93.0,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 105.0,
+      "set": {
+        "accel_pedal_pct": 25.2,
+        "speed_mph": 2,
+        "cell_spread_mv": 38
+      }
+    },
+    {
+      "t": 105.5,
+      "set": {
+        "speed_mph": 4,
+        "cell_spread_mv": 44
+      }
+    },
+    {
+      "t": 106.0,
+      "set": {
+        "speed_mph": 6,
+        "cell_spread_mv": 50
+      }
+    },
+    {
+      "t": 106.5,
+      "set": {
+        "speed_mph": 8,
+        "cell_spread_mv": 56
+      }
+    },
+    {
+      "t": 107.0,
+      "set": {
+        "speed_mph": 10,
+        "cell_spread_mv": 62
+      }
+    },
+    {
+      "t": 107.5,
+      "set": {
+        "speed_mph": 12,
+        "cell_spread_mv": 67
+      }
+    },
+    {
+      "t": 108.0,
+      "set": {
+        "speed_mph": 14,
+        "cell_spread_mv": 73
+      }
+    },
+    {
+      "t": 108.5,
+      "set": {
+        "speed_mph": 16,
+        "cell_spread_mv": 79
+      }
+    },
+    {
+      "t": 109.0,
+      "set": {
+        "speed_mph": 18,
+        "cell_spread_mv": 85
+      }
+    },
+    {
+      "t": 109.5,
+      "set": {
+        "speed_mph": 20,
+        "cell_spread_mv": 91
+      }
+    },
+    {
+      "t": 110.5,
+      "set": {
+        "accel_pedal_pct": 10,
+        "cell_spread_mv": 59
+      }
+    },
+    {
+      "t": 111.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 15,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 112.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 10,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 113.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 5,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 114.5,
+      "set": {
+        "accel_pedal_pct": 0,
+        "speed_mph": 0,
+        "cell_spread_mv": 40
+      }
+    },
+    {
+      "t": 115.5,
+      "set": {
+        "speed_mph": 0,
+        "brake_pct": 50,
+        "cell_spread_mv": 35
+      }
+    },
+    {
+      "t": 116.5,
+      "set": {
+        "brake_pct": 0
+      }
+    },
+    {
+      "t": 128.5,
+      "set": {
+        "gear": "P",
+        "handbrake": true
+      }
+    }
+  ]
+}

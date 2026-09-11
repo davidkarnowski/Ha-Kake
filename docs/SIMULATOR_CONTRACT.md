@@ -117,7 +117,7 @@ on demand in a real car: `fault.cell_degraded`, `fault.insulation_low`,
 
 Declarative JSON in `simulator/scenarios/`, shipped by name (`idle`, `drive`,
 `commute`, `charge`, `full_charge`, `dc_fast`, `degradation_arc`,
-`degraded_pack`, `pull`, `lancer_idle`, `lancer_dtc`). Shape:
+`degraded_pack`, `pull`, `pulls`, `lancer_idle`, `lancer_dtc`). Shape:
 
 Shape (illustrative; the shipped `drive.json` has more steps and injects no
 fault):

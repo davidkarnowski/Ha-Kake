@@ -132,7 +132,7 @@ that lacks them — feature-detect, never guess. Full surface:
 ## How to verify
 
 ```bash
-pytest -q                          # 1023 passing as of 2026-09-10, 2.5-4 min, no hardware
+pytest -q                          # 1030 passing as of 2026-09-10, 2.5-4 min, no hardware
 python vehicles/__init__.py        # lint every vehicle profile against the contract
 python scripts/privacy_sweep.py --log 50   # must print "privacy sweep OK" before any push
 ```

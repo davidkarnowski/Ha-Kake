@@ -881,6 +881,7 @@ Declarative JSON in `simulator/scenarios/`, and shipped by name:
 | `degradation_arc` | two years of ageing walked through in a couple of minutes |
 | `degraded_pack` | the failure the simulator was built for: a collapsed cell pair |
 | `pull` | a standing-start acceleration to about 50 mph and back to rest — what `--pull` runs |
+| `pulls` | **five** accelerations in a row, calibrated against a real drive, for watching the pack sag repeatedly in the 3D tile ([below](#watching-the-pack-sag)) |
 | `lancer_idle`, `lancer_dtc` | the other profile |
 
 For a *populated* degradation chart use `--generate`; `degradation_arc` walks
@@ -1005,6 +1006,50 @@ The cost is about 3 µs per sub-step: `--generate --days 180` roughly doubled
 in wall-clock time, which is the right trade.
 
 ---
+
+## Watching the pack sag
+
+`--scenario pulls` runs five accelerations in a row so the 3D pack tile can be
+watched going red and recovering, over and over, without a car.
+
+```bash
+python web/app.py --adapter sim --scenario pulls
+```
+
+Open the dashboard, turn on **Battery pack (3D)**, and arm the **cell log** from
+its ⋯ menu so every cycle stores its own cell set. On the *fixed range* colour
+scale a colour means one voltage all the way through, which is what makes the
+sag legible; on the frame-relative scale the pack re-normalises each frame and
+the sag mostly disappears (`docs/PACK3D.md`).
+
+The five pulls are calibrated against the owner's own drive of 2026-09-09,
+14:05–14:08 PDT, whose every row carries a cell set. Measured from those 207
+rows: the pack sits at 377.9 V drawing 5.9 A with the lowest pair at 3918 mV
+and 35 mV of spread; a regression of pack voltage on current gives an
+open-circuit 376.9 V and 0.186 Ω, which is the scenario's
+`internal_resistance_ohm`; and the spread tracks the load closely, at
+32 + 1.06 × |I| mV. Each pull's pedal figure was solved so the model lands on
+one of the currents that drive actually reached:
+
+| Pull | Peak current | Lowest pair | Spread |
+|---|---|---|---|
+| moderate, off the light | −96 A | 3666 mV | 134 mV |
+| hard | −228 A | 3334 mV | 275 mV |
+| medium | −157 A | 3508 mV | 198 mV |
+| hardest, on to the freeway | −266 A | 3230 mV | 313 mV |
+| mild, rolling away | −56 A | 3747 mV | 91 mV |
+| parked between them | ~0 A | ~3890 mV | ~35 mV |
+
+**What is honest about it and what is not.** The currents, the resistance and
+the spread are the car's. The pedal-to-current shape is the model's own, still
+ASSERTED. And the widening spread is *stepped by the scenario's timeline*, not
+produced by physics: the model gives every pair the same resistance and one
+fixed spread, so nothing in it would open the pack up under load on its own.
+That means the pairs that go reddest are this seed's fixed shape rather than
+the pack's real weak modules — in that drive they were pairs 66, 70, 72 and 76,
+sagging about 100 mV below the mean, while pairs 1, 48, 53–56 and 92 sagged
+least. Giving each pair its own resistance is the change that would make the
+pattern real as well as the magnitude; it is on `docs/ROADMAP.md`.
 
 ## The simulated bus (`--sim-can`)
 
