@@ -85,8 +85,21 @@
       }).join(':') + '.' + String(d.getMilliseconds()).padStart(3, '0');
   }
 
+  // One selected row, as one line of text. The pane lays a row out with flexbox,
+  // and every browser's clipboard serialiser turns each flex child into its own
+  // line — so a three-line selection pasted as nine. The copy handler below
+  // builds the text itself instead of letting the DOM decide.
+  function rowText(entry) {
+    return clock(entry.wall) + '  ' + entry.kind + '  ' + String(entry.text || '');
+  }
+
+  function rowsText(entries) {
+    return (entries || []).map(rowText).join('\n');
+  }
+
   var API = { tokens: tokens, diffMask: diffMask, copyText: copyText, query: query,
-              idList: idList, statsLine: statsLine, clock: clock, KINDS: Object.keys(KIND_LABEL) };
+              idList: idList, statsLine: statsLine, clock: clock, rowText: rowText,
+              rowsText: rowsText, KINDS: Object.keys(KIND_LABEL) };
   if (typeof window !== 'undefined') window.RawConsole = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 
@@ -109,6 +122,7 @@
     el.out = document.getElementById('console-out');
     el.empty = document.getElementById('console-empty');
     el.pause = document.getElementById('console-pause');
+    el.clear = document.getElementById('console-clear');
     el.kinds = document.getElementById('console-kinds');
     el.ids = document.getElementById('console-ids');
     el.known = document.getElementById('console-known');
@@ -140,6 +154,29 @@
     });
     el.ids.addEventListener('input', function () { state.idFilter = el.ids.value; redraw(); });
     el.known.addEventListener('change', function () { state.known = el.known.checked; redraw(); });
+    // A selection spanning several rows copies as one line per row — the columns
+    // joined with spaces, not the browser's idea of where a flex child ends. A
+    // selection inside one row is left exactly as the person made it.
+    el.out.addEventListener('copy', function (ev) {
+      var sel = window.getSelection && window.getSelection();
+      if (!sel || sel.isCollapsed || !ev.clipboardData) return;
+      var picked = [];
+      Array.prototype.forEach.call(el.out.querySelectorAll('.console-line'), function (line) {
+        if (line.__entry && sel.containsNode && sel.containsNode(line, true)) picked.push(line.__entry);
+      });
+      if (picked.length < 2) return;            // one row: the raw selection is what was meant
+      ev.clipboardData.setData('text/plain', rowsText(picked));
+      ev.preventDefault();
+    });
+
+    el.clear.addEventListener('click', function () {
+      // Only the pane is cleared. The reader's window keeps filling, and the
+      // cursor stays where it is, so nothing already read comes back.
+      rows = [];
+      paint(lastStats);
+      el.out.scrollTop = 0;
+    });
+
     el.out.addEventListener('click', function (e) {
       // A drag-select ends in a click, and copying the whole line then would
       // throw away the selection the person just made by hand. Click-to-copy is
@@ -175,6 +212,7 @@
   }
 
   var rows = [];            // everything fetched this session, newest last
+  var lastStats = null;     // the reader's last stats, for a repaint with no fetch
 
   function poll() {
     if (!on() || state.paused) return;          // a disabled tile asks for nothing
@@ -186,7 +224,8 @@
         if (body.cursor) state.cursor = body.cursor;
         (body.entries || []).forEach(function (e) { rows.push(e); });
         if (rows.length > MAX_LINES) rows = rows.slice(-MAX_LINES);
-        paint(body.stats || {});
+        lastStats = body.stats || {};
+        paint(lastStats);
       })
       .catch(function () { /* the dashboard's own status dot reports the outage */ });
   }
@@ -231,6 +270,7 @@
     var div = document.createElement('div');
     div.className = 'console-line k-' + e.kind;
     div.dataset.copy = copyText(e);
+    div.__entry = e;                            // for the copy handler's serialiser
     var t = document.createElement('span');
     t.className = 'c-t';
     t.textContent = clock(e.wall);

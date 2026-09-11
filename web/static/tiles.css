@@ -153,9 +153,9 @@ html.shot * { transition: none !important; }
 .console-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 8px; font-size: 11px; color: var(--dim); }
 .console-bar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .console-kinds { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
-.console-pause { background: var(--card2); color: var(--dim); border: 1px solid var(--border); border-radius: 7px;
+.console-pause, .console-clear { background: var(--card2); color: var(--dim); border: 1px solid var(--border); border-radius: 7px;
                  padding: 3px 10px; cursor: pointer; font: 600 11px/1.4 ui-monospace, Menlo, monospace; }
-.console-pause:hover { border-color: var(--accent); color: var(--accent); }
+.console-pause:hover, .console-clear:hover { border-color: var(--accent); color: var(--accent); }
 .console-pause.on { border-color: var(--accent); color: #04121c; background: var(--accent); }
 .console-ids { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; color: var(--text);
                padding: 3px 8px; font: 11px ui-monospace, Menlo, monospace; }
