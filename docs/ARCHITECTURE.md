@@ -515,5 +515,5 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 1030 passing at the time of writing (1031 collected; the
+that must stay green. 1120 passing at the time of writing (1122 collected; the
 skip is the profile-policy test on a profile that has no policy).

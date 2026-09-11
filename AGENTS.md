@@ -35,6 +35,7 @@ was not.
 | `leaf_decoders.py` | the Leaf's decoders, plus generic ISO-TP reassembly |
 | `signals.py` | vehicle-independent registry machinery: colour scales, renderer list, resolvers |
 | `util.py` | vehicle-independent helpers (temperature formatting) used by the generic layers |
+| `dtc.py` | trouble-code dictionary: the schema, the machine-local loader (`dtc/`, gitignored) and its validator (`python dtc.py <file>`). Descriptions are never shipped — `docs/DTC_DICTIONARY.md` says why |
 | `web/reader.py` | the only process that talks to the car — tile-driven scheduler, reconnect, pause |
 | `web/store.py` | SQLite time series; schema/insert/history/daily built from the profile's `HISTORY_COLS` |
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
@@ -71,6 +72,10 @@ These are not style preferences. Each one has cost a debugging session.
 8. **`docs/SIGNALS.md` is the authority on bytes**, and a decoder change
    without a `SIGNALS.md` change in the same commit is incomplete.
 9. **`WORKLOG.md` is append-only.** Never edit an old entry.
+10. **Trouble-code description text never enters the repository.** It is copyrighted
+    (SAE J2012; LeafSpy's strings derive from the Nissan service manual), so the
+    project ships the format and a recipe, never the data. `scripts/privacy_sweep.py`
+    fails a push that carries a dictionary — by content, not just by path.
 
 ## Running everything with no car
 
@@ -132,7 +137,7 @@ that lacks them — feature-detect, never guess. Full surface:
 ## How to verify
 
 ```bash
-pytest -q                          # 1030 passing as of 2026-09-10, 2.5-4 min, no hardware
+pytest -q                          # 1120 passing as of 2026-09-10, 2.5-4 min, no hardware
 python vehicles/__init__.py        # lint every vehicle profile against the contract
 python scripts/privacy_sweep.py --log 50   # must print "privacy sweep OK" before any push
 ```

@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1030%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1120%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -265,7 +265,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 1030 offline tests, no car needed
+pytest -q                          # 1120 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -348,6 +348,7 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `docs/ADDING_A_VEHICLE.md` | **the guide to adding your own car** |
 | `leaf_decoders.py` | the Leaf's decoders: LBC groups 01–06, HVAC amp, Car-CAN frames |
 | `signals.py` | registry machinery shared by every profile (colour scales, renderers, resolvers) |
+| `dtc.py`, `docs/DTC_DICTIONARY.md` | **trouble-code descriptions: the format ships, the data does not.** Build your own dictionary locally; it stays machine-local and the privacy sweep refuses to let it be committed |
 | `util.py` | vehicle-independent helpers shared by the generic layers (temperature formatting) |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag-to-reorder |
 | `web/static/alerts.js` | audible alerts: the Web Audio tone generator and the threshold rule engine (pure, node-tested) |
@@ -534,7 +535,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 1030 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 1120 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded
