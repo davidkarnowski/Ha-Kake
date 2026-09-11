@@ -220,7 +220,9 @@ def test_api_signals_serves_tile_signals(api):
     assert body["tile_signals"]["soc"] == ["soc", "pack_v"]
     rd.set_vehicle("lancer_2009")
     try:
-        assert api.get("/api/signals").get_json()["tile_signals"] == {}
+        # the framework's console tile is there for every profile and offers no
+        # alertable signal of its own
+        assert api.get("/api/signals").get_json()["tile_signals"] == {"console": []}
     finally:
         rd.set_vehicle("leaf_ze0")
 

@@ -52,7 +52,7 @@ KINDS = ("frame", "uds", "adapter", "text", "event")
 
 CAPACITY = 4000            # entries held in memory; a few thousand, per the plan
 RATE_CAP = 10              # frames of one id kept per second, before dropping
-FILE_MAX = 2_000_000       # bytes; the JSONL file is truncated to the newest half
+FILE_MAX = 2_000_000       # bytes; the JSONL file is truncated to its newest lines
 TEXT_MAX = 240             # one entry's text, clipped (a BUFFER FULL dump is long)
 LIMIT_DEFAULT = 200
 LIMIT_MAX = 2000
@@ -202,9 +202,9 @@ def select(rows, since=0, kind=None, ids=None, limit=LIMIT_DEFAULT):
 class ConsoleLog:
     """A rolling JSON-lines file: the reader appends, Flask reads the tail.
 
-    Size-capped and truncated to its newest half rather than rotated to a
-    second file — nobody is meant to keep this, and one gitignored file is one
-    thing to explain.
+    Size-capped and truncated in place rather than rotated to a second file —
+    nobody is meant to keep this, and one gitignored file is one thing to
+    explain rather than three.
     """
 
     def __init__(self, path, max_bytes=FILE_MAX):
@@ -225,14 +225,25 @@ class ConsoleLog:
         return len(entries)
 
     def truncate(self):
-        """Keep the newest half of the file. Written to a temp file and moved
-        into place, so a reader never sees a half-rewritten log."""
+        """Drop the oldest lines until the file fits the cap, newest kept.
+
+        Counted from the end rather than halved, because one append can be
+        larger than half the file and the cap has to hold afterwards either
+        way. Written to a temp file and moved into place, so a reader never
+        sees a half-rewritten log.
+        """
         try:
             with open(self.path) as f:
                 lines = f.readlines()
         except OSError:
             return
-        keep = lines[len(lines) // 2:]
+        keep, size = [], 0
+        for line in reversed(lines):
+            size += len(line.encode())
+            if size > self.max_bytes and keep:
+                break
+            keep.append(line)
+        keep.reverse()
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
             f.writelines(keep)

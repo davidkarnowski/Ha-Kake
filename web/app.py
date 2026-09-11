@@ -157,10 +157,12 @@ def sim_ctx():
     page still renders and says how to launch). `tiles` lists the built-in
     tile ids the active profile declares, so the template includes only the
     partials that profile can drive — the dashboard's own rule, applied
-    server-side; the page drops any the record still cannot drive.
+    server-side; the page drops any the record still cannot drive. The
+    profile's own TILES, not reader.TILES: a framework tile (the raw output
+    console) describes the transport, and the cockpit has no partial for it.
     """
     return {"control_url": SIM_CONTROL_URL,
-            "tiles": [t["id"] for t in reader.TILES]}
+            "tiles": [t["id"] for t in reader.VEHICLE.TILES]}
 
 
 @app.route("/sim")

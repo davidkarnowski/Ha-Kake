@@ -52,7 +52,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from elm327 import detect_adapter, set_uds_target, passive_capture, load_local_config  # noqa: E402
 from store import Store, utc_now_iso, ev_norm                       # noqa: E402
 import mqttsource            # <prefix>/state + signal/<key> for gauges; no-op without mqtt.host  # noqa: E402
-from vehicles import get_vehicle, peak_keys, buses, item_bus, primary_bus, source_specs  # noqa: E402
+from vehicles import (get_vehicle, peak_keys, buses, item_bus, primary_bus, source_specs,  # noqa: E402
+                      tiles as vehicle_tiles, default_span, default_tiles)
 import signals                                                      # noqa: E402
 
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -127,9 +128,14 @@ def set_vehicle(name=None):
     PRIMARY_BUS = primary_bus(VEHICLE)
     SOURCE_SPECS = source_specs(VEHICLE)
     ITEMS = VEHICLE.ITEMS
-    TILES = VEHICLE.TILES
-    DEFAULT_SPAN = VEHICLE.DEFAULT_SPAN
-    DEFAULT_TILES = {"tiles": [dict(t) for t in VEHICLE.DEFAULT_TILES]}
+    # The profile's built-in tiles plus the framework's (vehicles/__init__.py
+    # FRAMEWORK_TILES: the raw output console, which describes the transport and
+    # not a car). Everything downstream — _clean_tile, enabled_items,
+    # period_overrides, /api/tiles, /api/signals — reads these merged views, so
+    # nothing else has to know the difference.
+    TILES = vehicle_tiles(VEHICLE)
+    DEFAULT_SPAN = default_span(VEHICLE)
+    DEFAULT_TILES = {"tiles": [dict(t) for t in default_tiles(VEHICLE)]}
     ITEM_KEYS = VEHICLE.ITEM_KEYS
     WATCH = VEHICLE.WATCH
     KIND_ORDER = VEHICLE.KIND_ORDER
