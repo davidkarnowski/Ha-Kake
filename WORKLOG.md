@@ -1615,3 +1615,72 @@ drive above is enough to derive a measured pattern for this pack when it is.
 the car's, the cell floor within 60 mV, the spread against the fitted line, and
 a tight pack when parked. 519 simulator tests still pass. Nothing here has run
 on a car; it is the simulator reproducing numbers a car produced.
+
+### A timeline that slides, and a cadence that keeps up  2026-09-11
+
+The owner drove the `pulls` scenario and said the current curve was very
+sharp — and diagnosed half of it himself: *"part of that is our cycle
+resolution being so low near 1 Hz."* Both halves turned out to be fixable in
+an afternoon, and only one of them needed code.
+
+**The cadence half needed none.** Over BLE a cycle is 1.5–3 s of adapter round
+trips, so a six-second pull gets three or four samples whatever `--interval`
+says. Behind the simulated bus a cycle is milliseconds, so `--interval` stops
+being a floor and becomes the only governor. Measured on the laptop on
+2026-09-10, against the virtual bus and therefore a statement about the
+software and never about a car: `python web/app.py --adapter sim --sim-can
+--scenario pulls --interval 0.1` produced **8.6 rows a second with a cell set
+on every row** — 197 rows over 23 s, median gap 0.10 s — against roughly one
+row a second at the default interval over a slow transport. With the cell log
+armed, `lbc02` joins the fast lane and every fresh cell read gets its own row,
+which is why the cells keep up with the rows. That recipe is now written down
+beside the pulls material in `docs/SIMULATOR.md`, where someone looking at the
+3D tile will find it.
+
+**The scenario half needed a flag.** A timeline is a step function by design,
+and `pulls.json` moves `speed_mph` every half second, so the current climbs in
+stairs even at 10 Hz. A timeline entry can now carry `"ramp": true`: its
+*numeric* knobs interpolate linearly from the value they held at the previous
+entry to this entry's value, across the interval between the two, landing
+exactly on the target at the entry's own `t`. Non-numeric knobs snap at that
+`t` and always will — half of `D` is not a gear and 0.5 of `handbrake` is not
+a brake.
+
+Three things about the implementation are worth keeping. The interpolation is
+a function of **absolute simulated time**, not of an increment, so it is right
+for any `dt`, for the model's bounded sub-steps and under `--speed`: ten
+`step(1)`s, one `step(10)` and 3600× all put a ramp in the same place, and a
+step that jumps clean over the entry still lands on the target rather than
+somewhere short of it. A ramp **arms at the previous entry's time, after every
+already-armed ramp has been advanced to that instant**, so it starts from the
+value the timeline actually left behind; getting that ordering wrong was the
+one real bug on the way — consecutive half-second entries captured each
+other's un-advanced values and the speed sat still for four seconds and then
+jumped. And an entry without the flag is the step function it always was,
+which `tests/test_scenario_ramp.py` pins as a compatibility guarantee for
+every scenario ever written, this project's and anyone else's.
+
+It is per entry, not per knob, because per-knob control already exists without
+widening the format: two entries sharing a timestamp, one ramped and one not.
+Only `pulls` ships ramped. `drive` and `commute` are deliberately step
+*shapes*, the fault scenarios inject at instants, and `pull.json` feeds the
+expected half of `tools/compare_sessions.py` and should not change shape for
+cosmetic reasons; a test pins that `pulls` is the only ramped scenario, so
+adding another is a conscious act.
+
+**What it bought, in numbers.** Sampling the whole 133 s scenario every 0.1 s,
+the biggest jump in current between two consecutive samples fell from **217 A
+to 20 A**, and the jumps over 10 A from 37 to 3 — the three survivors being
+the pedal presses that start a pull, which still snap, because that is what a
+foot does. The hardest pull's peak moved by 0.3 A, from −266.0 to −265.7, so
+the calibration against the owner's 2026-09-09 drive is untouched and
+`tests/test_pulls_scenario.py` passes **unchanged**: that was the condition on
+the whole change, and re-solving the pedal figures turned out not to be
+needed, precisely because a ramp lands exactly on its target at the entry's
+own time.
+
+And the scenario says what it is: the ramp is a *presentation* choice. A real
+car's current does rise over a fraction of a second rather than instantly, so
+sliding is at least as honest as stepping — but nothing was measured between
+two timeline points, and `pulls.json`'s description now says so in the same
+breath as it says the widening spread is stepped rather than physical.
