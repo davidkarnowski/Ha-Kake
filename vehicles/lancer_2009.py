@@ -119,9 +119,13 @@ SIGNALS = {
     "fuel_sys":       {"label": "Fuel system",    "kind": "text", "item": "pid_fuelsys"},
     "mil_on":         {"label": "Check engine (MIL)", "kind": "bool", "item": "pid_mil"},
     "dtc_count":      {"label": "Stored codes",   "unit": "",   "min": 0,  "max": 20, "dec": 0, "item": "pid_mil", "hist": "dtc_count", "color": "good-low"},
-    "dtc_stored":     {"label": "Engine codes",   "kind": "text", "item": "pid_dtc"},
-    "dtc_pending":    {"label": "Pending codes",  "kind": "text", "item": "pid_dtc_pend"},
-    "dtc_trans":      {"label": "Trans codes",    "kind": "text", "item": "pidt_dtc"},
+    # `dtc: True` marks a signal whose text is a list of printable trouble
+    # codes. dtc.py looks the codes up in the machine-local dictionary and
+    # /api/status serves the described form; the stored value stays the raw
+    # code. Nothing outside this profile knows which signals those are.
+    "dtc_stored":     {"label": "Engine codes",   "kind": "text", "item": "pid_dtc",      "dtc": True},
+    "dtc_pending":    {"label": "Pending codes",  "kind": "text", "item": "pid_dtc_pend", "dtc": True},
+    "dtc_trans":      {"label": "Trans codes",    "kind": "text", "item": "pidt_dtc",     "dtc": True},
 }
 
 

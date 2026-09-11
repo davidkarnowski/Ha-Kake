@@ -79,3 +79,11 @@ web/sim_*_state.json.tmp
 # simulator cockpit layout (personal, like web/tiles.json)
 web/sim_tiles.json
 web/sim_tiles.json.tmp
+
+# Trouble-code dictionaries (docs/DTC_DICTIONARY.md). The project ships the
+# format and no data: description text is licence-sensitive (SAE J2012 is a
+# paid standard, manufacturer text comes from paid service manuals), and a
+# dictionary a user built for their own car is theirs, not the repo's. The
+# privacy sweep fails if one is ever staged as a tracked file; the only
+# dictionary in the repository is the synthetic tests/fixtures/dtc_sample.json.
+dtc/

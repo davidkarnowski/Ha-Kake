@@ -136,7 +136,30 @@
   // ── renderers ───────────────────────────────────────────────────────
   const R = {};
   R.number = (t, s, v, col, alt) => `<div class="gt-num" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div>${alt ? `<div class="gt-alt">${alt}</div>` : ''}`;
-  R.text = (t, s, v) => `<div class="gt-text" style="color:var(--accent)">${v == null ? '--' : String(v).toUpperCase()}</div>`;
+  // A text tile normally shouts one short state ("PARK", "READY"). Trouble-code
+  // signals arrive from /api/status already described — "P0171 — text (unverified) · P0420"
+  // — and must not be uppercased into a wall, nor stripped of the evidence
+  // marker the server put there: an unverified guess shown like a
+  // service-manual line turns a known unknown into a confident wrong answer.
+  // The marker is part of the string, so this only styles what is already said.
+  const htesc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const DTC_MARK = /\s\((unverified|community)\)\s*$/;
+  R.text = (t, s, v) => {
+    if (v == null) return `<div class="gt-text" style="color:var(--accent)">--</div>`;
+    const str = String(v);
+    if (!str.includes('—')) return `<div class="gt-text" style="color:var(--accent)">${htesc(str).toUpperCase()}</div>`;
+    const rows = str.split(' · ').map(part => {
+      const m = part.match(/^(\S+)\s+—\s+([\s\S]*)$/);
+      if (!m) return `<div style="color:var(--accent);font-weight:700">${htesc(part).toUpperCase()}</div>`;
+      const mk = m[2].match(DTC_MARK);
+      const desc = mk ? m[2].slice(0, mk.index) : m[2];
+      return `<div style="margin:2px 0;line-height:1.25"><span style="color:var(--accent);font-weight:700">${htesc(m[1]).toUpperCase()}</span>`
+        + ` <span style="color:var(--text);font-size:0.85em">${htesc(desc)}</span>`
+        + (mk ? ` <span style="color:var(--dim);font-size:0.72em;font-style:italic" title="Description not verified — see docs/DTC_DICTIONARY.md">(${htesc(mk[1])})</span>` : '')
+        + `</div>`;
+    }).join('');
+    return `<div class="gt-text" style="font-size:1.05em;letter-spacing:0;text-align:left;width:100%">${rows}</div>`;
+  };
   R.lamp = (t, s, v) => `<div class="gt-lamp ${v ? 'on' : ''}"></div><div class="gt-sub">${v ? 'ON' : 'off'}</div>`;
   R.bar = (t, s, v, col, alt, pct) => `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div>
       <div class="gt-track"><div class="gt-fill" style="width:${(pct * 100).toFixed(1)}%;background:${col}"></div></div>

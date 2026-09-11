@@ -12,6 +12,7 @@ scanning this one — a test that asserted things about *our* history would
 break the moment the release squash lands.
 """
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -146,3 +147,70 @@ def test_plain_run_still_passes_on_this_tree():
     r = subprocess.run([sys.executable, SWEEP], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout
     assert "privacy sweep OK" in r.stdout
+
+
+# ------------------------------------------------- trouble-code dictionaries --
+#
+# The project ships the DTC format and none of the data (docs/DTC_DICTIONARY.md).
+# `dtc/` is gitignored, but an ignore rule is a habit; these tests are the part
+# that makes "we won't commit it" a property of the repository.
+
+DICT = json.dumps({
+    "schema": 1, "vehicle": "example", "codes": [
+        {"code": "P0001", "desc": "An invented fault, for this test only.",
+         "scope": "generic", "evidence": "unverified", "source": "tests"}]})
+
+
+def test_a_tracked_dictionary_is_an_error_by_path():
+    found = []
+    ps.scan_dtc("dtc/lancer_2009.json", DICT, found)
+    assert [f[1] for f in found] == ["dtc dictionary"] and found[0][0] == "ERROR"
+
+
+def test_a_tracked_dictionary_is_an_error_wherever_it_is_put():
+    """Renaming it out of dtc/ must not get it past the sweep."""
+    found = []
+    ps.scan_dtc("docs/codes.json", DICT, found)
+    assert [f[1] for f in found] == ["dtc dictionary"]
+
+
+def test_the_synthetic_sample_is_allowed():
+    found = []
+    ps.scan_dtc("tests/fixtures/dtc_sample.json",
+                open(os.path.join(ROOT, "tests", "fixtures", "dtc_sample.json")).read(), found)
+    assert found == []
+
+
+@pytest.mark.parametrize("path,text", [
+    ("web/tiles.json", json.dumps({"tiles": [{"id": "u_dtc"}]})),
+    ("scripts/x.py", 'rows = data["codes"]  # "evidence" is a field name\n'),
+    ("docs/DTC_DICTIONARY.md", 'A row carries "codes", "evidence" and "desc".\n'),
+    ("x.json", "not json at all {"),
+])
+def test_ordinary_files_do_not_trip_the_dictionary_rule(path, text):
+    found = []
+    ps.scan_dtc(path, text, found)
+    assert found == []
+
+
+def test_the_sweep_fails_on_a_dictionary_added_to_a_repo(tmp_path):
+    """End to end: a dictionary force-added to a tracked path fails the sweep."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run = lambda *a: subprocess.run(a, cwd=repo, capture_output=True, text=True)
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "t@example.invalid")
+    run("git", "config", "user.name", "T")
+    (repo / "dtc").mkdir()
+    (repo / "dtc" / "leaf_ze0.json").write_text(DICT)
+    run("git", "add", "-f", "dtc/leaf_ze0.json")
+    run("git", "commit", "-qm", "add a dictionary")
+    # the sweep resolves ROOT from its own location, so point it at the throwaway repo
+    out = subprocess.run([sys.executable, "-c",
+                          "import importlib.util,sys;"
+                          f"spec=importlib.util.spec_from_file_location('ps',{SWEEP!r});"
+                          "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);"
+                          f"m.ROOT={str(repo)!r};sys.exit(m.main())"],
+                         capture_output=True, text=True)
+    assert out.returncode == 1, out.stdout
+    assert "dtc dictionary" in out.stdout and "privacy sweep FAILED" in out.stdout

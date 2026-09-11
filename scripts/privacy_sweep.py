@@ -6,7 +6,9 @@
 Scans every git-tracked file (and, with --log, recent commit messages; with
 --history, every blob that has ever existed in this repository) for things
 that should not leave this machine: absolute home paths, usernames, e-mail
-addresses, adapter/device identifiers, IPs, keys, session URLs.
+addresses, adapter/device identifiers, IPs, keys, session URLs — and any
+committed trouble-code dictionary (the project ships the format and none of
+the data; see docs/DTC_DICTIONARY.md).
 
   ./venv/bin/python scripts/privacy_sweep.py            # tracked files
   ./venv/bin/python scripts/privacy_sweep.py --log 50   # + last 50 commit messages
@@ -50,6 +52,17 @@ RULES = [
 ]
 SKIP_DIRS = ("venv/", ".venv/", "research/")
 
+# Trouble-code dictionaries are never committed. The project ships the format
+# and none of the data (docs/DTC_DICTIONARY.md): description text is
+# licence-sensitive, and a dictionary built from a service manual is not the
+# builder's to redistribute. `dtc/` is gitignored, but an ignore rule is a
+# habit — `git add -f`, a path outside dtc/, or a rename all defeat it — so the
+# sweep looks at the *content* of tracked JSON as well as at the path. The one
+# dictionary that may be tracked is the synthetic sample the loader tests
+# against, whose codes and descriptions are invented.
+DTC_ALLOW = ("tests/fixtures/dtc_sample.json",)
+DTC_DIR = "dtc/"
+
 # This tool's own test corpus. test_privacy_sweep.py must contain strings that
 # look exactly like the things we hunt for — that is how it proves the rules
 # fire — so scanning it guarantees a false positive on every rule at once.
@@ -79,6 +92,35 @@ def git(*args, **kw):
 
 def tracked_files():
     return [f for f in git("ls-files").splitlines() if f]
+
+
+def looks_like_dtc_dictionary(text):
+    """Is this text a trouble-code dictionary in the loader's format?
+
+    Cheap substring filter first, then a real parse: a file that merely
+    mentions "codes" (this script, docs, the Lancer profile) must not trip.
+    """
+    if '"codes"' not in text or '"evidence"' not in text:
+        return False
+    try:
+        import json as _json
+        data = _json.loads(text)
+    except Exception:
+        return False
+    rows = data.get("codes") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return False
+    return any(isinstance(r, dict) and {"code", "desc", "evidence"} <= set(r) for r in rows)
+
+
+def scan_dtc(path, text, findings):
+    """ERROR on a tracked trouble-code dictionary — by path or by content."""
+    if path in DTC_ALLOW:
+        return
+    if path.startswith(DTC_DIR) or looks_like_dtc_dictionary(text):
+        findings.append(("ERROR", "dtc dictionary", path,
+                         "trouble-code dictionaries stay machine-local (dtc/, gitignored) "
+                         "— see docs/DTC_DICTIONARY.md"))
 
 
 def scan_text(label, text, findings):
@@ -245,7 +287,9 @@ def main():
             continue
         try:
             with open(os.path.join(ROOT, f), encoding="utf-8", errors="replace") as fh:
-                scan_text(f, fh.read(), findings)
+                body = fh.read()
+            scan_text(f, body, findings)
+            scan_dtc(f, body, findings)
         except OSError:
             continue
     if args.log:

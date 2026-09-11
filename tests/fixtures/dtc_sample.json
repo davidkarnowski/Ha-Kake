@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "vehicle": "sample",
+  "generated": "2026-09-11",
+  "generator": "hand-written example for docs/DTC_DICTIONARY.md",
+  "note": "SYNTHETIC EXAMPLE — every code and every description below is invented for the loader's tests and for a reader to copy the shape of. None of it describes any real vehicle. Delete it before you add a real entry.",
+  "codes": [
+    {
+      "code": "P0001",
+      "desc": "Example entry: the imaginary flux regulator reported itself out of range.",
+      "scope": "generic",
+      "evidence": "unverified",
+      "source": "invented for tests/fixtures/dtc_sample.json"
+    },
+    {
+      "code": "P0AAA",
+      "desc": "Example entry: the pretend high-voltage interlock says it is open.",
+      "scope": "generic",
+      "evidence": "unverified",
+      "source": "invented for tests/fixtures/dtc_sample.json",
+      "module": "EXAMPLE-ECU",
+      "desc_long": "A second paragraph exists only to show where a longer note goes; there is no such interlock and no such fault.",
+      "causes": ["An example cause", "Another example cause"],
+      "aliases": ["P0AAB"]
+    },
+    {
+      "code": "U0001",
+      "desc": "Example entry: the make-believe network bus stopped answering.",
+      "scope": "example-make",
+      "evidence": "unverified",
+      "source": "invented for tests/fixtures/dtc_sample.json"
+    }
+  ]
+}

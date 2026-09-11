@@ -7,7 +7,7 @@ Flask web server with integrated reader. The vehicle comes from --vehicle
 (profiles in vehicles/; default the 2012 Leaf).
 
 API:
-  /api/status                    latest state (battery_state.json)
+  /api/status                    latest state (battery_state.json), trouble codes described
   /api/history?minutes=1440      downsampled readings (omit or minutes=0 → all)
   /api/health                    per-day capacity / SOH / temps for degradation chart
   /api/cells?limit=30            per-cell voltages for the last N full reads
@@ -59,6 +59,7 @@ from flask import Flask, jsonify, render_template, request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from store import Store                 # noqa: E402
+import dtc                               # noqa: E402  (trouble-code dictionary; absent is normal)
 import reader                            # noqa: E402  (vehicle-bound globals: reader.ITEMS etc.)
 import signals                           # noqa: E402
 from reader import (load_tiles, save_tiles, load_calibration, save_calibration,  # noqa: E402
@@ -216,6 +217,12 @@ def api_status():
     # startup global fills in before the first record exists.
     if SIM_CONTROL_URL and not state.get("sim_control_url"):
         state["sim_control_url"] = SIM_CONTROL_URL
+    # Trouble codes get their descriptions here, on the way out — never on the
+    # way in. What the reader stores is the raw code, which is what was read
+    # off the car; the dictionary is machine-local, optional and may change
+    # under a running reader (docs/DTC_DICTIONARY.md). With no dictionary this
+    # is a no-op and the page shows the bare codes exactly as before.
+    dtc.enrich(state, signals.SIGNALS, vehicle=reader.VEHICLE)
     return jsonify(state)
 
 
