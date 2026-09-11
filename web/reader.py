@@ -468,23 +468,24 @@ def console_options(tiles_cfg):
     return None
 
 
+def item_can_id(i):
+    """The CAN id an item puts on the wire: a passive item's own id, a UDS
+    item's response header, "" for neither. The console filters by these, and
+    /api/signals serves them so the tile's "known ids only" toggle is the
+    profile's own list rather than a hardcoded one."""
+    it = ITEMS.get(i)
+    if not it:
+        return ""
+    tgt = TARGETS.get(it["kind"])
+    if tgt is None:
+        return str(it.get("id", "")).upper()
+    return str(tgt[1]).upper() if tgt else ""
+
+
 def console_ids(items):
-    """The CAN ids the given items put on the wire: a passive item's own id, a
-    UDS item's response header. This is what the console shows by default —
-    the ids the enabled tiles poll, which is 10–15 of them rather than the
-    whole bus."""
-    out = set()
-    for i in items:
-        it = ITEMS.get(i)
-        if not it:
-            continue
-        tgt = TARGETS.get(it["kind"])
-        if tgt is None:
-            out.add(str(it.get("id", "")).upper())
-        elif tgt:
-            out.add(str(tgt[1]).upper())
-    out.discard("")
-    return out
+    """What the console shows by default — the ids the enabled tiles poll,
+    which is 10–15 of them rather than the whole bus."""
+    return {c for c in (item_can_id(i) for i in items) if c}
 
 
 # ── timeline bookmarks ────────────────────────────────────────────────────

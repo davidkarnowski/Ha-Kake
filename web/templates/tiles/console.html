@@ -1,0 +1,18 @@
+  <div class="card console-card" data-tile="console" data-span="12">
+    <div class="card-title">Raw output <span class="console-scope" id="console-scope"></span></div>
+    <div class="console-bar">
+      <button class="console-pause" id="console-pause" title="stop the scroll; nothing is lost, the reader keeps the window">Pause</button>
+      <span class="console-kinds" id="console-kinds"></span>
+      <input type="text" class="console-ids" id="console-ids" placeholder="ids: 421,5B3" size="12"
+             title="show only these CAN ids, comma separated">
+      <label class="console-known"><input type="checkbox" id="console-known"> known ids only</label>
+      <span class="console-stats" id="console-stats"></span>
+    </div>
+    <div class="console-out" id="console-out" role="log" aria-live="off" tabindex="0">
+      <div class="console-empty" id="console-empty">waiting for the reader…</div>
+    </div>
+    <div class="console-foot">
+      <span class="console-partial" id="console-partial" hidden></span>
+      <span class="console-hint">click a line to copy it as <code>ID B0 B1 …</code> — the shape the decoders and fixtures use</span>
+    </div>
+  </div>

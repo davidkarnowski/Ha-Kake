@@ -683,3 +683,156 @@ def test_the_endpoint_is_read_only(api):
     client, _ = api
     for method in ("post", "put", "delete"):
         assert getattr(client, method)("/api/console").status_code == 405
+
+
+# ── the tile: markup, page wiring and the pure half of console.js ──
+
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+TEMPLATES = os.path.join(ROOT, "web", "templates")
+CONSOLE_JS = os.path.join(ROOT, "web", "static", "console.js")
+CONSOLE_HTML = os.path.join(TEMPLATES, "tiles", "console.html")
+needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_the_tile_is_a_partial_included_once_with_its_script():
+    index = read(os.path.join(TEMPLATES, "index.html"))
+    assert os.path.exists(CONSOLE_HTML)
+    assert index.count('{% include "tiles/console.html" %}') == 1
+    assert index.count('/static/console.js') == 1
+    assert index.count("TileStudio.menuExtra('console', consoleMenu)") == 1
+
+
+def test_the_tile_markup_carries_every_control_the_plan_asked_for():
+    html = read(CONSOLE_HTML)
+    assert 'data-tile="console"' in html and 'data-span="12"' in html
+    assert "Raw output" in html
+    for anchor in ("console-out", "console-pause", "console-kinds", "console-ids",
+                   "console-known", "console-stats", "console-partial"):
+        assert f'id="{anchor}"' in html, anchor
+    assert "known ids only" in html
+    assert "ID B0 B1" in html, "the copy format is stated where a person can see it"
+
+
+def test_the_rendered_page_carries_the_tile_once(tmp_path, monkeypatch, leaf_profile):
+    import app as webapp
+    import reader as rd
+    from store import Store
+    monkeypatch.setattr(webapp, "DEMO", None)
+    monkeypatch.setattr(webapp, "STATE_FILE", str(tmp_path / "state.json"))
+    for attr, name in (("STATE_FILE", "state.json"), ("TILES_FILE", "tiles.json"),
+                       ("CALIB_FILE", "calibration.json"), ("LAYOUTS_FILE", "layouts.json")):
+        monkeypatch.setattr(rd, attr, str(tmp_path / name))
+    store = Store(str(tmp_path / "p.db"))
+    monkeypatch.setattr(webapp, "store", lambda: store)
+    webapp.app.config["TESTING"] = True
+    with webapp.app.test_client() as c:
+        page = c.get("/").get_data(as_text=True)
+    store.close()
+    assert page.count('data-tile="console"') == 1
+    assert read(CONSOLE_HTML).rstrip("\n") in page, "the include must not reshape the markup"
+
+
+def test_the_tile_is_offered_by_the_layout_api_for_every_profile(tmp_path, monkeypatch, use_vehicle):
+    import app as webapp
+    import reader as rd
+    monkeypatch.setattr(webapp, "DEMO", None)
+    monkeypatch.setattr(rd, "TILES_FILE", str(tmp_path / "tiles.json"))
+    webapp.app.config["TESTING"] = True
+    for name in ("leaf_ze0", "lancer_2009"):
+        use_vehicle(name)
+        with webapp.app.test_client() as c:
+            tiles = {t["id"]: t for t in c.get("/api/tiles").get_json()["tiles"]}
+        assert tiles["console"]["name"] == "Raw output"
+        assert tiles["console"]["enabled"] is False
+        assert tiles["console"]["span"] == 12
+        assert tiles["console"]["items"] == []
+
+
+def test_the_signal_registry_carries_each_item_s_id_on_the_wire(tmp_path, monkeypatch, leaf_profile):
+    """What the tile's "known ids only" toggle is built from — the profile's own
+    list, so nothing in the browser knows what a Leaf is."""
+    import app as webapp
+    monkeypatch.setattr(webapp, "DEMO", None)
+    webapp.app.config["TESTING"] = True
+    with webapp.app.test_client() as c:
+        items = c.get("/api/signals").get_json()["items"]
+    assert items["p421"]["can_id"] == "421"           # a passive item: its own id
+    assert items["lbc01"]["can_id"] == "7BB"          # a UDS item: its response header
+    assert all("can_id" in v for v in items.values())
+
+
+def test_console_js_keeps_the_pane_read_only():
+    js = read(CONSOLE_JS)
+    assert "method:" not in js and "PUT" not in js and "POST" not in js
+    assert js.count("fetch(") == 2, "one poll and one registry read, both GET"
+
+
+def test_console_js_says_what_the_pane_is_not():
+    js = read(CONSOLE_JS)
+    assert "record_session.py" in js and "not a capture tool" in js
+
+
+def run_node(script):
+    r = subprocess.run(["node", "-e", script, CONSOLE_JS], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+HARNESS = "globalThis.window = globalThis; const R = require(process.argv[1]);"
+
+
+@needs_node
+def test_the_changed_byte_mask_is_what_a_person_hunts_a_signal_with():
+    out = run_node(HARNESS + """
+      console.log(JSON.stringify({
+        changed: R.diffMask('421 08 00 00', '421 09 00 00'),
+        same: R.diffMask('421 08 00 00', '421 08 00 00'),
+        first: R.diffMask('', '421 08 00 00'),
+        grew: R.diffMask('421 08', '421 08 00'),
+        tokens: R.tokens('  421   08 00 '),
+      }));""")
+    assert out["changed"] == [True, False, False]
+    assert out["same"] == [False, False, False]
+    assert out["first"] == [False, False, False], "a first sighting highlights nothing"
+    assert out["grew"] == [False, True]
+    assert out["tokens"] == ["421", "08", "00"]
+
+
+@needs_node
+def test_the_tile_asks_with_a_cursor_and_its_kind_filter():
+    out = run_node(HARNESS + """
+      const all = {frame:true, uds:true, adapter:true, text:true, event:true};
+      console.log(JSON.stringify({
+        fresh: R.query({cursor: 0, limit: 300, kinds: all, idFilter: ''}),
+        walk: R.query({cursor: '4120', limit: 50, kinds: {frame:true, uds:false}, idFilter: ''}),
+        ids: R.query({cursor: 0, kinds: all, idFilter: ' 421, 5b3 '}),
+        idList: R.idList('421, 5b3  7bb'),
+      }));""")
+    assert out["fresh"] == "/api/console?since=0&limit=300"
+    assert out["walk"] == "/api/console?since=4120&limit=50&kind=frame"
+    assert out["ids"].endswith("ids=421,5B3")
+    assert out["idList"] == ["421", "5B3", "7BB"]
+
+
+@needs_node
+def test_the_stats_line_says_what_was_dropped_and_never_hides_a_lossy_mode():
+    out = run_node(HARNESS + """
+      console.log(JSON.stringify({
+        off: R.statsLine({on: false}),
+        quiet: R.statsLine({on: true, kept: 40, dropped: 0, rate_cap: 10}),
+        busy: R.statsLine({on: true, kept: 120, dropped: 5201, dropped_by_id: {'1DB': 3200}, rate_cap: 10}),
+        lossy: R.statsLine({on: true, kept: 9, dropped: 2, everything: true}),
+        copy: R.copyText({text: '421 08 00 00'}),
+      }));""")
+    assert out["off"] == "off"
+    assert out["quiet"] == "40 shown — max 10/s per id"
+    assert "5,201 dropped (1DB 3,200)" in out["busy"]
+    assert "every id — lossy" in out["lossy"]
+    assert out["copy"] == "421 08 00 00"

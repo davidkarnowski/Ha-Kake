@@ -704,6 +704,8 @@
 
 {% include "tiles/pack3d.html" %}
 
+{% include "tiles/console.html" %}
+
 <div class="card power-card" data-tile="power" data-span="12">
   <div class="history-header">
     <div class="card-title" style="margin-bottom:0">Power Monitor</div>
@@ -874,6 +876,7 @@
 <script src="/static/pack_layout.js"></script>
 <script type="module" src="/static/pack3d.js"></script>
 <script src="/static/tiles.js"></script>
+<script src="/static/console.js"></script>
 <script src="/static/playback.js"></script>
 <script>
 // Build module tree: 48 modules × 2 cells. Pairs are numbered 1–96 on screen (the service
@@ -1768,6 +1771,27 @@ window.cellLogMenu = function (box, o, commit) {
   box.append(h, row, why);
 };
 
+// ⋯ menu rows for the raw output console (docs/CONSOLE.md). Both options change
+// what the *reader* keeps, not what the browser draws: they are written into the
+// tile's opts, the reader re-reads tiles.json and re-arms the ring with the new
+// rules, and the drop counts on screen then belong to the rules on screen.
+window.consoleMenu = function (box, o, commit) {
+  const h = document.createElement('h5'); h.textContent = 'What the reader keeps';
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = `<label style="min-width:0"><input type="checkbox" id="tm-conall" ${o.everything ? 'checked' : ''}> every id on the bus, not only the ids the enabled tiles poll</label>`;
+  const row2 = document.createElement('div'); row2.className = 'row';
+  row2.innerHTML = `<label>Rate cap</label><input type="number" id="tm-conrate" min="1" max="200" step="1" value="${o.rate ?? 10}" style="width:78px"><span style="color:var(--dim)">frames per id per second</span>`;
+  const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
+  why.textContent = 'Every id is lossy and says so — Car-CAN carries about 1,700 frames a second and nothing useful reaches a browser at that rate. '
+                  + 'Whatever is thrown away is counted per id and shown. This is a window, not a capture: record_session.py and the MQTT bridge are the capture tools.';
+  row.querySelector('#tm-conall').addEventListener('change', e => { o.everything = e.target.checked; commit(); });
+  row2.querySelector('#tm-conrate').addEventListener('change', e => {
+    const n = Math.min(200, Math.max(1, +e.target.value || 10));
+    e.target.value = n; o.rate = n; commit();
+  });
+  box.append(h, row, row2, why);
+};
+
 let lastTimestamp = null;
 async function poll() {
   if (isPlayback()) return;            // every tile is being painted from stored frames
@@ -1884,6 +1908,6 @@ if (!SHOT) setInterval(pollHealth, 60000);
 <script src="/static/alerts.js"></script>
 <script src="/static/vendor/gridstack-all.js"></script>
 <script src="/static/tilestudio.js"></script>
-<script>TileStudio.menuExtra('power', powerMenu); TileStudio.menuExtra('cells', (box, o, commit) => { cellColorMenu(box, o, commit); cellLogMenu(box, o, commit); }); TileStudio.init(); applyPowerSmoothing(TileStudio.opts('power'));</script>
+<script>TileStudio.menuExtra('power', powerMenu); TileStudio.menuExtra('console', consoleMenu); TileStudio.menuExtra('cells', (box, o, commit) => { cellColorMenu(box, o, commit); cellLogMenu(box, o, commit); }); TileStudio.init(); applyPowerSmoothing(TileStudio.opts('power'));</script>
 </body>
 </html>

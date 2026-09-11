@@ -343,7 +343,11 @@ def api_signals():
         "signals": signals.SIGNALS,
         "colors": COLOR_SCALES,
         "types": TILE_TYPES,
-        "items": {k: {"label": v["label"], "period": v["period"], "kind": v["kind"]} for k, v in reader.ITEMS.items()},
+        # `can_id` is the id this item puts on the wire (a passive item's own,
+        # a UDS item's response header): the raw output console's "known ids
+        # only" toggle is built from it, so that list is the profile's.
+        "items": {k: {"label": v["label"], "period": v["period"], "kind": v["kind"],
+                      "can_id": reader.item_can_id(k)} for k, v in reader.ITEMS.items()},
         "tile_defaults": reader.DEFAULT_SPAN,
         "tile_signals": signals.tile_signals(reader.TILES),
         "vehicle": {"name": reader.VEHICLE.NAME, "title": reader.VEHICLE.TITLE},
