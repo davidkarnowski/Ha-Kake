@@ -1767,3 +1767,88 @@ it.
 **1094 passed, 2 skipped** — 57 of them new in `tests/test_dtc.py` and five more in
 `tests/test_privacy_sweep.py`, including an end-to-end sweep failure on a throwaway
 repository with a dictionary force-added to it. No car was involved in any of this.
+---
+
+## 2026-09-11 — a raw output console, and the first framework tile
+
+The owner asked for "a pane that displays direct CAN frames in a scrolling,
+terminal-like display. A debug view." The plan written on 2026-09-10 said the UI
+was the easy half and the frames were the problem: the reader is a separate
+process, it discards raw lines the moment the profile has decoded them, and what
+each transport can even offer differs sharply. His own decisions on that plan
+widened it usefully — it is a console for the *transport's* output, not only for
+CAN frames, and it belongs to every vehicle rather than to each profile.
+
+**Built-in tiles used to be a car's.** That was right while every one of them was
+Leaf art: the Lancer declares `TILES = []` and gets user signal tiles instead. It
+is wrong for a tile that describes the transport, because then a second car's
+author has to opt in to a debug view he never wrote. So `vehicles/__init__.py`
+grew `FRAMEWORK_TILES` and the three merged views the reader binds — `tiles()`,
+`default_span()`, `default_tiles()`. The console is the first member: id
+`console`, "Raw output", full width, **disabled by default**. A profile that
+declares one of those ids is now rejected, because two definitions of one tile
+would silently disagree about its items. Everything downstream reads the merged
+views and cannot tell where a tile came from; the only place that deliberately
+does not is `sim_ctx()`, which includes partials a *profile* can drive.
+
+**Off means off.** The reader learns the tile is enabled from `web/tiles.json` —
+the same mtime path the cell log already used — and only then builds a ring and
+points the taps at it. No tile, no object, no tap, no file, and turning it off
+drops all three. Arming logs a line and puts its own event in the pane, so the
+console is never blank while waiting for a first frame.
+
+**What each transport can honestly give, which is the whole point.** Native CAN,
+MQTT and the simulated bus all reach the reader through `CanFacade`, so one
+additive `tap` attribute there covers all three and sees every broadcast frame.
+An ELM327 has no façade: its frames are the `ATMA` lines `poll_bus` already
+holds — only the ids the profile polls, only during their dwell — and the pane
+says exactly that, in the pane, whenever the primary transport is one. Frames
+captured for a UDS request are deliberately not tapped as frames; the reader
+emits one grouped `uds` entry per request instead, `2101 -> 7BB 10 29 61 01 /
+…`, which is the pairing that makes a decoded value trustworthy rather than
+magic. On top of those: adapter replies and refusals, every `text`-kind signal
+as it changes (the Lancer's stored codes, the case that makes this worth having
+on a car that is not the Leaf), and reader events — connect, reconnect, bus
+down, link dropped, asleep, awake again.
+
+**The rate problem is answered in the reader, not the browser.** Car-CAN carries
+about 1,700 frames a second. The ring keeps only the ids the enabled tiles poll,
+caps each id at N frames per second, and offers an explicit "everything" mode
+that says it is lossy. Every dropped frame is counted per id and published in
+the record, because a pane that silently thinned its own data would be worse
+than no pane. Only frames are ever decimated: an answer or an event is not a
+stream, and dropping one loses the thing the person was watching for. The kind
+filter is the other half — frames are the only firehose, and they are one
+checkbox.
+
+**Getting it to the page** needed no new IPC: the ring is flushed once a cycle
+to `web/console.jsonl` (gitignored, size-capped, cleared on each arming), which
+is the state file's own pattern, and `GET /api/console?since=&kind=&ids=&limit=`
+serves the tail after an **opaque cursor** — a cursor and not a timestamp,
+because two frames can share a millisecond. A `limit` returns the newest
+matches, so a pane that fell behind gets the end of the stream rather than the
+start of a backlog; that also means the endpoint cannot page forward through
+one, which is deliberate and documented.
+
+**The pane** is monospace, newest at the bottom, auto-scrolling only while it is
+already at the bottom, with a Pause button that is not a nicety — a scrolling
+pane at any real frame rate is unreadable. A byte that changed from that id's
+previous frame is highlighted (a first sighting highlights nothing: "everything
+changed" says nothing), and clicking a line copies it as `ID B0 B1 …`, the exact
+shape the decoders and fixtures use. "Known ids only" is built from the
+profile's own items — `/api/signals` now reports each item's `can_id` — so
+nothing in the browser knows what a Leaf is.
+
+**What it is not**, said in the doc and in the code: not a capture tool.
+`record_session.py` records a session properly and the bridge logs losslessly.
+This drops frames on purpose. `web/console.py` has no transport handle in it at
+all, and a test asserts the module imports no transport and defines no `send` —
+the read-only rule applied to the debug pane.
+
+61 tests in `tests/test_console.py`: the ring's bounds and eviction, the
+decimation and its per-id drop counts, the cursor, the endpoint's filters and
+limit, the tap staying off while the tile is disabled, each transport's entry
+shapes, the ELM327 partial view being labelled, the tile's page strings, and the
+pure half of `console.js` under node. 1,090 tests pass. Nothing here has run on
+a car, and the pane's own feel — scrolling, pausing, copying a line — still has
+to be read in a browser and then in the passenger seat.

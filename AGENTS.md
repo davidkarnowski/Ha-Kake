@@ -40,6 +40,7 @@ was not.
 | `web/store.py` | SQLite time series; schema/insert/history/daily built from the profile's `HISTORY_COLS` |
 | `web/app.py` | Flask dashboard + API; supervises the reader subprocess |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag/resize |
+| `web/console.py`, `web/static/console.js` | the raw output console: a bounded, decimating ring in the reader and the terminal tile that reads it through `/api/console` — a window on the transport, never a capture (`docs/CONSOLE.md`) |
 | `simulator/`, `hakake_sim.py` | the simulated car: model, knobs, scenarios, encoder; rig, control API, history generator; `canbus.py` is the simulated CAN bus (ECUs at real frame rates) and `--pull` the scripted acceleration |
 | `tools/` | `bench_transport.py` (adapter round trips), `bench_canrate.py` (the app at CAN frame rates), `compare_sessions.py` (expected vs observed) |
 | `record_session.py` | record a drive, derive a fixture from raw captures, or convert a captured MQTT stream (`--from-mqtt`) |
@@ -163,6 +164,7 @@ the log, then `git diff --stat`, then continue from `NEXT:`. Logs stay in
 | Conventions, branching, commits, the privacy sweep, progress logs | `CLAUDE.md` |
 | What does byte N mean, and how sure are we? | `docs/SIGNALS.md` — then `leaf_decoders.py` |
 | Processes, scheduler, data model, Tile Studio | `docs/ARCHITECTURE.md` |
+| Watching the raw frames / UDS answers / adapter replies a transport gives | `docs/CONSOLE.md` |
 | What a timestamp means, which clock it came from, why a 5 s row keeps a peak | `docs/TIMING.md`; `tools/bench_transport.py --timing` measures it |
 | Two adapters (Car-CAN + EV-CAN) at once; which source a value came from | `docs/ARCHITECTURE.md` "Several adapters" and "Provenance"; `adapters` in `config.local.json`; `sources` on a SIGNALS entry |
 | What must a vehicle profile provide? | `vehicles/__init__.py` docstring + `validate_profile()` |

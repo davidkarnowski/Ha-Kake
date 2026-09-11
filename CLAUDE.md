@@ -133,6 +133,15 @@ specifics go in `config.local.json` (gitignored), never in code.
   CAD file; the pure maths in `pack_layout.js` is node-tested, the WebGL half
   is checked in the owner's browser. A label layer is a class, never an id
   shared with a control.
+- The raw output console is a **framework tile**, not a profile's: built-in
+  tiles are declared per vehicle, but a tile describing the *transport* belongs
+  to every car, so `vehicles/__init__.py` keeps `FRAMEWORK_TILES` and the
+  merged `tiles()` / `default_span()` / `default_tiles()` views the reader
+  binds — a profile that declares one of those ids is rejected. It is off by
+  default and taps nothing until the tile is enabled (the cell-log precedent),
+  it decimates in the reader and counts every drop per id, and it is a window,
+  not a capture: `record_session.py` and the bridge are the capture tools.
+  `docs/CONSOLE.md`.
 - The simulator is a fixture, not a verifier: `--adapter sim` is never
   auto-detected, its rows never reach `web/leaf_battery.db`, every load in
   `simulator/model.py` `LOADS_W` carries a MEASURED / OWNER REPORT / ASSERTED

@@ -102,8 +102,8 @@ Fourteen. `validate_profile()` refuses a profile missing any of them, and
 | `TARGETS` | `dict` kind → `(tx, rx)` or `None` | The ECUs you talk to. `("7E0", "7E8")` is a request/response header pair for a request-response (UDS-style) kind; `None` marks a **passive** kind, captured by monitoring the bus (`ATCAF0` + `ATCRA` + `ATMA`). Non-empty. |
 | `KIND_ORDER` | `tuple` of kinds | Poll order within one cycle. The scheduler sorts a cycle's items by this so the adapter switches ECU as few times as possible — each switch costs real milliseconds. Every kind used by an item must appear here *and* in `TARGETS`. |
 | `ITEMS` | `dict` item id → spec | Everything pollable. See below. Non-empty. |
-| `TILES` | `list` of `{id, name, items[, signals]}` | Built-in dashboard tiles — hand-written HTML/SVG partials. **May be empty**, and for a new car it should be: the shipped built-ins are Leaf art. Every `items` entry must name a real item, and every tile needs a `DEFAULT_SPAN`. Optional `signals` lists the `SIGNALS` keys the tile displays — what its ⋯ menu offers for audible alerts (each must exist; absent, every non-text signal its items produce is offered). |
-| `DEFAULT_SPAN` | `dict` tile id → int | Grid columns (the dashboard grid is 12 wide) for built-in tiles only. `{}` when `TILES` is empty. |
+| `TILES` | `list` of `{id, name, items[, signals]}` | Built-in dashboard tiles **of this car's own** — hand-written HTML/SVG partials. **May be empty**, and for a new car it should be: the shipped built-ins are Leaf art. The framework adds its own on top (see "Framework tiles" below), so an empty list still gets you the raw output console. Every `items` entry must name a real item, and every tile needs a `DEFAULT_SPAN`. Optional `signals` lists the `SIGNALS` keys the tile displays — what its ⋯ menu offers for audible alerts (each must exist; absent, every non-text signal its items produce is offered). |
+| `DEFAULT_SPAN` | `dict` tile id → int | Grid columns (the dashboard grid is 12 wide) for **your own** built-in tiles only. `{}` when `TILES` is empty; a framework tile's span is the framework's. |
 | `DEFAULT_TILES` | `list` of dicts | The out-of-the-box layout. Each entry needs an `id`; an entry that is not a built-in tile id must carry `signal` naming a key in `SIGNALS`. Other honoured fields: `kind` (`"signal"`), `type` (a renderer), `enabled`, `span`, `title`, `opts`, `x`, `y`, `h`. |
 | `ITEM_KEYS` | `dict` item → tuple of record keys | Which cached keys to drop when a tile stops needing that item. Keys must be strings; items must exist. |
 | `WATCH` | `tuple` of record keys | Values logged to the `events` table on every change (gear, lock state, MIL…). |
@@ -111,6 +111,22 @@ Fourteen. `validate_profile()` refuses a profile missing any of them, and
 | `SIGNALS` | `dict` key → registry entry | What the dashboard can display. See §2.3. |
 | `configure(elm)` | `async def` | Full adapter setup for this vehicle. Must be a coroutine function; it is checked. |
 | `decode(responses)` | `def` → `(record, alive)` | The whole decode. See §2.4. |
+
+**Framework tiles (you get these for free, and may not redeclare them).**
+Some built-in tiles describe the *transport* rather than a car, so every profile
+gets them without declaring anything. They live in `vehicles/__init__.py` as
+`FRAMEWORK_TILES`, and `tiles(mod)` / `default_span(mod)` / `default_tiles(mod)`
+are the merged views the reader binds.
+
+| Framework tile | What it is |
+|---|---|
+| `console` — "Raw output" | the debug console: frames, UDS answers, adapter replies, text signals and reader events, full width, **disabled by default**. `docs/CONSOLE.md` |
+
+`validate_profile()` rejects a profile that puts one of those ids in its own
+`TILES`, `DEFAULT_SPAN` or `DEFAULT_TILES` — two definitions of one tile would
+silently disagree about its items. You never have to do anything to get one; if
+you want it on by default for your car, enable it in the dashboard, not in the
+profile.
 
 ### 2.2 `ITEMS` — one entry per thing you poll
 
@@ -463,7 +479,8 @@ at `None` if nothing was asked.
                    "daily": {"avg": "coolant_temp_c", "max": "coolant_max_c"}},
 ```
 
-**7. Tiles.** `TILES = []` and `DEFAULT_SPAN = {}` — no hand-built art. The
+**7. Tiles.** `TILES = []` and `DEFAULT_SPAN = {}` — no hand-built art of its
+own (the framework's raw output console is there anyway, off by default). The
 default layout is signal tiles, which work for any profile:
 
 ```python
@@ -527,6 +544,7 @@ value, the value is out of scope here.
 | How do I find a signal nobody has documented? | [`reverse-engineering/`](reverse-engineering/00-index.md) |
 | How do I add one more signal to an existing profile? | [`ADDING_SIGNALS.md`](ADDING_SIGNALS.md) |
 | How do the processes fit together? | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| What is that "Raw output" tile my profile never declared? | [`CONSOLE.md`](CONSOLE.md) |
 | Running with no car | [`REPLAY.md`](REPLAY.md), [`SIMULATOR.md`](SIMULATOR.md) |
 | What may a profile send? | `SECURITY.md` |
 | Submitting it | `CONTRIBUTING.md` |

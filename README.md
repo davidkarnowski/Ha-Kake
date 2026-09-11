@@ -191,6 +191,12 @@ The Leaf profile, as an example of how far a profile can go:
 | Cell pairs — 96 voltages, 48 modules, min/max/spread, balancing flags | LBC groups 02/06 | 20–30 s |
 | Battery pack — 3D: the pack as it sits under the car, every cell pair a body coloured by voltage (the grid's scale, a fixed voltage range, deviation from mean, or drop from rest), the lowest pair flashing, the four temperature sensors coloured and labelled; orbit / zoom, hover for the value, click a pair for its module's stats | LBC groups 02/04/06 | 20–30 s |
 
+On top of those, one tile belongs to every car rather than to the Leaf:
+
+| Tile | Source | Refresh |
+|---|---|---|
+| **Raw output** — a terminal for whatever the transport is saying: broadcast frames byte for byte, UDS answers grouped with the request that asked, adapter replies, decoded text values as they change, reader events; pause, filter by kind and id, changed bytes highlighted, click a line to copy it as `ID B0 B1 …`. Off by default, and it says plainly when the adapter can only show part of the bus ([`docs/CONSOLE.md`](docs/CONSOLE.md)) | the transport itself | a few times a second, decimated in the reader |
+
 Every one of those tiles also works in **playback**: the header's Playback
 button turns the page into a viewer for what the database recorded — a
 session picker, a strip of SOC and current, a playhead, play / pause / speed
@@ -351,6 +357,8 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `dtc.py`, `docs/DTC_DICTIONARY.md` | **trouble-code descriptions: the format ships, the data does not.** Build your own dictionary locally; it stays machine-local and the privacy sweep refuses to let it be committed |
 | `util.py` | vehicle-independent helpers shared by the generic layers (temperature formatting) |
 | `web/static/tilestudio.js` | Tile Studio: per-tile menus, add-tile, renderers, drag-to-reorder |
+| `web/console.py`, `web/static/console.js` | the raw output console: the bounded, decimating ring the reader fills and the terminal tile that reads it (the pure half node-tested) |
+| `docs/CONSOLE.md` | **the raw output console: what each transport can show, why it decimates, and why it is a window and not a capture** |
 | `web/static/alerts.js` | audible alerts: the Web Audio tone generator and the threshold rule engine (pure, node-tested) |
 | `web/static/pack3d.js`, `web/static/pack_layout.js` | the 3D battery pack tile: the three.js module, and the pure geometry / colour-scale layer it draws from (node-tested) |
 | `web/static/vendor/` | gridstack.js and three.js, vendored with their MIT licences — nothing loads from a CDN |
@@ -398,7 +406,8 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `GET /api/sessions?gap=600` | recorded sessions, newest first, derived from gaps in the data (start/end, rows, SOC, whether cells were read) |
 | `GET /api/playback/frames?from=&to=&max=3600&cells=0` | stored readings in an epoch range as playback frames: `records` in the `/api/status` shape, `hist` in the `/api/history` shape, `cells_at`; thinned to the last real row per bucket, never averaged |
 | `GET/PUT /api/tiles` | tile order, enabled, span, type, options (including each tile's `opts.alerts` rules), user tiles (drives what the reader polls) |
-| `GET /api/signals` | signal registry, colour scales, tile types, items, tile defaults, which signals each built-in tile shows (`tile_signals`) |
+| `GET /api/signals` | signal registry, colour scales, tile types, items (each with the `can_id` it puts on the wire), tile defaults, which signals each built-in tile shows (`tile_signals`) |
+| `GET /api/console?since=&kind=&ids=&limit=` | the raw output console's entries after an opaque cursor, with what was dropped and why — a window on the transport, never a capture ([`docs/CONSOLE.md`](docs/CONSOLE.md)) |
 | `GET /api/bookmarks?from&to`, `PUT /api/bookmarks {t?, label?}`, `DELETE /api/bookmarks?t=` | timeline flags in `web/bookmarks.json` (gitignored); `t` defaults to now |
 | `GET /api/bookmarks/auto?from&to&amps=40` | discharge pulls found in the readings (runs below −amps A), as candidate flags |
 | `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored) |
@@ -454,10 +463,25 @@ Being on the bus at all has consequences worth knowing:
   **do not operate the laptop while driving.** The dashboard is a passenger's
   tool.
 
-## Status (2026-09-10)
+## Status (2026-09-11)
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
+- **A raw output console, on every car** (2026-09-11): a debug terminal showing
+  what the transport is actually saying — frames, UDS answers grouped with
+  their request, adapter replies, text signals as they change, reader events.
+  It is the first *framework* tile: built-in tiles used to be a profile's, and
+  a tile that describes the transport rather than a car now belongs to every
+  profile without being declared. Off by default, so nothing is tapped until
+  someone asks; the thinning happens in the reader (polled ids, a per-id rate
+  cap, an explicit lossy "everything" mode) because ~1,700 frames a second
+  reaches no browser usefully, and every drop is counted per id and shown. An
+  ELM327 can only show the ids the profile polls during their dwell, and the
+  pane says so. It is a window, not a capture — `record_session.py` and the
+  MQTT bridge remain the capture tools. Test-verified with fake transports and
+  node-tested helpers; the pane's own feel — scrolling, pausing, copying a line
+  — is still to be checked in the browser and in a car.
+  [`docs/CONSOLE.md`](docs/CONSOLE.md)
 - **Stored values are the reported values** (2026-09-09): the Leaf's current
   policy no longer rewrites `current_a` / `power_kw` before a row is written;
   its fusion offset, zero calibration and discharge clamp land in

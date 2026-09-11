@@ -61,6 +61,19 @@ selects it, default `leaf_ze0`. The scheduler, store, supervisor, API and
 Tile Studio are all profile-agnostic — `vehicles/lancer_2009.py` (standard
 mode-01 PIDs, no reverse engineering) is the proof and the template.
 
+**Framework tiles.** A built-in tile is normally the profile's, but one kind is
+not: a tile that describes the *transport* rather than a car belongs to every
+vehicle, and requiring each profile to declare it would be asking each author to
+opt in to a debug view they never wrote. `vehicles/__init__.py` keeps a small
+`FRAMEWORK_TILES` list — today the raw output console (`docs/CONSOLE.md`), id
+`console`, full width, disabled by default — and `tiles(mod)`,
+`default_span(mod)` and `default_tiles(mod)` are the merged views
+`reader.set_vehicle()` binds. Everything downstream (`_clean_tile`,
+`enabled_items`, `period_overrides`, `/api/tiles`, `/api/signals`) reads the
+merged views and cannot tell the difference. A profile that declares one of
+those ids itself is rejected: two definitions of one tile would silently
+disagree about its items.
+
 The contract is documented in `vehicles/__init__.py`, which also enforces
 it. `validate_profile(mod)` returns the *list* of problems instead of
 raising on the first one (and instead of `assert`, which disappears under
@@ -71,6 +84,23 @@ lint. `tests/test_vehicles.py` parametrises over `vehicles.available()`, so
 the contract test extends itself to a new profile the moment the file
 exists. Built-in dashboard tiles are Leaf SVGs; other profiles ship a
 default layout of user signal tiles, which work everywhere.
+
+## The raw output console
+
+A framework tile and a tap, both off until someone asks for them
+(`docs/CONSOLE.md` is the authority). When `web/tiles.json` says the `console`
+tile is enabled — the same mtime path `period_overrides()` uses for the cell log
+— the reader builds a bounded ring (`web/console.py`) and points every
+transport's tap at it: `cantransport.CanFacade.tap` for native CAN, MQTT and the
+simulated bus, the `ATMA` lines `poll_bus` already holds for an ELM327, plus UDS
+answers grouped with their request, adapter replies, `text`-kind signal changes
+and reader events. Decimation happens there, in the reader — the ids the enabled
+tiles poll, a per-id rate cap, an explicit lossy "everything" mode — because at
+~1,700 frames a second nothing useful reaches a browser; every drop is counted
+per id and published. The ring is flushed once a cycle to `web/console.jsonl`
+(gitignored, size-capped), which Flask serves through `GET /api/console` after an
+opaque cursor. No tile, no object, no tap, no file. It is a window, not a
+capture: `record_session.py` and the MQTT bridge are the capture tools.
 
 ## Scheduler
 
