@@ -380,6 +380,36 @@ only ones also **pending**, i.e. the live fault), `P0122`/`P0223` +
 `P1590` (CVT↔ECM torque-request comms), `P0868` (CVT secondary pressure).
 See the 2026-08-28 WORKLOG entry for interpretation.
 
+### What a code signal holds, and where descriptions come from (2026-09-11)
+
+`dtc_stored`, `dtc_pending` and `dtc_trans` are **text** signals. Their value is
+a space-separated list of printable codes exactly as decoded — `"P0171 P2195"` —
+or the literal `"none"` when the ECU answered with no codes. `none` is a real
+answer and is not the same as a missing value: an ECU that did not answer leaves
+the key absent and the record's `alive` tri-state says so.
+
+The printable form is derived from the two mode-03/07 bytes as
+`"PCBU"[(a >> 6) & 3]` + the remaining 14 bits as four hex digits. Note the
+letter order is **P, C, B, U** by bit value, not alphabetical P/B/C/U — a
+transcription slip there silently mislabels every B and C code.
+
+Descriptions are **not** decoded and **not** stored. The project ships the
+dictionary format and none of the data: description text is licence-sensitive
+(SAE J2012 is a paid standard; manufacturer text comes from paid service
+manuals). `dtc.py` reads a machine-local dictionary from `dtc/<profile>.json` —
+gitignored, and the privacy sweep fails if one is ever tracked — and
+`/api/status` serves the described form while the raw code stays what is stored.
+Each registry entry that carries codes says so with `"dtc": True`; that flag is
+the only thing outside `vehicles/` that knows which signals they are. Every
+description carries an evidence tier, and a `community` or `unverified` one is
+marked in the string the server produces, so a guess can never be shown as
+though it were a manual quote. **`docs/DTC_DICTIONARY.md` is the authority** —
+the schema, the recipe for building a dictionary with an agent, and the traps.
+
+Reading codes from the Leaf is not implemented; `leaf_ze0` declares no code
+signals. The service that would do it is a read (`19 02 0E` to `0x79B`), but it
+is deferred to a car-side sprint and nothing here assumes it.
+
 ## Record keys every vehicle carries — time and provenance (2026-09-09)
 
 Not decoded from any byte; the reader stamps them on every record and row.

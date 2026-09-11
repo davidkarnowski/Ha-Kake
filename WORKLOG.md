@@ -1684,3 +1684,86 @@ car's current does rise over a fraction of a second rather than instantly, so
 sliding is at least as honest as stepping — but nothing was measured between
 two timeline points, and `pulls.json`'s description now says so in the same
 breath as it says the widening spread is stepped rather than physical.
+---
+
+## 2026-09-11 — the trouble-code dictionary: the format ships, the data does not
+
+Trouble codes have been readable on the Lancer since August — `dtc_stored`,
+`dtc_pending` and `dtc_trans`, twelve engine codes and a CVT code at the last
+capture — and they have been displayed as bare codes ever since, because a
+`P0868` on a tile tells you nothing you did not already know. This session
+added the missing half, and the interesting part is what it deliberately does
+*not* add.
+
+**The licensing is genuinely hostile, and pretending otherwise would be the
+easy mistake.** SAE J2012, the standard that defines the generic descriptions,
+is a paid copyrighted document with no open grant. The Leaf-specific text in
+the tools people use carries Nissan ESM page references beside each row —
+`EVC-279`, `WT-26` — which is about as clear a statement of derivation as one
+could ask for, and the ESM is a paid subscription. And every "open" DTC dataset
+the research memo examined turned out to be the same table in a different
+wrapper, with no stated chain of title anywhere. An MIT header on a file does
+not cure the licence of content the uploader did not own.
+
+So the owner's call: **ship the format, not the data.** The application defines
+the schema and reads a dictionary from a machine-local file; `docs/DTC_DICTIONARY.md`
+carries a recipe a user hands to an AI agent to build one for the car they
+actually own; the result lives in gitignored `dtc/`, exactly like
+`config.local.json`. An absent dictionary is the *normal* case — with no file
+the dashboard shows bare codes, which is what it did yesterday — and that is
+the property the tests defend hardest.
+
+**`dtc.py`** does discovery (a generic file under a profile file, a profile's
+own `DTC_FILES`, or paths named in `config.local.json`), validation, and cheap
+cached lookups, and it never raises: a missing file is silent and a malformed
+one logs once and behaves as absent. A dashboard that stopped showing codes
+because a hand-edited JSON file lost a comma would be a worse failure than one
+that shows no descriptions.
+
+**Five required fields, and four that were deliberately left out.** Required:
+`code`, `desc`, `scope`, `evidence`, `source`. Omitted: `ecu` (it belongs to
+the sighting, not the code), `severity` (every schema surveyed has the field
+and not one fills it — guessing severity on a safety-adjacent EV fault is worse
+than showing nothing), `system` (derivable from the letter; storing it invites
+it to disagree with the code) and `possible_fixes` (this is a telemetry
+dashboard, not a repair manual, and that is exactly where manual text would end
+up). The cautionary example is a public dictionary whose entries carry fourteen
+fields of which three are filled — `"severity": "unknown"`, `"title": "No
+Title"`, `"sources": []`. A schema with fourteen fields and three real ones is
+worse than one with five that are all real, because it teaches the reader to
+ignore the fields. Hence a validator that **rejects placeholder descriptions**
+rather than accepting them politely, which matters doubly for a file an agent
+will populate: an agent asked for 200 descriptions will produce 200.
+
+**The marking rule is code, not convention.** Every description carries an
+evidence tier — `service-manual`, `standard`, `observed`, `community`,
+`unverified` — and the two weak tiers come back with the tier inside the string
+the server produces. So `P1234 — … (unverified)` reaches every renderer already
+marked, and a renderer that knows nothing about trouble codes still cannot show
+a guess as though it were a manual quote. An unverified description displayed
+like a verified one turns a known unknown into a confident wrong answer.
+
+**Wiring.** The Lancer's three code signals are flagged `"dtc": True` in the
+profile registry — the only thing outside `vehicles/` that knows which signals
+carry codes — and the description is added on the way *out* of `/api/status`,
+never on the way in, so the store keeps the raw code that was read off the car
+(`dtc_raw` carries the original, `dtc_desc` the structured rows). The text tile
+lays a described list out instead of shouting it in caps.
+
+**And "we won't commit it" is now a property of the repository**, not a habit:
+`dtc/` is gitignored, and the privacy sweep fails on a tracked dictionary by
+path *and* by content, so renaming one out of `dtc/` does not get it past. The
+only dictionary in the tree is `tests/fixtures/dtc_sample.json`, three entries,
+every code and description invented, every row `unverified`.
+
+**Not done, on purpose:** reading codes from the Leaf. The memo verified the
+recipe — `19 02 0E` to `0x79B`, no session control needed, and use `0x0E` not
+`0xFF` or a parked pack answers with ~150 rows of "self-test not run this
+cycle" that look like catastrophe — but that is a car-side sprint. No UDS
+service was added, the read-only whitelist is untouched, and `leaf_ze0` still
+declares no code signals. The dictionary is ready for that day without assuming
+it.
+
+**1094 passed, 2 skipped** — 57 of them new in `tests/test_dtc.py` and five more in
+`tests/test_privacy_sweep.py`, including an end-to-end sweep failure on a throwaway
+repository with a dictionary force-added to it. No car was involved in any of this.
