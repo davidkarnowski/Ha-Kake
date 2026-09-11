@@ -501,3 +501,17 @@ What the sprint does, in the car, with the reader paused:
 is ClearDiagnosticInformation, it is a write, and it sits four bytes from the frame this
 sprint intends to send. It deserves naming in the forbidden list the way mode `04` already
 is, rather than resting on the general rule.
+
+## Follow-up: exporting a capture from the console (2026-09-11)
+
+The raw output console is a *window*, and `docs/CONSOLE.md` is careful to say so: it
+decimates, it drops, and it counts what it drops. The capture tools are
+`record_session.py` and the MQTT bridge's own log, both of which are lossless.
+
+What is still missing is the short path between them: a way to take what is on screen —
+after the filters have been set and the interesting minute found — and turn it into a
+replay fixture without re-running the drive. The pieces already exist: the ring's entries
+carry everything a fixture frame needs, `record_session.py --from-mqtt` already converts a
+JSON-lines stream, and the console's own file is JSON lines. So the work is a converter and
+an honest label, not a new format — and the label matters, because a fixture derived from a
+decimated window is not a recording and must not be mistaken for one.
