@@ -2,6 +2,7 @@
     <div class="card-title">Raw output <span class="console-scope" id="console-scope"></span></div>
     <div class="console-bar">
       <button class="console-pause" id="console-pause" title="stop the scroll; nothing is lost, the reader keeps the window">Pause</button>
+      <button class="console-clear" id="console-clear" title="empty the pane; the reader keeps reading and new lines carry on arriving">Clear</button>
       <span class="console-kinds" id="console-kinds"></span>
       <input type="text" class="console-ids" id="console-ids" placeholder="ids: 421,5B3" size="12"
              title="show only these CAN ids, comma separated">
@@ -13,6 +14,6 @@
     </div>
     <div class="console-foot">
       <span class="console-partial" id="console-partial" hidden></span>
-      <span class="console-hint">click a line to copy it as <code>ID B0 B1 …</code> — the shape the decoders and fixtures use; selecting text by hand still works</span>
+      <span class="console-hint">click a line to copy it as <code>ID B0 B1 …</code> — the shape the decoders and fixtures use; selecting several lines by hand copies one row per line</span>
     </div>
   </div>

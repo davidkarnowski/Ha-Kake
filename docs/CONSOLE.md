@@ -130,7 +130,7 @@ CAN id where one is meaningful and `""` where it is not.
 
 - Monospace, newest at the bottom, auto-scrolling only while it is already at
   the bottom.
-- **Pause** — not a nicety. A scrolling pane at any real frame rate is
+- **Pause** and **Clear** — the first is not a nicety. A scrolling pane at any real frame rate is
   unreadable, and pausing is how a person actually reads a line. Pausing stops
   the polling; the reader's window keeps filling regardless.
 - **Kind filter** (frames / UDS / adapter / values / events). This one goes to
@@ -146,7 +146,14 @@ CAN id where one is meaningful and `""` where it is not.
 - **Click a line to copy it** as `ID B0 B1 …` — straight into a fixture. The
   pane is ordinary selectable text as well, so a hand-made selection and a
   normal copy work too; a click that ends a drag-select is ignored rather than
-  replacing what you just selected.
+  replacing what you just selected. A selection spanning **several** rows copies
+  as one line per row (`13:09:22.866  frame  284 00 00 …`): a row is laid out
+  with flexbox, and a browser's clipboard serialiser would otherwise put each
+  column — time, kind, bytes — on a line of its own, so ten frames pasted as
+  thirty lines. The pane builds that text itself.
+- **Clear** empties the pane and nothing else. The reader keeps reading, the
+  cursor stays where it is — so the lines you cleared do not come back — and new
+  lines carry on arriving underneath.
 
 ## With no car: both simulator rigs already feed it
 

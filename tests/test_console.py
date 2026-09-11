@@ -774,6 +774,33 @@ def test_console_js_keeps_the_pane_read_only():
     assert js.count("fetch(") == 2, "one poll and one registry read, both GET"
 
 
+def test_a_multi_row_selection_copies_one_line_per_row():
+    """A row is laid out with flexbox, and a browser's clipboard serialiser puts
+    every flex child on its own line — which turned a three-row selection into
+    nine lines of time / kind / bytes. The pane builds the text itself."""
+    out = run_node(HARNESS + """
+      const rows = [
+        {wall: 1789141190.5, kind: 'frame', text: '284 00 00 00 00 00 00 9A 20'},
+        {wall: 1789141190.5, kind: 'frame', text: '292 7E C8 28 80 20 00 00 00'},
+      ];
+      console.log(JSON.stringify({one: R.rowText(rows[0]), many: R.rowsText(rows),
+                                  none: R.rowsText([])}));""")
+    assert out["many"].count("\n") == 1, "one line per row, not one per column"
+    assert out["many"].split("\n")[1].endswith("292 7E C8 28 80 20 00 00 00")
+    assert "  frame  " in out["one"]
+    assert out["none"] == ""
+
+
+def test_the_pane_can_be_cleared_without_touching_the_reader():
+    html = read(CONSOLE_HTML)
+    js = read(CONSOLE_JS)
+    assert 'id="console-clear"' in html and ">Clear<" in html
+    assert "el.clear.addEventListener" in js
+    assert "rows = [];" in js
+    # the cursor is deliberately not reset: cleared lines must not come back
+    assert "state.cursor = 0" not in js.split("el.clear.addEventListener")[1].split("});")[0]
+
+
 def test_click_to_copy_never_eats_a_hand_made_selection():
     """A drag-select ends in a click; copying the whole line then would throw
     away the selection the person just made."""

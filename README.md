@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1183%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1184%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -195,7 +195,7 @@ On top of those, one tile belongs to every car rather than to the Leaf:
 
 | Tile | Source | Refresh |
 |---|---|---|
-| **Raw output** — a terminal for whatever the transport is saying: broadcast frames byte for byte, UDS answers grouped with the request that asked, adapter replies, decoded text values as they change, reader events; pause, filter by kind and id, changed bytes highlighted, click a line to copy it as `ID B0 B1 …`. Off by default, and it says plainly when the adapter can only show part of the bus ([`docs/CONSOLE.md`](docs/CONSOLE.md)) | the transport itself | a few times a second, decimated in the reader |
+| **Raw output** — a terminal for whatever the transport is saying: broadcast frames byte for byte, UDS answers grouped with the request that asked, adapter replies, decoded text values as they change, reader events; pause, clear, filter by kind and id, changed bytes highlighted, click a line to copy it as `ID B0 B1 …` (or select several and get one line per row). Off by default, and it says plainly when the adapter can only show part of the bus ([`docs/CONSOLE.md`](docs/CONSOLE.md)) | the transport itself | a few times a second, decimated in the reader |
 
 Every one of those tiles also works in **playback**: the header's Playback
 button turns the page into a viewer for what the database recorded — a
