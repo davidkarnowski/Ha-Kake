@@ -1852,3 +1852,48 @@ shapes, the ELM327 partial view being labelled, the tile's page strings, and the
 pure half of `console.js` under node. 1,090 tests pass. Nothing here has run on
 a car, and the pane's own feel — scrolling, pausing, copying a line — still has
 to be read in a browser and then in the passenger seat.
+
+## 2026-09-12 — "Dashboard offline" on the Lancer: a shadowed `PACK` in the 3D pack module
+
+The owner launched `python app.py --vehicle lancer_2009 --adapter usb` and got a
+page with the right tiles, every value `--`, and the header saying *Dashboard
+offline* — while the terminal showed the reader polling RPM twice a second and
+the browser's Network tab showed `/api/status` answering 200 with fresh JSON.
+
+**Ruled out first.** `main` clean, no `web/reader.pause`, every recent lane
+merged; the app started with the exact command, found the ELM327 on USB and,
+once the engine was on, read 703 rpm / 13.99 V / nine stored codes; every route
+the page fetches answered 200 in milliseconds with strict-JSON bodies (no `NaN`).
+A node run of the page's classic scripts against the live payload passed —
+because it never loaded the ES module where the bug was.
+
+**Found in the owner's browser.** "Dashboard offline" is the catch-all in
+`poll()`: a drawing error lands there exactly like a failed fetch, and the catch
+logged nothing. Running `poll()`'s steps one at a time from the console gave
+`ReferenceError: Cannot access 'PACK' before initialization` at
+`pack3d.js` `build()`, from `updateDash` → `Pack3D.render`.
+
+**Cause.** `build()` read the layout as
+`(typeof window.PACK !== 'undefined' && window.PACK) || (typeof PACK !== 'undefined' ? PACK : null)`
+and, three lines further down, declared `const PACK = pack` (b59a6c4,
+2026-09-08). A `const` shadows the page's `PACK` for the whole function, so the
+fallback's `typeof PACK` sits in the temporal dead zone — and `typeof` does not
+protect against that. On the Leaf `window.PACK` is a layout, the `||`
+short-circuits, and nothing threw. On the Lancer `window.PACK` is `null`, the
+fallback runs, and `updateDash` threw on every poll: the status line was
+overwritten with "offline" and `TileStudio.update` never ran, hence `--`
+everywhere. Every Lancer launch since 2026-09-08 has been broken this way; the
+pack tile's browser checks were all on the Leaf.
+
+**Fix.** `build()` reads `window.PACK || null` and nothing else (the page has
+assigned `window.PACK` since c50c89e, so the stale-page fallback bought
+nothing), and the local is `pack`. `poll()`'s catch now logs
+`console.error('poll failed:', e)` so a tile that throws can no longer pass for a
+dead server.
+
+**Tests** (1,189 passing): the real `pack3d.js` imported under node with its four
+three.js imports stubbed, rendered with `window.PACK` null and undefined — both
+fail on the old file and pass on the new; a check that the module never declares
+a `PACK` of its own; a check that `poll()`'s catch logs. Two tests that pinned
+the old line were updated. Verified on the bench with the app serving the
+Lancer; the owner's engine-on check in the browser is the one still to do.

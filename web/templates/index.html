@@ -1815,6 +1815,9 @@ async function poll() {
       firePulse();
     }
   } catch (e) {
+    // A drawing error lands here as well as a failed fetch; say which in the console,
+    // or a tile that throws on every poll looks exactly like a dead server
+    console.error('poll failed:', e);
     document.getElementById('status-dot').className = 'error';
     document.getElementById('status-text').textContent = 'Dashboard offline';
   }

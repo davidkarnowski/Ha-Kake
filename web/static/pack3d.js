@@ -54,15 +54,16 @@ const colorCache = new Map(), tmpColor = new THREE.Color();
 // ── build once ────────────────────────────────────────────────────────────
 function build(root) {
   const host = root.querySelector('#pack3d');
-  // The page declares the layout with a top-level `const PACK`, which other scripts
-  // see by name but which is NOT a window property; the page also assigns
-  // window.PACK, and this reads whichever is there so a stale page still works.
-  const pack = (typeof window.PACK !== 'undefined' && window.PACK) || (typeof PACK !== 'undefined' ? PACK : null);
+  // The page assigns window.PACK (null for a profile with no pack, like the Lancer).
+  // Read only that, and never name a local `PACK` in here: a local const of that
+  // name shadows the page's for the whole function, so even `typeof PACK` above its
+  // declaration throws — which is how every Lancer poll failed from b59a6c4 on.
+  const pack = window.PACK || null;
   if (!host || !pack || !window.PackLayout || state.built) return;
   if (!host.clientWidth) return;                       // hidden tile: wait for tiles:applied
-  const PACK = pack, C = PACK.case;
-  ({ bodies, modules, values: nValues } = PackLayout.bodies(PACK));
-  MODES = (PACK.modes && PACK.modes.length) ? PACK.modes.map(m => Object.assign({}, PackLayout.DEFAULT_MODE, m)) : [PackLayout.DEFAULT_MODE];
+  const C = pack.case;
+  ({ bodies, modules, values: nValues } = PackLayout.bodies(pack));
+  MODES = (pack.modes && pack.modes.length) ? pack.modes.map(m => Object.assign({}, PackLayout.DEFAULT_MODE, m)) : [PackLayout.DEFAULT_MODE];
   state.host = host; state.note = root.querySelector('#pack3d-note'); state.pane = host.querySelector('.pack3d-pane');
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -158,7 +159,7 @@ function build(root) {
   }
   {
     const g = new THREE.SphereGeometry(11, 16, 12);
-    sensors = (PACK.sensors || []).map(s => {
+    sensors = (pack.sensors || []).map(s => {
       const m = new THREE.MeshStandardMaterial({ color: 0x8a94a8, emissive: 0x222222, roughness: 0.5 });
       const sp = new THREE.Mesh(g, m); sp.position.set(s.x, s.y, s.z); scene.add(sp);
       const l = mkLabel(s.n, 'sensor'); l.position.set(s.x, s.y + 16, s.z); scene.add(l);

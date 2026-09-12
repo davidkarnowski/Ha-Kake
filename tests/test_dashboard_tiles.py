@@ -177,7 +177,7 @@ def test_importmap_precedes_the_pack3d_module_and_the_page_hands_it_records(page
     assert "window.PACK = PACK;" in page
     js = read(os.path.join(STATIC, "pack3d.js"))
     assert "window.Pack3D = { render, setOpts, dispose };" in js
-    assert "typeof window.PACK !== 'undefined' && window.PACK" in js
+    assert "const pack = window.PACK || null;" in js       # the module reads what the page published, only that
     assert 'id="pack3d-labels"' not in read(os.path.join(TEMPLATES, "tiles", "pack3d.html"))  # class, never an id
 
 

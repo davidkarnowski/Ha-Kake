@@ -223,7 +223,7 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "LeafSpy" not in js and "№" not in js                             # no third-party app names in the UI
     # pairs are numbered 1–96 on screen (the manual's count); indices stay 0-based underneath
     assert "${md.name} <b>${v + 1}</b>" in js and "`${b.v + 1} · ${cells[b.v]}`" in js and "${mode().name} ${vs.map(v => v + 1).join(' & ')}" in js
-    assert "function valuesOf(data)" in js and "MODES = (PACK.modes && PACK.modes.length)" in js   # value modes from the profile
+    assert "function valuesOf(data)" in js and "MODES = (pack.modes && pack.modes.length)" in js   # value modes from the profile
     assert "if (md.invert) t = 1 - t;" in js                                                    # temperatures: hot is red
     with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
         page = f.read()
@@ -316,3 +316,53 @@ def test_both_tiles_offer_the_fixed_range_and_say_it_is_display_only():
     assert "sc.t(val, f, i, state.rest, md, state.opts)" in src          # opts reach the scale
     assert "sc.lo(f, md.unit, md, state.opts)" in src
     assert 'data-k="fixedLo"' in src and 'data-k="fixedHi"' in src
+
+
+# ── a profile with no pack (the Lancer) ──
+
+NO_PACK_RENDER = r"""
+  const fs = require('fs'), path = require('path');
+  const [src, out, packJson] = process.argv.slice(1);
+  // three.js cannot load in node: swap the four imports for inert stand-ins
+  const stub = "const THREE = new Proxy({}, { get: () => function () {} });"
+    + " class OrbitControls {} class CSS2DRenderer {} class CSS2DObject {} class RoundedBoxGeometry {}";
+  fs.writeFileSync(out, stub + '\n' + fs.readFileSync(src, 'utf8').replace(/^import .*$/gm, ''));
+  const el = (w) => ({ clientWidth: w, querySelector: () => null, addEventListener() {} });
+  globalThis.window = globalThis;
+  globalThis.document = { addEventListener() {}, querySelector: () => null };
+  window.PACK = JSON.parse(packJson);
+  window.PackLayout = {};
+  const root = { querySelector: (s) => s === '#pack3d' ? el(300) : null };
+  import(out).then(() => {
+    window.Pack3D.render(root, { timestamp: '2026-09-12T19:27:44Z', rpm: 703 });
+    console.log('rendered');
+  }).catch(e => { console.error(e.stack); process.exit(1); });
+"""
+
+
+@needs_node
+@pytest.mark.parametrize("pack_json", ["null", "undefined"])
+def test_render_with_no_pack_does_not_throw(tmp_path, pack_json):
+    """The Lancer page has window.PACK = null. From b59a6c4 build() declared a local
+    `const PACK`, which made its own `typeof PACK` a ReferenceError; updateDash threw
+    on every poll and the page said "Dashboard offline" over a healthy reader."""
+    script = NO_PACK_RENDER.replace("JSON.parse(packJson)", pack_json)
+    r = subprocess.run(["node", "-e", script, os.path.join(STATIC, "pack3d.js"),
+                        str(tmp_path / "pack3d.mjs"), "null"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "rendered"
+
+
+def test_pack3d_never_shadows_the_page_pack():
+    with open(os.path.join(STATIC, "pack3d.js")) as f:
+        src = f.read()
+    assert not re.search(r"\b(const|let|var)\s+PACK\b", src)
+    assert not re.search(r"[,{]\s*PACK\s*=", src)
+
+
+def test_poll_logs_what_made_the_dashboard_say_offline():
+    with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
+        page = f.read()
+    catch = page[page.index("async function poll()"):]
+    catch = catch[catch.index("} catch (e) {"):catch.index("'Dashboard offline'")]
+    assert "console.error(" in catch
