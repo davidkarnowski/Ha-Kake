@@ -191,10 +191,22 @@ class CanFacade:
     # 0.4-0.5 s cycle was being padded to the ELM's 0.5 s floor.
     MIN_INTERVAL = 0.0
 
+    # Listen-only follows the source: a remote source (MQTT) only learns it from
+    # the bridge's status after connecting, and the façade must refuse — and the
+    # reader skip request items — from that moment, not just from construction.
+    # Setting it (tests, a caller that knows better) can only turn it on.
+    @property
+    def listen_only(self):
+        return self._listen_only_cfg or bool(getattr(self.source, "listen_only", False))
+
+    @listen_only.setter
+    def listen_only(self, value):
+        self._listen_only_cfg = bool(value)
+
     def __init__(self, source, stmin_override=None, settle=0.3, recent=64, log=print):
         self.source = source
         self.bus = source.bus
-        self.listen_only = bool(source.listen_only)
+        self._listen_only_cfg = bool(source.listen_only)
         self.stmin_override = stmin_override      # int, or None = honour ATFCSD
         self.settle = settle                      # seconds to let the table fill after connect
         self._log = log

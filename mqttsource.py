@@ -248,6 +248,8 @@ class MqttSource:
         self.host = self.cfg["host"]
         self.tcp_port = self.cfg["port"]
         self.bus = self.cfg["bus"]
+        # EV-CAN is listen-only on every path; the bridge's status can turn it on, never off
+        self.listen_only = self.bus == "ev"
         self.topics = Topics(self.cfg["prefix"], self.bus)
         self.log = log
         self._factory = client_factory or paho_client
@@ -267,6 +269,7 @@ class MqttSource:
         self._subscribed = set()               # rx topics the client holds
         self._suback = None                    # asyncio.Event: a SUBACK arrived
         self._pending = {}                     # req → Future
+        self._stopped = set()                  # futures stop() cancelled (vs. the caller being cancelled)
         self._rx_counts = {}                   # id_hex → frames seen
         self._lock = threading.Lock()
         # Optional console event tap (docs/CONSOLE.md), set by the reader while
@@ -325,6 +328,7 @@ class MqttSource:
         self.connected = False
         for fut in list(self._pending.values()):
             if not fut.done():
+                self._stopped.add(fut)
                 fut.cancel()
         self._pending.clear()
         if c is not None:
@@ -414,9 +418,12 @@ class MqttSource:
         except asyncio.TimeoutError:
             ack = {"req": req, "ok": False, "error": "timeout"}
         except asyncio.CancelledError:
+            if fut not in self._stopped:
+                raise                          # the caller is being cancelled: let it stop
             ack = {"req": req, "ok": False, "error": "offline"}
         finally:
             self._pending.pop(req, None)
+            self._stopped.discard(fut)
         want = ack.get("frames") if ack.get("ok") else None
         if isinstance(want, int) and want > 0:
             # QoS 0 frames and a QoS 1 ack are not strictly ordered; give the
@@ -492,9 +499,9 @@ class MqttSource:
                     self._deliver(*fr)
             elif tail.startswith("rx/"):
                 self._deliver(*parse_frame(_loads(msg.payload), topic_id=tail[3:]))
-        except (ValueError, TypeError) as e:
-            self.log(f"  mqtt: dropped message on {topic}: {e}")
-            self._tap_event(f"mqtt: dropped message on {topic}: {e}")
+        except Exception as e:             # paho's thread must survive any payload (deep nesting too)
+            self.log(f"  mqtt: dropped message on {topic}: {type(e).__name__}: {str(e)[:120]}")
+            self._tap_event(f"mqtt: dropped message on {topic}: {type(e).__name__}")
 
     def _tap_event(self, text):
         tap = self.event_tap
@@ -512,7 +519,7 @@ class MqttSource:
         if obj.get("bridge"):
             self.bridge = str(obj["bridge"])
         if "listen_only" in obj:
-            self.listen_only = bool(obj["listen_only"])
+            self.listen_only = bool(obj["listen_only"]) or self.bus == "ev"
         self._dispatch(self._on_status, dict(obj))
 
     def _take_ack(self, req, obj):

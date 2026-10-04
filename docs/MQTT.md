@@ -343,9 +343,12 @@ guards, and neither trusts the other:
   answered `{"ok": false, "error": "refused"}`, logged, counted in
   `status.refused`, and never reaches the bus. With `--listen-only` every
   request is refused, and the kernel interface should be brought up
-  `listen-only on` as well.
+  `listen-only on` as well; a bridge on `bus: "ev"` is always listen-only.
 - **The reader** refuses the same set before publishing, so a refusal is
-  normally never even seen on the wire.
+  normally never even seen on the wire. It treats an `ev` source as
+  listen-only from the start, and a bridge whose status says
+  `listen_only: true` as listen-only from that moment: it stops asking for the
+  request items rather than counting each refusal as a missing answer.
 
 The whitelist is the whole allowed set; widening it is a change to
 `SECURITY.md` and a documented review, not a config option. What the list

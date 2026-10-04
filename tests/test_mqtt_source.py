@@ -818,3 +818,63 @@ def test_from_mqtt_cli(tmp_path, leaf_profile, capsys):
     out = tmp_path / "o.json"
     assert rec.main(["--from-mqtt", str(src), "--out", str(out), "--vehicle", "leaf_ze0"]) == 0
     assert json.load(open(out))["frames"][0]["t"] == 0.0
+
+
+# ── listen-only, malformed input and cancellation ────────────────────────
+
+def test_an_ev_source_is_listen_only_and_a_status_cannot_undo_it():
+    src, client = make_source({"bus": "ev"})
+    assert src.listen_only is True
+    src._take_status({"online": True, "listen_only": False})
+    assert src.listen_only is True
+    car, _ = make_source({"bus": "car"})
+    assert car.listen_only is False
+    car._take_status({"online": True, "listen_only": True})
+    assert car.listen_only is True                              # a car bridge may still be listen-only
+
+
+def test_an_ev_source_publishes_no_request():
+    async def go():
+        src, client, sink = await started({"bus": "ev"})
+        ack = await src.send_uds("79B", "7BB", b"\x21\x01", timeout=0.2)
+        return ack, client
+    ack, client = run(go())
+    assert ack["error"] == "refused"
+    assert [t for t, *_ in client.published if t.endswith("/tx/uds")] == []
+
+
+def test_a_deeply_nested_message_is_dropped_not_fatal():
+    logs = []
+    client = FakeClient()
+    src = ms.MqttSource(CFG, client_factory=lambda cid: client, log=logs.append)
+    sink = Sink()
+    run(src.start(sink.on_frame, connect_timeout=1.0))
+    client.deliver(f"{ROOT_T}/status", b"[" * 200000)            # would raise RecursionError
+    client.deliver(f"{ROOT_T}/rx/421", {"t": 0, "d": "01"})
+    assert sink.lines == ["421 01"] and any("dropped" in l for l in logs)
+
+
+def test_cancelling_the_caller_cancels_the_request():
+    async def go():
+        src, client, sink = await started()
+        task = asyncio.ensure_future(src.send_uds("79B", "7BB", b"\x21\x01", timeout=5.0))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return "cancelled", src
+        return "returned", src
+    outcome, src = run(go())
+    assert outcome == "cancelled" and src._pending == {}
+
+
+def test_the_facade_follows_the_sources_listen_only_state():
+    import cantransport as ct
+    src, client = make_source({"bus": "car"})
+    f = ct.CanFacade(src, settle=0, log=lambda *a: None)
+    assert f.listen_only is False and f.marker()["listen_only"] is False
+    src._take_status({"online": True, "listen_only": True})     # learned after construction
+    assert f.listen_only is True and f.marker()["listen_only"] is True
+    assert run(f.send("ATSH 79B")) == [] and run(f.send("2101")) == ["NO DATA"]
+    assert [t for t, *_ in client.published if t.endswith("/tx/uds")] == []
