@@ -43,6 +43,7 @@ vehicle is named here: ids come from the config file.
 import argparse
 import json
 import logging
+import math
 import os
 import queue
 import signal
@@ -56,6 +57,8 @@ PROTOCOL_VERSION = 1
 READ_SERVICES = frozenset({0x21, 0x01, 0x03, 0x07})
 HEX = [f"{i:02X}" for i in range(256)]
 MAX_UDS_TIMEOUT = 10.0
+MAX_PAYLOAD = 64 * 1024        # a tx/uds request is a few hundred bytes; anything larger is dropped
+UDS_QUEUE = 32                 # requests waiting for the bus; beyond this a request is acked "busy"
 
 DEFAULTS = {
     "host": "127.0.0.1",
@@ -72,6 +75,10 @@ DEFAULTS = {
     "stats_s": 10.0,             # console line period; 0 = off
     "queue": 2000,               # publish queue depth (frames or batches)
     "uds_timeout": 5.0,          # cap on a request's own timeout
+    # The only request/response id pairs this bridge will put a request on: a
+    # request naming any other id is refused before a frame is built. The
+    # default is the Leaf profile's TARGETS (battery controller, HVAC amp).
+    "uds_targets": ["79B:7BB", "744:764"],
 }
 
 log = logging.getLogger("hakake-bridge")
@@ -93,7 +100,9 @@ def load_config(path=None, overrides=None):
     cfg["bitrate"] = int(cfg["bitrate"])
     cfg["batch_ms"] = max(0, int(cfg["batch_ms"] or 0))
     cfg["queue"] = max(10, int(cfg["queue"]))
-    cfg["listen_only"] = bool(cfg["listen_only"])
+    # EV-CAN is opened listen-only whatever the config says (as cantransport.py does)
+    cfg["listen_only"] = bool(cfg["listen_only"]) or cfg["bus"] == "ev"
+    cfg["uds_targets"] = parse_targets(cfg["uds_targets"])
     ids = cfg["ids"]
     if isinstance(ids, str):
         cfg["ids"] = "all" if ids.strip().lower() in ("", "all", "*") else [ids]
@@ -102,6 +111,24 @@ def load_config(path=None, overrides=None):
         if not cfg["ids"]:
             cfg["ids"] = "all"
     return cfg
+
+
+def parse_targets(items):
+    """["79B:7BB", ...] -> frozenset {(0x79B, 0x7BB), ...}. A pair names the id a
+    request is sent on and the id its answer comes back on; both must be valid
+    11- or 29-bit ids and differ."""
+    if isinstance(items, str):
+        items = [items]
+    out = set()
+    for it in items or []:
+        tx_s, sep, rx_s = str(it).partition(":")
+        if not sep:
+            raise ValueError(f"uds_targets entry {it!r} is not TX:RX")
+        tx, rx = int(tx_s, 16), int(rx_s, 16)
+        if not (0 <= tx <= 0x1FFFFFFF and 0 <= rx <= 0x1FFFFFFF) or tx == rx:
+            raise ValueError(f"uds_targets entry {it!r} is not a usable id pair")
+        out.add((tx, rx))
+    return frozenset(out)
 
 
 # ── frames ───────────────────────────────────────────────────────────────
@@ -171,6 +198,51 @@ class Stats:
             self._win_t, self._win_in, self._win_out = now, self.frames_in, self.frames_out
 
 
+class _Listener:
+    """The Notifier's listener: frames go to Bridge.on_can; a receive error (USB
+    unplugged, interface down) marks the bridge offline instead of silently
+    killing the Notifier thread while the status still says online."""
+
+    def __init__(self, bridge):
+        self.bridge = bridge
+
+    def __call__(self, msg):
+        self.bridge.on_can(msg)
+
+    def on_error(self, exc):
+        self.bridge.bus_error(exc)
+
+
+def socketcan_is_listen_only(channel):
+    """True when `ip -details link show <channel>` reports LISTEN-ONLY (the
+    kernel enforces it). Copied from cantransport.py: the bridge is standalone."""
+    import subprocess
+    try:
+        out = subprocess.run(["ip", "-details", "link", "show", channel], capture_output=True,
+                             text=True, timeout=5).stdout
+    except Exception:
+        return False
+    return "LISTEN-ONLY" in out.upper()
+
+
+def _silent_slcan_class():
+    """python-can's slcan with silent mode set the way the stock CANable 2
+    firmware understands it: M1 before O (python-can sends L, which that firmware
+    does not implement). Copied from cantransport.HakakeSlcanBus."""
+    from can.interfaces.slcan import slcanBus
+
+    class SilentSlcan(slcanBus):
+        def open(self):
+            if self._listen_only:
+                self._write("M1")
+            self._write("O")
+    return SilentSlcan
+
+
+def SilentSlcanBus(**kw):
+    return _silent_slcan_class()(**kw)
+
+
 class Bridge:
     """CAN ↔ MQTT. Construct with a python-can ``bus`` and a paho-like ``client``
     (tests inject a ``virtual`` bus and a fake client); ``run()`` builds both
@@ -181,7 +253,10 @@ class Bridge:
         self.clock = clock
         self.bus = bus
         self.client = client
-        self.listen_only = bool(cfg["listen_only"])
+        self.listen_only = bool(cfg["listen_only"]) or cfg["bus"] == "ev"
+        self.targets = cfg.get("uds_targets") or frozenset()
+        self.online = True                        # False once the CAN side reports an error
+        self.error = None
         self.root = f"{cfg['prefix']}/{cfg['bus']}"
         self.t_status = f"{self.root}/status"
         self.t_batch = f"{self.root}/rx/_batch"
@@ -202,22 +277,54 @@ class Bridge:
         self._notifier = None
         self._pub_thread = None
         self._uds_thread = None
-        self._uds_requests = queue.Queue()
+        self._uds_requests = queue.Queue(maxsize=UDS_QUEUE)   # (payload, monotonic time received)
         self.connected = False
 
     # ── CAN side ─────────────────────────────────────────────────────────
 
     def open_bus(self):
         import can
-        kw = {"interface": self.cfg["interface"], "channel": self.cfg["channel"]}
-        if self.cfg["interface"] != "socketcan":
+        iface, channel = self.cfg["interface"], self.cfg["channel"]
+        kw = {"interface": iface, "channel": channel}
+        if iface != "socketcan":
             kw["bitrate"] = self.cfg["bitrate"]
-        if self.cfg["interface"] == "slcan":
+        if iface == "slcan":
             log.warning("slcan: python-can parses it one byte per syscall; prefer candleLight "
                         "firmware (gs_usb) or an SPI HAT so the kernel exposes can0")
+        if self.listen_only:
+            # The controller itself must be silent, not just this program.
+            if iface == "socketcan":
+                if not socketcan_is_listen_only(channel):
+                    raise SystemExit(f"{channel} is not in listen-only mode; run: sudo ip link set "
+                                     f"{channel} down && sudo ip link set {channel} up type can bitrate "
+                                     f"{self.cfg['bitrate']} listen-only on restart-ms 100")
+            elif iface == "slcan":
+                self.bus = SilentSlcanBus(channel=channel, bitrate=self.cfg["bitrate"], listen_only=True,
+                                          sleep_after_open=0.5)
+                log.warning("slcan: asked for silent mode with M1 before O; the stock firmware does not "
+                            "acknowledge it, so it cannot be verified from here — this bridge never "
+                            "transmits while listen-only regardless")
+                self.apply_filters()
+                return self.bus
+            elif iface != "virtual":
+                raise SystemExit(f"listen-only on interface {iface!r} cannot be set or verified here; "
+                                 "use socketcan (candleLight boards appear as can0 through the kernel "
+                                 "gs_usb driver) or slcan")
         self.bus = can.Bus(**kw)
         self.apply_filters()
         return self.bus
+
+    def bus_error(self, exc):
+        """The CAN side failed: say so on the status topic and stop pretending."""
+        self.stats.errors += 1
+        self.online = False
+        self.error = f"{type(exc).__name__}: {exc}"
+        log.error("CAN receive failed (%s); mirroring stopped, status online: false", self.error)
+        if self.client is not None:
+            try:
+                self.publish_status()
+            except Exception:
+                pass
 
     def apply_filters(self):
         """Kernel-level filtering when an ids list is configured: unwanted
@@ -347,22 +454,51 @@ class Bridge:
         log.warning("disconnected from the broker (%s); paho reconnects", reason_code)
 
     def _on_message(self, client, userdata, msg):
-        if msg.topic != self.t_uds:
+        # paho runs this on its network thread: nothing here may raise, or the
+        # thread dies and the bridge stops hearing the broker.
+        try:
+            if msg.topic != self.t_uds:
+                return
+            raw = msg.payload or b""
+            if len(raw) > MAX_PAYLOAD:
+                log.warning("tx/uds: %d-byte message dropped (limit %d)", len(raw), MAX_PAYLOAD)
+                return
+            payload = json.loads(raw.decode("utf-8", "replace"))
+        except Exception as e:                    # not JSON, nested too deep, not bytes …
+            log.warning("tx/uds: unreadable message ignored (%s)", type(e).__name__)
             return
         try:
-            payload = json.loads(msg.payload.decode("utf-8", "replace"))
-        except (ValueError, AttributeError):
-            log.warning("tx/uds: not JSON, ignored")
-            return
-        self._uds_requests.put(payload)           # the UDS thread runs it; paho's thread stays free
+            self._uds_requests.put_nowait((payload, time.monotonic()))  # the UDS thread runs it
+        except queue.Full:
+            self._ack(payload, {"ok": False, "error": "busy", "reason": "request queue full"})
 
     def _uds_worker(self):
         while not self._stop.is_set():
             try:
-                payload = self._uds_requests.get(timeout=0.1)
+                payload, t_in = self._uds_requests.get(timeout=0.1)
             except queue.Empty:
                 continue
-            self.handle_uds(payload)
+            try:
+                waited = time.monotonic() - t_in
+                limit = float(payload.get("timeout", 2.0)) if isinstance(payload, dict) else 2.0
+                if not math.isfinite(limit) or waited > limit:
+                    self._ack(payload, {"ok": False, "error": "expired",
+                                        "reason": f"waited {waited:.1f} s for the bus"})
+                    continue
+                self.handle_uds(payload)
+            except Exception as e:                # one bad request never stops the worker
+                self.stats.errors += 1
+                log.warning("tx/uds: request failed (%s: %s)", type(e).__name__, e)
+                self._ack(payload, {"ok": False, "error": "error", "reason": "bad request"})
+
+    def _ack(self, payload, body):
+        """Publish an ack for `payload` when it carries a usable req id."""
+        req = str(payload.get("req", "")) if isinstance(payload, dict) else ""
+        if not req or "/" in req or "+" in req or "#" in req or len(req) > 64:
+            return None
+        ack = dict(body, req=req)
+        self.client.publish(f"{self.t_uds}/{req}", json.dumps(ack, separators=(",", ":")), qos=1, retain=False)
+        return ack
 
     # ── status ───────────────────────────────────────────────────────────
 
@@ -370,14 +506,16 @@ class Bridge:
         s = self.stats
         s.tick()
         adapter = f"{self.cfg['interface']} {self.cfg['channel']}"
-        return json.dumps({"v": PROTOCOL_VERSION, "online": True, "bus": self.cfg["bus"],
+        out = {"v": PROTOCOL_VERSION, "online": self.online, "bus": self.cfg["bus"],
                            "bitrate": self.cfg["bitrate"], "listen_only": self.listen_only,
                            "fps": s.fps_in, "fps_out": s.fps_out, "dropped": s.dropped,
                            "queue": self.q.qsize(), "errors": s.errors, "refused": s.refused,
                            "adapter": adapter, "bridge": BRIDGE,
                            "filter": "all" if self._filters is None else [id_hex(i) for i in self._filters],
-                           "batch_ms": self.batch_ms, "t": round(self.clock(), 3)},
-                          separators=(",", ":"))
+                           "batch_ms": self.batch_ms, "t": round(self.clock(), 3)}
+        if self.error:
+            out["error"] = self.error
+        return json.dumps(out, separators=(",", ":"))
 
     def offline_payload(self):
         return json.dumps({"v": PROTOCOL_VERSION, "online": False, "bus": self.cfg["bus"],
@@ -420,6 +558,11 @@ class Bridge:
             timeout = float(p.get("timeout", 2.0))
         except (KeyError, TypeError, ValueError) as e:
             return {"req": req, "ok": False, "error": "error", "reason": f"bad request: {e}"}
+        if not (0 <= bs <= 0xFF and 0 <= stmin <= 0xFF) or not math.isfinite(timeout):
+            return {"req": req, "ok": False, "error": "error", "reason": "bad request: bs/stmin 0-255, finite timeout"}
+        if (tx, rx) not in self.targets:
+            return self._refuse(req, f"{id_hex(tx, tx > 0x7FF)}/{id_hex(rx, rx > 0x7FF)} is not a configured "
+                                     "uds_targets pair", fmt_data(data))
         if not is_read_request(data):
             return self._refuse(req, "service not in the read-only set", fmt_data(data))
         if self.listen_only:
@@ -435,7 +578,6 @@ class Bridge:
         self._ensure_rx_filter(rx)
         ext = tx > 0x7FF or rx > 0x7FF
         mode = isotp.AddressingMode.Normal_29bits if ext else isotp.AddressingMode.Normal_11bits
-        address = isotp.Address(mode, txid=tx, rxid=rx)
         params = {
             "stmin": stmin,                       # what WE ask the ECU for (ELM: ATFCSD 30 <bs> <stmin>)
             "blocksize": bs,
@@ -463,12 +605,14 @@ class Bridge:
         def txfn(m):
             import can
             self.bus.send(can.Message(arbitration_id=m.arbitration_id, data=bytes(m.data),
-                                      is_extended_id=bool(getattr(m, "extended_id", False)), is_fd=False))
+                                      is_extended_id=bool(m.is_extended_id), is_fd=False))
             self.stats.tx += 1
 
-        layer = isotp.TransportLayer(rxfn=rxfn, txfn=txfn, address=address, params=params,
-                                     error_handler=errors.append, read_timeout=0.005)
+        layer = None
         try:
+            address = isotp.Address(mode, txid=tx, rxid=rx)
+            layer = isotp.TransportLayer(rxfn=rxfn, txfn=txfn, address=address, params=params,
+                                         error_handler=errors.append, read_timeout=0.005)
             layer.send(data)
             deadline = self.clock() + timeout
             answer = None
@@ -486,7 +630,8 @@ class Bridge:
         finally:
             self._uds_rx = None
             try:
-                layer.reset()
+                if layer is not None:
+                    layer.reset()
             except Exception:
                 pass
         if answer is not None:
@@ -503,7 +648,7 @@ class Bridge:
         UDS worker. Call after open_bus()/attach_client()."""
         import can
         self._stop.clear()
-        self._notifier = can.Notifier(self.bus, [self.on_can], timeout=0.1)
+        self._notifier = can.Notifier(self.bus, [_Listener(self)], timeout=0.1)
         self._pub_thread = threading.Thread(target=self._publisher, name="publisher", daemon=True)
         self._pub_thread.start()
         self._uds_thread = threading.Thread(target=self._uds_worker, name="uds", daemon=True)
@@ -577,6 +722,9 @@ def main(argv=None):
     ap.add_argument("--listen-only", action="store_true", default=None, dest="listen_only",
                     help="never transmit: every tx/uds is refused (EV-CAN)")
     ap.add_argument("--stats", type=float, dest="stats_s", help="stats line period in s (0 = off)")
+    ap.add_argument("--uds-target", action="append", dest="uds_targets", metavar="TX:RX",
+                    help="a request/response id pair this bridge may send requests on (repeatable; "
+                         "replaces the default 79B:7BB and 744:764)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

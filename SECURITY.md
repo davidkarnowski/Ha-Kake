@@ -55,9 +55,12 @@ for a reader elsewhere (`docs/MQTT.md`). "The reader must be the only process
 that talks to the car" therefore reads: *the reader, or a bridge that accepts
 only its read requests*. The bridge enforces the same whitelist as the reader
 — a `tx/uds` request whose service byte is not `0x21`, `0x01`, `0x03` or
-`0x07` is refused, logged and never transmitted; mode `0x04` never leaves;
-`--listen-only` refuses everything (and the kernel interface should be
-brought up `listen-only on` as well). The reader refuses the same set before
+`0x07` is refused, logged and never transmitted; mode `0x04` never leaves; a
+request is sent only on a request/response id pair listed in the bridge's
+`uds_targets` (by default the Leaf's battery controller and HVAC amp);
+`--listen-only` refuses everything, and on the EV bus it is always on (a
+`socketcan` interface must also be up `listen-only on`, or the bridge will not
+start). The reader refuses the same set before
 publishing. Neither end trusts the other. The whitelist does not make the
 broker safe to expose: anyone who can publish to `tx/uds` can keep ECUs awake
 by polling — so the broker is **LAN only, plain MQTT without credentials or

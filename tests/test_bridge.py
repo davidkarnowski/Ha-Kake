@@ -431,3 +431,116 @@ def test_no_vehicle_and_no_secrets_in_the_bridge_tree():
         ex = json.load(f)
     assert ex["host"] in ("", "127.0.0.1") and not {"username", "password", "tls"} & set(ex)
     assert set(ex) <= set(hb.DEFAULTS)
+
+
+# ── what the bridge will put on the bus, and how it holds up ─────────────
+
+def _msg(payload, topic=f"{ROOT_T}/tx/uds"):
+    class M:
+        pass
+    m = M()
+    m.topic, m.payload = topic, payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+    return m
+
+
+def _nothing_on(car, wait=0.3):
+    return car.recv(timeout=wait) is None
+
+
+def test_requests_go_only_to_configured_targets(live):
+    bridge, car = live
+    for tx, rx in (("1DB", "7FF"), ("7DF", "7E8"), ("7BB", "79B")):
+        ack = bridge.handle_uds({"req": "r1", "tx": tx, "rx": rx, "data": "21 01", "timeout": 0.5})
+        assert ack["ok"] is False and ack["error"] == "refused" and "uds_targets" in ack["reason"], tx
+    assert _nothing_on(car)
+    assert bridge.stats.refused >= 3
+
+
+def test_targets_come_from_config_and_the_command_line():
+    cfg = hb.load_config(None, {"uds_targets": ["7E0:7E8", "18DA10F1:18DAF110"]})
+    assert cfg["uds_targets"] == {(0x7E0, 0x7E8), (0x18DA10F1, 0x18DAF110)}
+    assert hb.load_config(None)["uds_targets"] == {(0x79B, 0x7BB), (0x744, 0x764)}
+    for bad in (["79B"], ["79B:79B"], ["ZZZ:7BB"], ["79B:200000000"]):
+        with pytest.raises(ValueError):
+            hb.load_config(None, {"uds_targets": bad})
+
+
+def test_a_29_bit_request_goes_out_as_a_29_bit_frame():
+    bridge, car = make_bridge(uds_targets=["18DA10F1:18DAF110"])
+    bridge.start()
+    try:
+        bridge.handle_uds({"req": "x29", "tx": "18DA10F1", "rx": "18DAF110", "data": "21 01", "timeout": 0.3})
+        m = car.recv(timeout=1.0)
+        assert m is not None and m.arbitration_id == 0x18DA10F1 and m.is_extended_id is True
+    finally:
+        bridge.stop()
+        car.shutdown()
+        bridge.bus.shutdown()
+
+
+def test_an_ev_bridge_is_listen_only_whatever_the_config_says():
+    bridge, car = make_bridge(bus="ev", listen_only=False)
+    try:
+        assert bridge.listen_only is True and bridge.cfg["listen_only"] is True
+        ack = bridge.handle_uds({"req": "e1", "tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 0.3})
+        assert ack["error"] == "refused" and _nothing_on(car)
+    finally:
+        car.shutdown()
+        bridge.bus.shutdown()
+
+
+def test_a_bad_request_is_answered_and_the_next_one_still_runs(live):
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        bridge.client.on_message(bridge.client, None, _msg({"req": "bad", "tx": "79B", "rx": "7BB",
+                                                            "data": "21 01", "stmin": 300}))
+        assert bridge.client.wait_for(f"{ROOT_T}/tx/uds/bad", timeout=3.0)[0]["ok"] is False
+        bridge.client.on_message(bridge.client, None, _msg({"req": "good", "tx": "79B", "rx": "7BB",
+                                                            "data": "21 01", "timeout": 2.0}))
+        assert bridge.client.wait_for(f"{ROOT_T}/tx/uds/good", timeout=3.0)[0]["ok"] is True
+        assert bridge._uds_thread.is_alive()
+    finally:
+        ecu.stop()
+
+
+def test_unreadable_messages_never_raise_on_the_broker_thread(live):
+    bridge, _ = live
+    for raw in (b"[" * 200000, b"\xff\xfe not json", b"{" + b" " * (70 * 1024) + b"}", b"null", b"[]"):
+        bridge._on_message(bridge.client, None, _msg(raw))       # must not raise
+    assert bridge._uds_thread.is_alive()
+
+
+def test_a_full_request_queue_answers_busy():
+    bridge, car = make_bridge()                                    # not started: nothing drains the queue
+    try:
+        for i in range(hb.UDS_QUEUE + 5):
+            bridge._on_message(bridge.client, None, _msg({"req": f"q{i}", "tx": "79B", "rx": "7BB", "data": "21 01"}))
+        busy = [p for t, p in bridge.client.topics(f"{ROOT_T}/tx/uds/") if p.get("error") == "busy"]
+        assert len(busy) == 5
+    finally:
+        car.shutdown()
+        bridge.bus.shutdown()
+
+
+def test_a_request_that_waited_too_long_is_not_sent(live):
+    bridge, car = live
+    bridge._uds_requests.put_nowait(({"req": "old", "tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 0.5},
+                                     time.monotonic() - 10))
+    got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/old", timeout=3.0)
+    assert got and got[0]["error"] == "expired"
+    assert _nothing_on(car)
+
+
+def test_a_receive_error_marks_the_bridge_offline():
+    bridge, car = make_bridge()
+    try:
+        hb._Listener(bridge).on_error(OSError("device gone"))
+        status = json.loads(bridge.status_payload())
+        assert status["online"] is False and "device gone" in status["error"]
+        assert bridge.client.topics(f"{ROOT_T}/status")[-1][1]["online"] is False
+    finally:
+        car.shutdown()
+        bridge.bus.shutdown()

@@ -140,6 +140,10 @@ request window.
 {"req": "a1b2", "tx": "79B", "rx": "7BB", "data": "21 01", "bs": 0, "stmin": 0, "timeout": 2.0}
 ```
 
+The bridge sends a request only on a `tx`/`rx` pair listed in its own
+`uds_targets` (`bridge/README.md`); any other pair is acked `refused` before a
+frame is built.
+
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -170,6 +174,7 @@ three characters, and echoes anything else back on the ack topic unchanged.
 {"req": "a1b2", "ok": true, "frames": 29, "bytes": 194}
 {"req": "a1b2", "ok": false, "error": "timeout", "frames": 0}
 {"req": "a1b2", "ok": false, "error": "refused", "reason": "service not in the read-only set"}
+{"req": "a1b2", "ok": false, "error": "busy", "reason": "request queue full"}
 ```
 
 ```json
@@ -183,7 +188,7 @@ three characters, and echoes anything else back on the ack topic unchanged.
     "ok":     {"type": "boolean"},
     "frames": {"type": "integer", "minimum": 0, "description": "how many rx frames the bridge saw for this request; a consumer can wait until it has received that many on rx/<rx>"},
     "bytes":  {"type": "integer", "minimum": 0, "description": "length of the reassembled ISO-TP payload, when ok"},
-    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5) or listen-only; error: malformed request or ISO-TP protocol error (see reason); offline: produced by the reader itself when it has no broker"},
+    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "busy", "expired", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5), a tx/rx pair not in the bridge's uds_targets, or listen-only; error: malformed request or ISO-TP protocol error (see reason); busy: the bridge's request queue (32) is full; expired: the request waited longer than its own timeout and was not sent; offline: produced by the reader itself when it has no broker"},
     "reason": {"type": "string"}
   }
 }

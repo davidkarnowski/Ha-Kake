@@ -38,6 +38,16 @@ check; see `docs/CAN_TRANSPORT.md` when it lands.
   acked `"refused"` and logged. `--listen-only` refuses every request. The
   reader refuses the same set before publishing; the bridge does not rely on
   that, because the bridge is the process that can actually transmit.
+- **Sends only to configured targets.** A request goes out only when its
+  `tx`/`rx` pair is listed in `uds_targets` (default `79B:7BB` and `744:764`,
+  the Leaf profile's battery controller and HVAC amp); any other pair is acked
+  `"refused"` before a frame is built.
+- **Keeps going.** An unreadable or oversized message is dropped and logged; a
+  malformed request gets an `"error"` ack and the next one still runs; at most
+  32 requests wait for the bus (more are acked `"busy"`), and one that waited
+  longer than its own `timeout` is acked `"expired"` instead of being sent
+  late. If the CAN side fails (USB unplugged, interface down) the status flips
+  to `online: false` with the error.
 
 ## Sizing and architecture — built for a Pi Zero 2 W
 
@@ -115,9 +125,14 @@ let the kernel refuse too:
 sudo ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100
 ```
 
-and run the bridge with `--listen-only` (or `"listen_only": true`): the kernel
-drops transmissions, and the bridge acks every request `"refused"` without
-trying. Belt and braces, on purpose. Which OBD pins carry which bus on your car
+and run the bridge with `--listen-only` (or `"listen_only": true`; with
+`bus: "ev"` it is on whatever the config says): the kernel drops transmissions,
+and the bridge acks every request `"refused"` without trying. A listen-only
+bridge on `socketcan` refuses to start unless the kernel reports the interface
+`LISTEN-ONLY`; on `slcan` it asks the board for silent mode (`M1`, which the
+stock firmware does not confirm — logged); other interfaces are refused in
+listen-only mode (a candleLight board on a Pi is `socketcan` through the
+kernel's `gs_usb` driver). Belt and braces, on purpose. Which OBD pins carry which bus on your car
 is in `docs/CAN_TRANSPORT.md`; the bridge never guesses — `bus` in the config
 is your statement of what it is wired to, and it goes into every topic.
 
@@ -158,12 +173,13 @@ mosquitto_sub -h <pi> -t 'hakake/leaf/car/rx/+' -v            # frames
 | `status_s`, `stats_s` | `2.0`, `10.0` | status period; stats-line period (`0` = off) |
 | `queue` | `2000` | publish queue depth before the oldest is dropped |
 | `uds_timeout` | `5.0` | cap on a request's own `timeout` |
+| `uds_targets` | `["79B:7BB", "744:764"]` | the only `TX:RX` id pairs a request may use (`--uds-target 7E0:7E8`, repeatable, replaces the list); a Lancer bridge lists `7E0:7E8` and `7E1:7E9` |
 
 The example `ids` list is what a 2011–2012 Leaf reader polls today (the
 passive ids in its profile plus the LBC and HVAC response ids) — an *example*
 for that profile, not a default of the bridge. Every command-line flag
 (`--host`, `--bus`, `--ids 421,358`, `--batch-ms 50`, `--listen-only`,
-`--stats 10`) overrides the file.
+`--stats 10`, `--uds-target 79B:7BB`) overrides the file.
 
 ## Mosquitto and the network
 
