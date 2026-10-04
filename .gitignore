@@ -94,3 +94,7 @@ web/sim_tiles.json.tmp
 # privacy sweep fails if one is ever staged as a tracked file; the only
 # dictionary in the repository is the synthetic tests/fixtures/dtc_sample.json.
 dtc/
+
+# settings and state files are written through uniquely named temporaries
+# (web/reader.py _atomic_write_json): web/tiles.json.<random>.tmp, ...
+web/*.tmp

@@ -391,3 +391,45 @@ def test_unchanged_cells_are_not_stored_again(env, monkeypatch):
     assert store.count() == reader.readings                  # every cycle still persisted…
     assert store.conn.execute("SELECT COUNT(DISTINCT reading_id) FROM cells").fetchone()[0] == 1   # …with cells once
     assert state(tmp_path)["celllog"] is False and len(state(tmp_path)["cells"]) == 96            # the cache still shows them
+
+
+# ── settings files under concurrent saves ────────────────────────────────
+
+def _hammer(n_threads, fn):
+    import threading
+    errors = []
+
+    def run(k):
+        try:
+            fn(k)
+        except Exception as e:                    # noqa: BLE001 — the test is "nothing raises"
+            errors.append(e)
+    ts = [threading.Thread(target=run, args=(k,)) for k in range(n_threads)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    return errors
+
+
+def test_concurrent_tile_saves_never_leave_a_broken_file(isolated_reader, leaf_profile):
+    import signals
+    sig = next(iter(signals.SIGNALS))
+
+    def saves(k):
+        for i in range(60):
+            rd.save_tiles({"tiles": [{"id": "u1", "kind": "signal", "signal": sig,
+                                      "title": f"thread {k} save {i} " + "x" * (k * 7)}]})
+            with open(rd.TILES_FILE) as f:
+                json.load(f)                      # parses every time, from every thread
+    assert _hammer(4, saves) == []
+    tiles = rd.load_tiles()["tiles"]
+    assert any(t["id"] == "u1" for t in tiles)    # the user tile survived; not reset to defaults
+    leftovers = [n for n in os.listdir(os.path.dirname(rd.TILES_FILE)) if n.endswith(".tmp")]
+    assert leftovers == []
+
+
+def test_concurrent_flags_are_all_kept(isolated_reader):
+    def adds(k):
+        for i in range(25):
+            rd.add_bookmark(1700000000 + k * 1000 + i, f"flag {k}.{i}")
+    assert _hammer(4, adds) == []
+    assert len(rd.load_bookmarks()) == 100

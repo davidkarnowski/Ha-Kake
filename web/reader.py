@@ -43,9 +43,12 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import functools
 import os
 import re
 import sys
+import tempfile
+import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -218,6 +221,41 @@ def _clean_opts(out):
         out["opts"] = opts
 
 
+# ── settings files: one writer at a time, never a half-written file ──────
+# Flask serves requests on several threads, and the tile menu can save on
+# every change; two saves must not interleave. Each write goes to its own
+# temporary file in the same directory and replaces the target in one step,
+# and every read-modify-write of a settings file holds SETTINGS_LOCK (an RLock:
+# save_layout calls save_tiles). The reader process only reads these files.
+SETTINGS_LOCK = threading.RLock()
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        with SETTINGS_LOCK:
+            return fn(*a, **kw)
+    return wrapper
+
+
+def _atomic_write_json(path, obj, indent=1, fsync=True):
+    folder, base = os.path.split(path)
+    fd, tmp = tempfile.mkstemp(dir=folder or ".", prefix=base + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=indent)
+            if fsync:
+                f.flush()
+                os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 # Text people type (tile titles, layout names, flag labels) is stored cleaned:
 # control characters, zero-width and joiner characters, and bidirectional
 # controls are dropped — they change how text displays without being visible —
@@ -307,6 +345,7 @@ def load_tiles():
     return {"tiles": ordered}
 
 
+@_locked
 def save_tiles(cfg):
     ordered, seen = [], set()
     for t in (cfg or {}).get("tiles", []):
@@ -320,10 +359,7 @@ def save_tiles(cfg):
         c = _clean_tile(dict(t))
         if c:
             ordered.append(c)
-    tmp = TILES_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"tiles": ordered}, f, indent=1)
-    os.replace(tmp, TILES_FILE)
+    _atomic_write_json(TILES_FILE, {"tiles": ordered})
     return {"tiles": ordered}
 
 
@@ -377,12 +413,10 @@ def load_sim_tiles():
     return _sim_tiles_from(raw)
 
 
+@_locked
 def save_sim_tiles(cfg):
     out = _sim_tiles_from((cfg or {}).get("tiles", []) if isinstance(cfg, dict) else [])
-    tmp = SIM_TILES_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(out, f, indent=1)
-    os.replace(tmp, SIM_TILES_FILE)
+    _atomic_write_json(SIM_TILES_FILE, out)
     return out
 
 
@@ -398,10 +432,7 @@ def _read_layouts():
 
 
 def _write_layouts(d):
-    tmp = LAYOUTS_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(d, f, indent=1)
-    os.replace(tmp, LAYOUTS_FILE)
+    _atomic_write_json(LAYOUTS_FILE, d)
 
 
 def list_layouts():
@@ -410,6 +441,7 @@ def list_layouts():
                   key=lambda x: x["name"].lower())
 
 
+@_locked
 def save_layout(name, cfg=None):
     """Store a layout under `name` (current web/tiles.json when cfg is None)."""
     name = layout_name(name)
@@ -420,6 +452,7 @@ def save_layout(name, cfg=None):
     return d[name]
 
 
+@_locked
 def load_layout(name):
     """Make a saved layout the active one (writes web/tiles.json)."""
     try:
@@ -432,6 +465,7 @@ def load_layout(name):
     return save_tiles({"tiles": d[name].get("tiles", [])})
 
 
+@_locked
 def delete_layout(name):
     try:
         name = layout_name(name)
@@ -571,21 +605,21 @@ def load_bookmarks():
     return sorted(out, key=lambda b: b["t"])
 
 
+@_locked
 def save_bookmarks(items):
     out = sorted([c for c in (_clean_bookmark(b) for b in items) if c], key=lambda b: b["t"])
-    tmp = BOOKMARKS_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"bookmarks": out}, f, indent=1)
-    os.replace(tmp, BOOKMARKS_FILE)
+    _atomic_write_json(BOOKMARKS_FILE, {"bookmarks": out})
     return out
 
 
+@_locked
 def add_bookmark(t, label=""):
     items = load_bookmarks()
     items.append({"t": t, "label": clean_label(label, 120)})
     return save_bookmarks(items)
 
 
+@_locked
 def delete_bookmark(t):
     items = load_bookmarks()
     keep = [b for b in items if abs(b["t"] - float(t)) > 0.0005]
@@ -601,11 +635,9 @@ def load_calibration():
         return {}
 
 
+@_locked
 def save_calibration(cal):
-    tmp = CALIB_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cal, f, indent=1)
-    os.replace(tmp, CALIB_FILE)
+    _atomic_write_json(CALIB_FILE, cal)
     return cal
 
 
@@ -617,10 +649,9 @@ def _iso_ms(epoch):
 
 
 def write_state(record):
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(record, f)
-    os.replace(tmp, STATE_FILE)
+    # The reader's own file, rewritten every cycle by one process: a unique
+    # temporary name like the settings files, but no fsync on this hot path.
+    _atomic_write_json(STATE_FILE, record, indent=None, fsync=False)
 
 
 def load_state():

@@ -399,27 +399,32 @@ def api_calibration():
     if request.method == "DELETE":
         return jsonify(save_calibration({}))
     if request.method == "PUT":
-        body = request.get_json(silent=True) or {}
-        cal = load_calibration()
-        if body.get("zero_current"):
-            try:
-                with open(STATE_FILE) as f:
-                    st = json.load(f)
-                raw = st.get("current_raw_a")
-            except (FileNotFoundError, json.JSONDecodeError):
-                raw = None
-            off = _offset_or_none(raw)
-            if off is None:
-                return jsonify({"error": "no current reading yet"}), 409
-            cal["current_offset_a"] = off
-            cal["current_zeroed_at"] = st.get("timestamp")
-        if "current_offset_a" in body and body["current_offset_a"] is not None and not body.get("zero_current"):
-            off = _offset_or_none(body["current_offset_a"])
-            if off is None:
-                return jsonify({"error": f"current_offset_a must be a number within ±{MAX_OFFSET_A:g} A"}), 400
-            cal["current_offset_a"] = off
-        return jsonify(save_calibration(cal))
+        with reader.SETTINGS_LOCK:                # read-modify-write of web/calibration.json
+            return _put_calibration(request.get_json(silent=True) or {})
     return jsonify(load_calibration())
+
+
+def _put_calibration(body):
+    """PUT /api/calibration, under reader.SETTINGS_LOCK (see api_calibration)."""
+    cal = load_calibration()
+    if body.get("zero_current"):
+        try:
+            with open(STATE_FILE) as f:
+                st = json.load(f)
+            raw = st.get("current_raw_a")
+        except (FileNotFoundError, json.JSONDecodeError):
+            raw = None
+        off = _offset_or_none(raw)
+        if off is None:
+            return jsonify({"error": "no current reading yet"}), 409
+        cal["current_offset_a"] = off
+        cal["current_zeroed_at"] = st.get("timestamp")
+    if "current_offset_a" in body and body["current_offset_a"] is not None and not body.get("zero_current"):
+        off = _offset_or_none(body["current_offset_a"])
+        if off is None:
+            return jsonify({"error": f"current_offset_a must be a number within ±{MAX_OFFSET_A:g} A"}), 400
+        cal["current_offset_a"] = off
+    return jsonify(save_calibration(cal))
 
 
 # A current-sensor zero offset is a few amps at most; anything outside this is a

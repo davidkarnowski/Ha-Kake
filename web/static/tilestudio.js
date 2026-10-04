@@ -391,6 +391,11 @@
     try { localStorage.setItem(LS_KEY, body); localStorage.removeItem(LS_KEY_OLD); } catch (e) {}
     try { await fetch(API.tiles, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }); } catch (e) {}
   }
+  // Typing in the tile menu saves once, 400 ms after the last keystroke (and at
+  // the latest when the menu closes) instead of one request per character.
+  let saveTimer = null;
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; save(); }, 400); }
+  function flushSave() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; save(); } }
   function cached() {
     const raw = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_OLD);
     return JSON.parse(raw).tiles;
@@ -503,7 +508,7 @@
   // disappears (hidden, removed, layout reloaded).
   const MENU_GAP = 6, MENU_MARGIN = 8;
   function menuFor(id) { return document.querySelector(`.tile-menu[data-for="${id}"]`); }
-  function closeMenus() { document.querySelectorAll('.tile-menu').forEach(m => m.remove()); }
+  function closeMenus() { flushSave(); document.querySelectorAll('.tile-menu').forEach(m => m.remove()); }
   function placeMenu(m, btn) {
     const r = btn.getBoundingClientRect();
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -570,11 +575,11 @@
     const on = (sel, ev, fn) => { const el = m.querySelector(sel); if (el) el.addEventListener(ev, fn); };
     on('#tm-sig', 'change', e => { t.signal = e.target.value; const ns = sigOf(t); if (ns && ns.kind !== 'number') t.type = ns.kind === 'text' ? 'text' : 'lamp'; delete o.min; delete o.max; delete o.color; apply(); save(); openTileMenu(id, card); });
     on('#tm-type', 'change', e => { t.type = e.target.value; const gr = m.querySelector('#tm-graph-row'); if (gr) gr.style.display = GRAPH_TYPES.has(t.type) ? '' : 'none'; renderSignalTile(t); save(); });
-    on('#tm-title', 'input', e => { t.title = e.target.value; ensureCard(t); save(); });
+    on('#tm-title', 'input', e => { t.title = e.target.value; ensureCard(t); saveSoon(); });
     on('#tm-color', 'change', e => { o.color = e.target.value; m.querySelector('#tm-swatch').style.background = gradientCss(o.color); renderSignalTile(t); save(); });
     on('#tm-invert', 'change', e => { o.invert = e.target.checked; renderSignalTile(t); save(); });
-    on('#tm-min', 'input', e => { o.min = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); save(); });
-    on('#tm-max', 'input', e => { o.max = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); save(); });
+    on('#tm-min', 'input', e => { o.min = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); saveSoon(); });
+    on('#tm-max', 'input', e => { o.max = e.target.value === '' ? undefined : +e.target.value; renderSignalTile(t); saveSoon(); });
     on('#tm-range', 'change', e => { o.range = +e.target.value; renderSignalTile(t); save(); });
     if (window.Alerts) bindAlertRows(m, t);
     on('#tm-hide', 'click', () => { t.enabled = !t.enabled; if (t.enabled) { delete t.x; delete t.y; } if (alertEngine) alertEngine.clear(); closeMenus(); apply(); save(); });
