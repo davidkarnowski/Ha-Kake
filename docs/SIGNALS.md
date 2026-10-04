@@ -75,7 +75,7 @@ The 3D pack tile places each of the 96 pairs in the car
 (`PACK_LAYOUT` in `vehicles/leaf_ze0.py`, described in `docs/PACK3D.md`).
 Pairs are numbered 1–96 on screen, the service manual's count (since
 2026-09-08; before that the dashboard showed the 0-based list index, so a
-"cell 53" in older worklog entries is pair 54 today). The record's `cells`
+"cell 53" in the pre-2026-10-03 worklog, `git show bc699c9:WORKLOG.md`, is pair 54 today). The record's `cells`
 list, `cell_min_idx` / `cell_max_idx` and `PACK_LAYOUT`'s `first` are 0-based;
 `cell_min_no` / `cell_max_no` carry the 1-based numbers for anyone — a person or
 an agent reading the API — who wants the number the screen shows.
@@ -378,7 +378,7 @@ This car's actual codes at capture time: MIL ON, 12 stored engine codes +
 only ones also **pending**, i.e. the live fault), `P0122`/`P0223` +
 `P1233`/`P1234`/`P1235` (electronic-throttle plausibility cluster),
 `P1590` (CVT↔ECM torque-request comms), `P0868` (CVT secondary pressure).
-See the 2026-08-28 WORKLOG entry for interpretation.
+See the 2026-08-28 entry of the full development log as it stood at commit `bc699c9` (`git show bc699c9:WORKLOG.md`) for interpretation.
 
 ### What a code signal holds, and where descriptions come from (2026-09-11)
 

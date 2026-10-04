@@ -387,7 +387,7 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `docs/SIGNALS.md` | **every decoded CAN ID and byte offset, with verification status** |
 | `docs/ARCHITECTURE.md` | processes, scheduler, data model |
 | `AGENTS.md` / `CLAUDE.md` | orientation for an AI agent; the working guide for this repo |
-| `WORKLOG.md` | append-only session log — how each signal was found |
+| `WORKLOG.md` | significant milestones, one line each (how each signal was found: `docs/SIGNALS.md`) |
 | `docs/ROADMAP.md` | roadmap |
 | `scripts/privacy_sweep.py` | pre-push scan for personal / machine-specific data (wired as `.githooks/pre-push`) |
 | `config.local.example.json` | copy to `config.local.json` (gitignored) for your adapter address |

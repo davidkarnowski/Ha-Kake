@@ -59,7 +59,7 @@ Four things are worth noticing before the details.
 | 3 | Pin it with a test | an assertion per transition you actually observed |
 | 4 | Make the reader fetch it | an entry in the profile's `ITEMS` |
 | 5 | Register it | an entry in the profile's `SIGNALS` |
-| 6 | Document it | a `docs/SIGNALS.md` row with tier, sample and date, plus a `WORKLOG.md` entry |
+| 6 | Document it | a `docs/SIGNALS.md` row with tier, sample and date |
 
 All of it lands in **one commit**. The repo's `CLAUDE.md` puts it bluntly: "A decoder change without a SIGNALS.md change in the same commit is incomplete."
 
@@ -247,6 +247,6 @@ To take a decode you trust and put it on a screen:
    python scripts/privacy_sweep.py --log 50
    ```
 
-7. **Commit it all together** — fixture, decoder, test, item, registry entry, `docs/SIGNALS.md` row and `WORKLOG.md` entry — as `signals: <what> from <ID/group>`.
+7. **Commit it all together** — fixture, decoder, test, item, registry entry and `docs/SIGNALS.md` row — as `signals: <what> from <ID/group>`.
 
 That is the end of the guide. Back to [the index](00-index.md).

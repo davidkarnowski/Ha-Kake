@@ -20,6 +20,11 @@ a few thousand people. The method works on anything with a CAN bus.
 No prior CAN experience is assumed. You will need patience and a willingness to
 write down the things that did not work.
 
+**About the "WORKLOG entry N" citations.** They refer to the full development log as it stood at commit `bc699c9` (`git show bc699c9:WORKLOG.md`): a
+detailed, append-only session log kept in public until 2026-10-03. Today's
+`WORKLOG.md` is a short list of milestones; the old entries are unchanged in the
+history and readable with that command.
+
 ## The method, in one page
 
 Everything in this guide is a variation on one loop.

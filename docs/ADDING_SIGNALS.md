@@ -92,7 +92,7 @@ in `vehicles/__init__.py`; `python vehicles/__init__.py` checks your profile.
 ## 6. Document it — `docs/SIGNALS.md`
 
 Add the row with **verified** or **tentative**, the sample you saw, and the
-date. Append what you did to `WORKLOG.md`. Commit the decoder, test, item,
+date — that row is the record of how it was found. Commit the decoder, test, item,
 registry entry and docs together: `signals: <what> from <ID/group>`.
 
 ## Checklist
@@ -103,5 +103,5 @@ registry entry and docs together: `signals: <what> from <ID/group>`.
 - [ ] `ITEMS` / `TILES` / `ITEM_KEYS` updated
 - [ ] profile `SIGNALS` entry (+ `HISTORY_COLS` column if graphable)
 - [ ] `python vehicles/__init__.py` reports the profile OK
-- [ ] `docs/SIGNALS.md` row + `WORKLOG.md` entry
+- [ ] `docs/SIGNALS.md` row (tier, sample, date)
 - [ ] `pytest -q` (venv active) green, privacy sweep OK

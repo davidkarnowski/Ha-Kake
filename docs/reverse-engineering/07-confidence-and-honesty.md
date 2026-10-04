@@ -123,11 +123,11 @@ Labels stay honest because of habits, not intentions. This project's are small a
 | A new decode needs a fixture captured *while the input was changing*, plus a test asserting the value you saw with your own eyes | `docs/ADDING_SIGNALS.md`, steps 1 and 3 |
 | "A capture where nothing changed proves nothing" | `docs/ADDING_SIGNALS.md`, step 1 |
 | The signal row records the tier, the sample you saw, and the date | `docs/ADDING_SIGNALS.md`, step 6 |
-| `WORKLOG.md` is append-only. Never edit old entries | `CLAUDE.md` |
+| The development log is append-only. Never edit old entries | `CLAUDE.md` |
 
 The append-only rule is the one that does the most quiet work, because it makes being wrong survivable. The February "may be 29-bit" guess in chapter [06](06-when-youre-wrong.md) is still sitting there in the log, unedited, with entry 43 six months later explaining that it was `ATCAF1` all along. If the log were editable, the tidy thing to do would be to go back and fix it, and the record of *how the mistake happened* would be gone.
 
-The log even carries a correction about itself. The last line of `WORKLOG.md`:
+The log even carries a correction about itself. A line from the detailed log (the full development log as it stood at commit `bc699c9` (`git show bc699c9:WORKLOG.md`); the public `WORKLOG.md` is now a short milestone list):
 
 > Correction to the entry above: the suite is 89 tests, not 90 (87 + the two DTC tests). The commit message for f85bad5 repeats the miscount; the code and fixtures are as described.
 

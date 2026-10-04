@@ -72,7 +72,9 @@ These are not style preferences. Each one has cost a debugging session.
    where `None` belongs makes a healthy car look asleep.
 8. **`docs/SIGNALS.md` is the authority on bytes**, and a decoder change
    without a `SIGNALS.md` change in the same commit is incomplete.
-9. **`WORKLOG.md` is append-only.** Never edit an old entry.
+9. **`WORKLOG.md` is public and minimal** — significant milestones only, one or
+   two lines each; no session, drive or developer-level detail. Detailed notes
+   are the maintainer's private, append-only log, never this file.
 10. **Trouble-code description text never enters the repository.** It is copyrighted
     (SAE J2012; LeafSpy's strings derive from the Nissan service manual), so the
     project ships the format and a recipe, never the data. `scripts/privacy_sweep.py`
@@ -170,7 +172,7 @@ the log, then `git diff --stat`, then continue from `NEXT:`. Logs stay in
 | What must a vehicle profile provide? | `vehicles/__init__.py` docstring + `validate_profile()` |
 | How do I add a car? | `docs/ADDING_A_VEHICLE.md` |
 | How do I add one signal to a car that already works? | `docs/ADDING_SIGNALS.md` |
-| How was a signal found in the first place? | `docs/reverse-engineering/`, then `WORKLOG.md` (search the CAN id) |
+| How was a signal found in the first place? | `docs/reverse-engineering/`, then `docs/SIGNALS.md`; before 2026-10-03, `git show bc699c9:WORKLOG.md` (search the CAN id) |
 | Running with no car | `docs/REPLAY.md`, `docs/SIMULATOR.md` |
 | What a simulator core must provide | `docs/SIMULATOR_CONTRACT.md` |
 | What may be sent to a car | `SECURITY.md` |

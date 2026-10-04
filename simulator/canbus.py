@@ -111,7 +111,7 @@ PERIODS = {"car": CAR_PERIODS_MS, "ev": EV_PERIODS_MS}
 EV_MODELLED = ("1DB", "1DA", "1D4", "55B", "5BC", "11A", "1DC")
 
 # FILLER payloads with a known shape — from this car's own February 2026
-# Car-CAN capture (WORKLOG) where one exists, otherwise zeros. A frame absent
+# Car-CAN capture (docs/SIGNALS.md) where one exists, otherwise zeros. A frame absent
 # from this table is sent as 8 zero bytes with the counter nibble.
 FILLER_BYTES = {
     "245": [0x7F, 0xE8, 0x02, 0x18, 0x3A, 0x00, 0x7F, 0xE2],   # this car, Feb 2026: "no request"

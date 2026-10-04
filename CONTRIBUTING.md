@@ -15,9 +15,10 @@ here is what makes a contribution easy to merge.
   the tradeoffs, what was verified (on the bench, on the car, or both). The
   log is documentation. Never amend, squash, or force-push to tidy recent
   work; the messiness is the record.
-- **Work log:** `WORKLOG.md` is append-only and never
-  retroactively edited. Every session that touches the car gets an entry with
-  what was tried, what the bytes said, and what was concluded.
+- **Work log:** `WORKLOG.md` is a short public list of significant milestones,
+  one or two lines each. Session notes, drives and probes do not go there: the
+  evidence for a signal belongs in its `docs/SIGNALS.md` row (tier, sample,
+  date) and in the commit message.
 - **Signals:** a new CAN ID or byte offset goes into `docs/SIGNALS.md` in the
   same commit as the decoder, marked **verified** (observed changing with the
   physical input) or **tentative** (from community documentation, not yet

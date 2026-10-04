@@ -33,8 +33,8 @@
 - [ ] **Temperatures emit both** `*_c` and `*_f`, if this touches temperatures.
 - [ ] **Docs and status tables** updated in the same commit as the work
       (README "Status", `docs/ROADMAP.md` status line) if they are now stale.
-- [ ] `WORKLOG.md` entry appended if this involved a session with the car
-      (append-only — never edit an old entry).
+- [ ] `WORKLOG.md` line added only if this is a significant milestone (one or
+      two lines; session and drive detail does not go there).
 
 ## Anything you are unsure about
 

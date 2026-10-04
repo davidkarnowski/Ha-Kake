@@ -19,7 +19,7 @@ Temperatures are shown as °C / °F throughout (project convention from this dat
 - `elm327.py` transport abstraction (BLE + USB) with `configure_leaf_bms()` — clean, adapter-agnostic.
 - `web/reader.py` decoders for LBC groups 01 / 02 / 04 / 05 are correct and were re-verified live today over BLE.
 - `web/templates/index.html` is a polished 1,300-line dashboard: SOC ring, health card, temp gauge (already °F-first with °C sub-label), power gauge + signed sparkline, SOC history, 48-module cell tree.
-- Docs: `WORKLOG.md` is a thorough log; every dead end is recorded.
+- Docs: `WORKLOG.md` is a thorough log; every dead end is recorded. *(Since 2026-10-03 it is a short milestone list; the detailed log is at `git show bc699c9:WORKLOG.md`.)*
 
 ### Problems found
 

@@ -16,7 +16,13 @@ harnesses (replay, simulator) came later; see §5.
 
 - `docs/SIGNALS.md` — the authority on what each byte means and how sure we are.
   A decoder change without a SIGNALS.md change in the same commit is incomplete.
-- `WORKLOG.md` — append-only session log. Never edit old entries.
+- `WORKLOG.md` — **public and minimal**: significant milestones only, one or
+  two lines each, newest last. No sessions, drives, probes, measurements or
+  developer-level detail (owner's rule, 2026-10-03). That detail goes to
+  `research/DEVLOG.md` — gitignored, append-only, never edit old entries. The
+  detailed public log that ran until 2026-10-03 is preserved in history:
+  `git show bc699c9:WORKLOG.md` (the "WORKLOG entry N" citations in
+  `docs/reverse-engineering/` refer to it).
 - `docs/ROADMAP.md` — roadmap and status line.
 - `SECURITY.md` — the read-only rule. Non-negotiable. Read-only is a claim
   about the *services* sent (all reads: `0x21`, modes `01`/`03`/`07`, monitor
@@ -167,7 +173,7 @@ specifics go in `config.local.json` (gitignored), never in code.
 |---|---|
 | What does byte N mean? | `docs/SIGNALS.md`, then `leaf_decoders.py` |
 | Why is the dashboard slow / stale? | `web/reader.py` scheduler; `item_age` / `item_dur` / `item_gap` in `/api/status` (ms, `docs/TIMING.md`); the page is fed by `/api/stream` (SSE push) with a 1 s fallback fetch — `docs/ARCHITECTURE.md` "Dashboard" |
-| How did we find X? | `WORKLOG.md` (search the CAN ID) |
+| How did we find X? | `docs/SIGNALS.md` (the evidence per row), `docs/reverse-engineering/`; the private `research/DEVLOG.md`; before 2026-10-03, `git show bc699c9:WORKLOG.md` (search the CAN ID) |
 | Adapter won't talk | `elm327.py` header comments, README "Hardware" |
 | Add another vehicle? | `vehicles/__init__.py` contract docstring; `vehicles/lancer_2009.py` is the minimal example |
 | Simulate the car / drive the cockpit | `docs/SIMULATOR.md`; `python web/app.py --adapter sim`, then `/sim`; the core's interface is `docs/SIMULATOR_CONTRACT.md` |
