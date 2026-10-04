@@ -5,10 +5,12 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # Native CAN transport — a CANable on the OBD port
 
-**Status (2026-09-09): designed and tested against a virtual bus; not yet run
-on the adapter or on a car.** Every claim below about the board, its firmware
-and its LEDs comes from documentation, not from this bench. What the tests
-prove is listed at the end; what only the car can prove is listed next to it.
+**Status (2026-10-03): running on the Leaf's Car-CAN** — a CANable 2 with the
+stock slcan firmware, listen-only and normal mode, every Leaf item read
+(battery groups, cells, HVAC amp, broadcast ids) in a ~0.6 s full cycle.
+**EV-CAN has not been connected yet.** Claims about LEDs and the candleLight
+firmware still come from documentation. What the car showed is under "What is
+verified, and what is not"; what the tests prove is listed there too.
 
 ## What it is
 
@@ -82,15 +84,20 @@ Both buses run 500 kbit/s, 11-bit ids.
 Two attachments, one board:
 
 - **A. Car-CAN, the CANable replaces the ELM327.** Pin 6 → CANH, 14 → CANL,
-  4 or 5 → GND. Normal mode: the same UDS `0x21` read requests the ELM327
+  **5 → GND** (signal ground; the car-tested wiring, 2026-10-03). Normal mode: the same UDS `0x21` read requests the ELM327
   sends today, and the passive ids without a dwell.
 - **B. EV-CAN through a breakout, the ELM327 stays on Car-CAN.** An OBD-II
   pass-through breakout that exposes all 16 pins; the ELM327 in its female
   socket as before, the CANable's terminals to **13 → CANH, 12 → CANL,
-  4 → GND**. `can_bus: "ev"` — listen-only, always.
+  5 → GND**. `can_bus: "ev"` — listen-only, always.
 
 Keep the H/L pair short (under ~30 cm) and twisted, and connect ground: a CAN
-bus does not work without it. Never connect anything to a 5 V output, on the
+bus does not work without it. Use pin 5, **signal ground** — J1962's reference
+for the diagnostic lines — rather than pin 4, chassis ground, which is the
+tool's power return and carries the body's load currents. On the Leaf they
+meet (and an ELM327 usually ties them together inside), so 4 works too; 5 is
+the cleaner reference for a bare-wire breakout. A breakout's wire colours are
+not standard: ring each one out to its pin number before connecting. Never connect anything to a 5 V output, on the
 boards that have one. The board is not galvanically isolated; USB ground and
 car ground meet at the laptop, which is the same situation as the USB ELM327
 and has been fine.
@@ -118,8 +125,14 @@ mode this transport ever opens the EV bus in:
 - `can_bus: "ev"` forces `listen_only`; `can_listen_only: false` is ignored
   there, and there is no override.
 - On a listen-only bus every non-`AT` command answers `NO DATA` and is logged
-  once; `send()` on the underlying bus is never called. UDS items in the
-  profile simply read as silent.
+  once; `send()` on the underlying bus is never called. The reader does not
+  even ask: request items on a listen-only bus are skipped (kept on their
+  period, said once in the log), and on a listen-only *primary* bus whether
+  the car is awake comes from the broadcast items it heard, not from the
+  primary ECU's answer — which a silent controller can never get. Until
+  2026-10-03 it did ask, the Leaf's liveness (the LBC answering) read every
+  refusal as a dead ECU, and a listen-only Car-CAN board hearing 1,700
+  frames/s reported "car asleep?".
 - **candleLight (`gs_usb`)**: python-can opens the device in normal mode with
   no way to ask for another, so the transport re-opens it silent through the
   `gs_usb` package and **reads the mode back** from the device. A firmware
@@ -208,10 +221,14 @@ frame source:
 Two transport-class attributes matter to the scheduler: `SPEED = 0.05`
 (cost of a UDS poll relative to BLE — modelled, not measured) and
 `PASSIVE_INSTANT = True`, which makes `Reader.estimate()` drop the passive
-items' `secs` because there is no dwell. `STMIN = "00"`: a native controller
-absorbs consecutive frames at bus speed, so the 32 ms gap the BLE clone needs
-(and the 5 ms the USB clone needs) is not asked for. Whether the LBC honours
-STmin 0 is a bench question; `can_isotp_stmin` puts it back if not.
+items' `secs` because there is no dwell. `STMIN = "05"`, the USB ELM's value.
+A native controller absorbs consecutive frames at bus speed, so it started at
+0 — but the receiver is not the only party: on the car the Leaf's **HVAC amp
+dropped consecutive frames at STmin 0** (`2110`, 3 of 6 answers intact, the
+gap in the frames as received) and answered 6 of 6 at 5 and at 10 ms. The LBC
+did not mind (6 of 6 at 0, 5 and 10) and does not notice: it paces its own
+frames at ~10 ms, so the cell read is ~0.29 s and group 01 ~0.06 s at 0 and
+at 5 alike. `can_isotp_stmin` still forces one value for every ECU.
 
 Every record carries `can_bus` and `listen_only`, so the header can say
 "EV-CAN · listen-only" and a stored row remembers where it came from.
@@ -230,16 +247,30 @@ EV bus refusing every request with a spy bus receiving nothing; the `gs_usb`
 listen-only verification against a stub device; slcan `M1` then `O`; firmware
 classification from USB ids and the DFU refusal; `detect_adapter("can")`
 refusing to run without `can_bus`; auto-detect never picking it; a dead
-source failing the liveness probe; one reader `poll_once()` end to end.
+source failing the liveness probe; one reader `poll_once()` end to end; a
+listen-only Car-CAN cycle awake on broadcasts and asleep on silence, with
+nothing asked of the façade.
 
-**Not verified — needs the board, then the car (memo phases a–b):** that the
-stock firmware is what ships and enumerates as documented; that `M1` puts it
-silent; that python-can's slcan reader keeps up with ~1,700 frames/s on
-Car-CAN; the real `SPEED`; that the LBC honours STmin 0 and 0x00-padded
-requests from this controller as it does from the ELM; the 1 % RC-oscillator
-margin at 500 kbit/s; the BOOT0 drop-out (below); EV-CAN in listen-only at
-all. The cell log, the HVAC amp and the Lancer's mode 01/03/07 over this
-transport are untested beyond the fixture round trip.
+**Verified on the car (2026-10-03, 2012 Leaf, parked, READY, Car-CAN on
+pins 6/14/5, termination jumper off):** the board enumerates as `16d0:117e`
+"CANable2 b158aa7" with the stock firmware (`V` answers
+`16e7497-dirty github.com/normaldotcom/canable2.git`) and the port is found
+with no `can_channel`; python-can's slcan reader keeps up — **1,692 frames/s,
+49 ids, 0 error frames** in a 10 s listen-only window (the simulator assumed
+≈1,700); the broadcast ids decode as the ELM decodes them (gear P, READY,
+doors shut, locked); in normal mode the reader's own `poll_once()` read every
+Leaf item — lbc01 0.07 s, lbc02 (96 cells) 0.29 s, lbc04/05/06, the three HVAC
+groups, the passive ids at ~0 s — **a 0.58 s full cycle** against ~2 s over
+BLE; 0x00-padded requests are accepted by the LBC and the HVAC amp; the HVAC
+amp needs STmin ≥ 5 ms (above).
+
+**Not verified:** that `M1` really makes the stock firmware silent (it does
+not acknowledge it — the software never calls `send()` on a listen-only bus
+regardless); the measured `SPEED` (0.05 is still the modelled value); the
+1 % RC-oscillator margin over a long session; the BOOT0 drop-out (below);
+**EV-CAN at all**; the cell log and the Lancer's mode 01/03/07 over this
+transport beyond the fixture round trip; the candleLight firmware on a real
+board.
 
 **BOOT0.** On this chip the CAN RX pin doubles as BOOT0, and on some clones a
 short interruption of USB power can leave the board in the bootloader

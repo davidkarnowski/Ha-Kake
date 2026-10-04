@@ -174,8 +174,15 @@ class CanFacade:
     SPEED = 0.05
     # ISO-TP separation time we ask an ECU for. The 0x20 the BLE link needs is
     # the ELM clone's limitation, not the ECU's; a native controller absorbs
-    # consecutive frames at bus speed. Phase (b) verifies the LBC honours 0.
-    STMIN = "00"
+    # consecutive frames at bus speed — but not every ECU can SEND that fast.
+    # On the car 2026-10-03 (CANable 2, stock slcan, Car-CAN, READY, parked):
+    # the LBC's 2102 came back 6 of 6 at 0, 5 and 10 ms, but the HVAC amp's
+    # 2110 only 3 of 6 at 0 — consecutive frames missing on the wire, not lost
+    # in decoding — and 6 of 6 at 5 and 10 ms. 0x05 is the serial ELM's value
+    # (elm327.STMIN_SERIAL) and costs the LBC nothing: it paces its own
+    # consecutive frames at ~10 ms, so the cell read is ~0.29 s and group 01
+    # ~0.06 s at 0 and at 5 alike (same session, 3 reads each).
+    STMIN = "05"
     # Passive items cost no dwell here: Reader.estimate() drops their `secs`.
     PASSIVE_INSTANT = True
 

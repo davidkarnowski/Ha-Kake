@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1189%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1191%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -271,7 +271,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 1189 offline tests, no car needed
+pytest -q                          # 1191 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -463,7 +463,7 @@ Being on the bus at all has consequences worth knowing:
   **do not operate the laptop while driving.** The dashboard is a passenger's
   tool.
 
-## Status (2026-09-11)
+## Status (2026-10-03)
 
 - Verified on two cars: a 2012 Leaf SL at 35 % SOH (23.2 Ah), and a 2009
   Mitsubishi Lancer ES through the `lancer_2009` profile.
@@ -522,9 +522,10 @@ Being on the bus at all has consequences worth knowing:
   CANable 2.0 class USB-CAN adapter behind an ELM327-speaking façade
   (`cantransport.py`) — the reader, profiles and decoders unchanged, passive
   items answered from a frame table with no dwell, UDS through ISO-TP, and
-  EV-CAN opened listen-only, always. Designed and tested on a virtual bus with
-  the recorded fixtures; **not yet run on the adapter or the car** —
-  `docs/CAN_TRANSPORT.md` says what is verified and what is not.
+  EV-CAN opened listen-only, always. **Running on the Leaf's Car-CAN since
+  2026-10-03** (CANable 2, stock slcan): 1,692 frames/s with no errors, every
+  Leaf item read in a 0.58 s full cycle against ~2 s over BLE. EV-CAN not yet
+  connected — `docs/CAN_TRANSPORT.md` says what is verified and what is not.
 - **A colour scale that holds still** (2026-09-10): the cell grid and the 3D
   pack colour from the frame's own lowest and highest pair by default, which
   rescales every frame — in playback one colour means a different voltage as
@@ -559,7 +560,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 1189 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 1191 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

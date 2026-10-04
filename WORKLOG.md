@@ -1897,3 +1897,54 @@ fail on the old file and pass on the new; a check that the module never declares
 a `PACK` of its own; a check that `poll()`'s catch logs. Two tests that pinned
 the old line were updated. Verified on the bench with the app serving the
 Lancer; the owner's engine-on check in the browser is the one still to do.
+
+## 2026-10-03 — the CANable on the car: first light on Car-CAN, and two fixes it found
+
+**Setup.** A CANable 2 clone (silkscreen LC_CANABLE_V2.1 / 303CANNABLE5) on the
+Leaf's OBD port through a bare-wire breakout: pin 6 → CANH, 14 → CANL, 5 → GND
+(signal ground rather than chassis ground 4: it is J1962's reference for the
+diagnostic lines; the two meet on the Leaf). Termination jumper off. Car parked,
+READY. The board enumerated as `16d0:117e` "CANable2 b158aa7" — the stock slcan
+firmware, `V` answering `16e7497-dirty github.com/normaldotcom/canable2.git` —
+and `find_slcan_port()` found the port with no `can_channel`.
+
+**Listen-only, 10 s through `LocalSource`.** 16,925 frames, **1,692 frames/s,
+49 ids, 0 error frames** — the simulator's ≈1,700 was right. The broadcast ids
+through `decode_carcan` matched the car: gear P, handbrake, READY, doors shut,
+locked, no lights.
+
+**Bug 1 — listen-only reads as "car asleep".** The owner then ran
+`web/app.py --adapter can` listen-only: 510 frames in the first 0.3 s, then
+"adapter OK but no CAN data — car asleep? polling every 60s". The Leaf
+profile's liveness is the LBC answering; a silent controller refuses every
+request, so decode() saw a dead LBC every cycle. Fix in `reader.py`: on a
+listen-only bus request items are skipped (kept on their period, said once), and
+on a listen-only primary bus `alive` comes from the broadcast items it heard.
+Two new tests: awake on broadcasts, asleep on silence, nothing asked of the
+façade; the awake one fails on the old reader.
+
+**Normal mode.** `can_listen_only: false`, three of the reader's own
+`poll_once()` cycles into a scratch database: lbc01 0.07 s, lbc02 (96 cells)
+0.29 s, lbc04/05/06, the passive ids ~0 s — a **0.58 s full cycle** with 17
+items, against ~2 s over BLE. SOC, pack volts, current, cells all decoded.
+
+**Bug 2 — the HVAC amp at STmin 0.** In the first cycle `2110` to `0x744`
+failed with an ISO-TP sequence error. Six requests at each of 0 / 5 / 10 ms,
+with the raw `0x764` frames logged: at 0 only 3 of 6 answers intact, the
+consecutive frames missing or skipped *as received* (`10 21 23 24 25 26`,
+`10 21 22 23 24`); at 5 and 10 ms, 6 of 6. The LBC's `2102`, four times the
+frames, was 6 of 6 at all three — the board keeps up; the HVAC amp cannot send
+back to back. Timed: the LBC paces itself at ~10 ms per frame, so 2102 is
+~290 ms and 2101 ~60 ms at 0 and at 5 alike; 2110 is ~41 ms at 5. Fix:
+`CanFacade.STMIN = "05"`, the serial ELM's value — free for the LBC, required
+for the HVAC amp. Three tests that pinned 0 updated; the simulated LBC honours
+STmin, so a rerun of `bench_canrate.py` costs ~0.14 s more per cell read than the
+2026-09-09 table (noted there).
+
+**Docs.** `docs/CAN_TRANSPORT.md` status, wiring (ground on 5, ring out a
+breakout's wires), the STmin paragraph, the listen-only reader behaviour, and
+"what is verified" rewritten from the car; README status and counts,
+ARCHITECTURE's STMIN list, ROADMAP status line, SIMULATOR and `bench_canrate.py`
+notes. **1,191 passing.** Still open: EV-CAN (13/12, listen-only) not yet
+connected; `M1` silence unverifiable on the stock firmware; `SPEED` still the
+modelled 0.05.

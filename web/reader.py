@@ -1133,9 +1133,19 @@ class Reader:
         concurrently with the other buses' shares; a transport error
         propagates to poll_once, which decides per bus."""
         loop = asyncio.get_event_loop()
-        got_data = False
+        got_data = polled = False
+        listen_only = bool(getattr(elm, "listen_only", False))
         for i in items:
             it = ITEMS[i]
+            if listen_only and TARGETS[it["kind"]] is not None:
+                # A silent controller cannot ask; the transport would refuse it
+                # anyway. Keep the item on its period so the plan does not
+                # retry it every cycle, and leave it out of responses so the
+                # profile's decode() does not read the refusal as a dead ECU.
+                self.say_once(f"bus {bus!r} is listen-only: request items are not polled on it")
+                self.item_last[i] = loop.time()
+                continue
+            polled = True
             t = loop.time()
             await self.switch(elm, it["kind"], bus)
             if TARGETS[it["kind"]] is None:
@@ -1149,7 +1159,8 @@ class Reader:
             self.stamp(elm, i, it)
             if any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines):
                 got_data = True
-        self.bus_alive[bus] = got_data
+        if polled:
+            self.bus_alive[bus] = got_data
 
     async def poll_once(self, elm=None):
         """One cycle over every connected bus at once. `elm` alone (the
@@ -1191,6 +1202,12 @@ class Reader:
             if a is not None:
                 alive = a
                 self.bus_alive[PRIMARY_BUS] = a
+        prim = transports.get(PRIMARY_BUS)
+        if getattr(prim, "listen_only", False) and any(i in responses for i in by_bus.get(PRIMARY_BUS, ())):
+            # A listen-only primary never asks the primary ECU, so decode()
+            # cannot say whether the car is awake. The broadcast traffic can:
+            # silence there is a sleeping car, frames are a waking one.
+            alive = self.bus_alive.get(PRIMARY_BUS, False)
 
         self.item_age = {i: round(loop.time() - self.item_last[i], 1) for i in self.item_last}
         self.resolve()

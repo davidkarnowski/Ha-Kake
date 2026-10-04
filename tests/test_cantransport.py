@@ -210,19 +210,20 @@ def test_the_adapter_state_is_remembered_and_atz_resets_it(rig):
     assert (elm.tx, elm.rx, elm.caf, elm.fc_stmin) == (None, None, True, 0)
 
 
-def test_the_facade_asks_for_no_separation_time():
-    """A native controller absorbs consecutive frames at bus speed: STmin 0."""
-    assert ct.CanFacade.STMIN == "00"
+def test_the_facade_asks_for_the_serial_separation_time():
+    """5 ms, not 0: the Leaf's HVAC amp drops consecutive frames at STmin 0
+    (car, 2026-10-03), the LBC does not mind either way."""
+    assert ct.CanFacade.STMIN == "05" == elm327.STMIN_SERIAL
     assert ct.CanFacade.SPEED < elm327.SerialELM.SPEED < elm327.BleELM.SPEED
     assert ct.CanFacade.PASSIVE_INSTANT is True
     assert ct.CanFacade.adapter_type == "can"
 
 
-def test_configure_uds_leaves_the_facade_targeting_the_lbc_with_stmin_0(rig):
+def test_configure_uds_leaves_the_facade_targeting_the_lbc_with_stmin_5(rig):
     elm = rig[0]
     run(configure_uds(elm, "79B", "7BB"))
     assert (elm.tx, elm.rx, elm.caf, elm.fc_tx) == ("79B", "7BB", True, "79B")
-    assert (elm.fc_bs, elm.fc_stmin) == (0, 0)
+    assert (elm.fc_bs, elm.fc_stmin) == (0, 5)
 
 
 # ── UDS through the fake ECU: the fixture round trip ─────────────────────
@@ -676,3 +677,46 @@ def test_one_poll_cycle_over_the_facade_produces_the_dashboard_record(isolated_r
         bc.stop()
         run(elm.close())
         lbc.stop(); hvac.stop()
+
+
+def _listen_only_cycle(chan, tmp_store, broadcast):
+    """One reader cycle over a listen-only Car-CAN façade beside a fake LBC."""
+    lbc = FakeECU(chan, 0x79B, 0x7BB, LBC)
+    bc = Broadcaster(chan, [PASSIVE[i][0] for i in ("421", "284", "60D", "5C5", "385", "292", "5A9", "5B3", "355")],
+                     period=0.02) if broadcast else None
+    lbc.start()
+    elm = facade(chan, listen_only=True)
+    run(elm.connect(log=lambda *a: None))
+    if bc:
+        bc.start()
+    try:
+        time.sleep(0.3)
+        run(rd.configure_vehicle(elm))
+        r = rd.Reader(interval=0, adapter_pref="can", store=tmp_store, budget=1.5)
+        r.speed = elm.SPEED
+        r.passive_instant = elm.PASSIVE_INSTANT
+        rec, alive = run(r.poll_once(elm))
+        return r, rec, alive, lbc.requests, elm.refused
+    finally:
+        if bc:
+            bc.stop()
+        run(elm.close())
+        lbc.stop()
+
+
+def test_a_listen_only_car_bus_with_broadcasts_is_awake(isolated_reader, leaf_profile, tmp_store):
+    """Car, 2026-10-03: a listen-only CANable on Car-CAN heard 1,700 frames/s
+    and the reader still said "car asleep?", because the Leaf's liveness is
+    the LBC's answer and a silent controller never asks. The broadcasts decide."""
+    r, rec, alive, requests, refused = _listen_only_cycle(channel(), tmp_store, broadcast=True)
+    assert alive is True
+    assert rec["gear"] == "P"
+    assert not any(i.startswith(("lbc", "hvac")) for i in rec["timing"])     # never planned onto the wire
+    assert requests == [] and refused == []                                  # not even asked of the façade
+    assert r.item_last.get("lbc01") is not None                              # kept on its period
+
+
+def test_a_listen_only_car_bus_that_is_silent_is_asleep(isolated_reader, leaf_profile, tmp_store):
+    r, rec, alive, requests, refused = _listen_only_cycle(channel(), tmp_store, broadcast=False)
+    assert alive is False
+    assert requests == []

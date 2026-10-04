@@ -1217,8 +1217,10 @@ car (`fault.car_asleep`) puts nothing on the bus and answers nothing;
 reader's own `poll_once()` with every tile on, paced at its 0.5 s
 `--interval`; Darwin arm64, Python 3.12, 2026-09-09) — **MEASURED ON THE
 LAPTOP, VIRTUAL BUS**: no wire, no bit errors, no LBC pacing (the simulated
-LBC answers the 29-frame cell read in ~2 ms at STmin 0; the real one took
-0.36 s over USB), no USB stack, no slcan byte parser:
+LBC answered the 29-frame cell read in ~2 ms at the façade's then STmin 0;
+the real one took 0.36 s over USB and 0.29 s over the CANable. Since
+2026-10-03 the façade asks for 5 ms, which the simulated LBC honours, so a
+rerun's cell read costs ~0.14 s more than this table), no USB stack, no slcan byte parser:
 
 | bus load | expected fps | broadcast fps | intake fps (incl. UDS) | sched. cycle med / p90 (ms) | full cycle med / p90 (ms) | CPU total / ECU / reader (%) | UDS misses |
 |---|---|---|---|---|---|---|---|

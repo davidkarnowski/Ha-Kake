@@ -28,8 +28,9 @@ measures, per bus load:
     and within 0.2 s
 
 **MEASURED ON THE LAPTOP, VIRTUAL BUS**: no wire, no bit errors, no LBC
-pacing (the simulated LBC answers a 29-frame cell read in about 2 ms at
-STmin 0; the real one took 0.36 s over USB), no USB stack, no slcan byte
+pacing (the simulated LBC answers a 29-frame cell read in about 0.14 s at
+the façade's STmin 5, all of it our requested gap; the real one paces itself
+and took 0.29 s over the CANable, 0.36 s over USB), no USB stack, no slcan byte
 parser. The numbers bound the reader's own cost, not the adapter's. Nothing
 here is a reading from any vehicle, and nothing is written outside a
 temporary directory.
