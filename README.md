@@ -411,8 +411,8 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `GET /api/console?since=&kind=&ids=&limit=` | the raw output console's entries after an opaque cursor, with what was dropped and why — a window on the transport, never a capture ([`docs/CONSOLE.md`](docs/CONSOLE.md)) |
 | `GET /api/bookmarks?from&to`, `PUT /api/bookmarks {t?, label?}`, `DELETE /api/bookmarks?t=` | timeline flags in `web/bookmarks.json` (gitignored); `t` defaults to now |
 | `GET /api/bookmarks/auto?from&to&amps=40` | discharge pulls found in the readings (runs below −amps A), as candidate flags |
-| `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored) |
-| `GET/PUT/DELETE /api/calibration` | per-car offsets (`zero_current`) in `web/calibration.json` (gitignored) |
+| `GET /api/layouts`, `PUT/DELETE /api/layouts/<name>`, `POST /api/layouts/<name>/load` | named layouts saved in `web/layouts.json` (gitignored); names are trimmed to 60 characters, the same way for save, load and delete |
+| `GET/PUT/DELETE /api/calibration` | per-car offsets (`zero_current`) in `web/calibration.json` (gitignored); an offset must be a finite number within ±50 A |
 | `GET /sim` | the simulator cockpit page (always renders; shows the launch commands when nothing is simulated) |
 | `GET/PUT /api/sim/tiles` | the cockpit's own card layout in `web/sim_tiles.json` (gitignored) |
 

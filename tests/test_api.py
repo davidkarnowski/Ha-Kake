@@ -547,3 +547,55 @@ def test_responses_carry_the_security_headers(api):
     csp = r.headers["Content-Security-Policy"]
     assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
     assert api.get("/").headers["Content-Security-Policy"] == csp
+
+
+# ── inputs are checked before they are stored ────────────────────────────
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "abc", 1e9, -51, [1], {"a": 1}])
+def test_a_calibration_offset_must_be_a_sensible_number(api, bad):
+    r = api.put("/api/calibration", json={"current_offset_a": bad})
+    assert r.status_code == 400
+    assert not (api.tmp / "calibration.json").exists()
+
+
+def test_a_sensible_calibration_offset_is_stored(api):
+    assert api.put("/api/calibration", json={"current_offset_a": "-0.42"}).get_json()["current_offset_a"] == -0.42
+    assert api.get("/api/calibration").get_json()["current_offset_a"] == -0.42
+    body = api.get("/api/status").data.decode()
+    assert "NaN" not in body and "Infinity" not in body
+
+
+def test_zeroing_from_a_reading_that_is_not_finite_is_refused(api):
+    write_state(api, current_raw_a=float("nan"))
+    assert api.put("/api/calibration", json={"zero_current": True}).status_code == 409
+
+
+def test_cell_and_history_limits_are_bounded_both_ways(api):
+    seed(api, n=3)
+    assert api.get("/api/cells?limit=-1").status_code == 200
+    assert api.get("/api/history?max=0").status_code == 200
+    assert api.get("/api/history?max=-3").status_code == 200
+
+
+def test_a_layout_name_is_stored_and_found_the_same_way(api):
+    long = "L" * 70
+    saved = api.put(f"/api/layouts/{long}", json={}).get_json()
+    assert saved["name"] == "L" * 60
+    assert api.post(f"/api/layouts/{long}/load", json={}).status_code == 200
+    assert api.post(f"/api/layouts/{'L' * 60}/load", json={}).status_code == 200
+    assert api.delete(f"/api/layouts/{long}", json={}).get_json() == {"deleted": True}
+    saved = api.put("/api/layouts/%20padded%20%20name%20", json={}).get_json()
+    assert saved["name"] == "padded name"
+    assert api.post("/api/layouts/padded%20name/load", json={}).status_code == 200
+    assert api.put("/api/layouts/%E2%80%8B", json={}).status_code == 400      # a zero-width space is no name
+
+
+def test_labels_and_titles_are_stored_without_invisible_characters(api):
+    api.put("/api/bookmarks", json={"t": 1700000000.5, "label": "pull‮ <40 A​"})
+    assert api.get("/api/bookmarks?from=1699999999&to=1700000001").get_json()["bookmarks"][0]["label"] == "pull <40 A"
+    tiles = api.get("/api/tiles").get_json()["tiles"]
+    sig = next(iter(rd.signals.SIGNALS))
+    tiles.append({"id": "u1", "kind": "signal", "signal": sig, "title": "Cabin⁦ temp\n" + "x" * 200})
+    out = api.put("/api/tiles", json={"tiles": tiles}).get_json()["tiles"]
+    title = next(t for t in out if t["id"] == "u1")["title"]
+    assert title.startswith("Cabin temp x") and len(title) == 80

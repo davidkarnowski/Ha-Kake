@@ -53,6 +53,7 @@ Usage:
 import argparse
 import atexit
 import json
+import math
 import os
 import signal
 import subprocess
@@ -69,7 +70,7 @@ import dtc                               # noqa: E402  (trouble-code dictionary;
 import reader                            # noqa: E402  (vehicle-bound globals: reader.ITEMS etc.)
 import signals                           # noqa: E402
 from reader import (load_tiles, save_tiles, load_calibration, save_calibration,  # noqa: E402
-                    list_layouts, save_layout, load_layout, delete_layout,
+                    list_layouts, save_layout, load_layout, delete_layout, layout_name,
                     load_sim_tiles, save_sim_tiles)
 from signals import COLOR_SCALES, TILE_TYPES              # noqa: E402
 from util import env                                     # noqa: E402
@@ -352,7 +353,7 @@ def api_history():
     minutes = request.args.get("minutes", type=int)
     if not minutes or minutes <= 0:
         minutes = None
-    max_points = min(request.args.get("max", 1500, type=int), 5000)
+    max_points = max(2, min(request.args.get("max", 1500, type=int), 5000))
     return jsonify(store().history(minutes=minutes, max_points=max_points))
 
 
@@ -407,14 +408,32 @@ def api_calibration():
                 raw = st.get("current_raw_a")
             except (FileNotFoundError, json.JSONDecodeError):
                 raw = None
-            if raw is None:
+            off = _offset_or_none(raw)
+            if off is None:
                 return jsonify({"error": "no current reading yet"}), 409
-            cal["current_offset_a"] = round(float(raw), 3)
+            cal["current_offset_a"] = off
             cal["current_zeroed_at"] = st.get("timestamp")
         if "current_offset_a" in body and body["current_offset_a"] is not None and not body.get("zero_current"):
-            cal["current_offset_a"] = round(float(body["current_offset_a"]), 3)
+            off = _offset_or_none(body["current_offset_a"])
+            if off is None:
+                return jsonify({"error": f"current_offset_a must be a number within ±{MAX_OFFSET_A:g} A"}), 400
+            cal["current_offset_a"] = off
         return jsonify(save_calibration(cal))
     return jsonify(load_calibration())
+
+
+# A current-sensor zero offset is a few amps at most; anything outside this is a
+# typo (or not a number at all) and is refused rather than stored.
+MAX_OFFSET_A = 50.0
+
+
+def _offset_or_none(v):
+    """A finite offset within ±MAX_OFFSET_A, rounded to the mA; None otherwise."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(v, 3) if math.isfinite(v) and abs(v) <= MAX_OFFSET_A else None
 
 
 @app.route("/api/layouts", methods=["GET"])
@@ -432,6 +451,7 @@ def api_layout(name):
         return jsonify({"deleted": delete_layout(name)})
     body = request.get_json(silent=True) or {}
     try:
+        name = layout_name(name)
         saved = save_layout(name, body.get("tiles") and body or None)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -511,7 +531,7 @@ def api_console():
 def api_cells():
     if DEMO:
         return jsonify(_demo("cells.json", []))
-    limit = min(request.args.get("limit", 30, type=int), 500)
+    limit = max(1, min(request.args.get("limit", 30, type=int), 500))
     return jsonify(store().cell_history(limit=limit))
 
 

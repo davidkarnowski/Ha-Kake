@@ -44,6 +44,7 @@ import asyncio
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 
@@ -217,6 +218,33 @@ def _clean_opts(out):
         out["opts"] = opts
 
 
+# Text people type (tile titles, layout names, flag labels) is stored cleaned:
+# control characters, zero-width and joiner characters, and bidirectional
+# controls are dropped — they change how text displays without being visible —
+# runs of spaces collapse, and the result is cut to a length. Markup characters
+# are kept: "pull <40 A" is a fine label, and escaping on output is what makes
+# any label safe to show (web/static/html.js).
+_INVISIBLE = re.compile("[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e"
+                        "\u2060-\u2064\u2066-\u2069\ufeff]")
+
+
+def clean_label(s, max_len):
+    """One line of user text, cleaned for storage (see above); '' for None."""
+    if s is None:
+        return ""
+    s = re.sub(r"[\t\n\r\v\f]+", " ", str(s))          # line breaks become spaces, not glue
+    s = _INVISIBLE.sub("", s)
+    return re.sub(r"\s+", " ", s).strip()[:max_len].strip()
+
+
+def layout_name(name):
+    """The stored form of a layout name; the same rule for save, load and delete."""
+    name = clean_label(name, 60)
+    if not name:
+        raise ValueError("layout name required")
+    return name
+
+
 def _clean_tile(t):
     """Validate one tile entry; returns None if it is not usable."""
     if not isinstance(t, dict) or not isinstance(t.get("id"), str):
@@ -239,6 +267,10 @@ def _clean_tile(t):
     except (TypeError, ValueError):
         out["span"] = 3
     out["span"] = min(12, max(2, out["span"]))
+    if "title" in out:
+        out["title"] = clean_label(out["title"], 80)
+        if not out["title"]:
+            del out["title"]
     for k, lo, hi in (("x", 0, 10), ("y", 0, 10000), ("h", 2, 200)):
         if k in out:
             try:
@@ -380,9 +412,7 @@ def list_layouts():
 
 def save_layout(name, cfg=None):
     """Store a layout under `name` (current web/tiles.json when cfg is None)."""
-    name = (name or "").strip()[:60]
-    if not name:
-        raise ValueError("layout name required")
+    name = layout_name(name)
     tiles = save_tiles(cfg)["tiles"] if cfg is not None else load_tiles()["tiles"]
     d = _read_layouts()
     d[name] = {"saved": utc_now_iso(), "tiles": tiles}
@@ -392,6 +422,10 @@ def save_layout(name, cfg=None):
 
 def load_layout(name):
     """Make a saved layout the active one (writes web/tiles.json)."""
+    try:
+        name = layout_name(name)
+    except ValueError:
+        raise KeyError(name) from None
     d = _read_layouts()
     if name not in d:
         raise KeyError(name)
@@ -399,6 +433,10 @@ def load_layout(name):
 
 
 def delete_layout(name):
+    try:
+        name = layout_name(name)
+    except ValueError:
+        return False
     d = _read_layouts()
     if name in d:
         del d[name]
@@ -544,7 +582,7 @@ def save_bookmarks(items):
 
 def add_bookmark(t, label=""):
     items = load_bookmarks()
-    items.append({"t": t, "label": label})
+    items.append({"t": t, "label": clean_label(label, 120)})
     return save_bookmarks(items)
 
 
