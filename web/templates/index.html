@@ -1688,7 +1688,7 @@ function drawStrip() {
   $t('tl-flags').addEventListener('change', e => { const t = +e.target.value; if (t && PB) PB.transport.seek(t); });
   $t('tl-unflag').onclick = async () => { const t = +$t('tl-flags').value; if (!t || !PB) return;
     if (!FLAGS.user.some(f => f.t === t)) { $t('tl-note').textContent = 'Auto-detected pulls cannot be removed; flag your own with ⚑.'; return; }
-    try { await fetch(`/api/bookmarks?t=${t}`, { method: 'DELETE' }); } catch (e) { return; } loadFlags(PB.from, PB.to); };
+    try { await fetch(`/api/bookmarks?t=${t}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); } catch (e) { return; } loadFlags(PB.from, PB.to); };
   $t('tl-dock').onclick = () => setDock(DOCKS[(DOCKS.indexOf(dockMode()) + 1) % DOCKS.length]);
   addEventListener('resize', padForDock);
   $t('mode-btn').onclick = () => { if (isPlayback()) exitPlayback(); else enterPlayback(); };
@@ -1874,7 +1874,7 @@ document.getElementById('cal-zero').addEventListener('click', async () => {
   const j = await r.json();
   if (j.error) alert(j.error);
 });
-document.getElementById('cal-clear').addEventListener('click', async () => { await fetch('/api/calibration', { method: 'DELETE' }); });
+document.getElementById('cal-clear').addEventListener('click', async () => { await fetch('/api/calibration', { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }); });
 
 // ── Capacity degradation (daily means from /api/health) ──
 function drawDegradation(days) {

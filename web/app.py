@@ -60,7 +60,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, Response, jsonify, render_template, request, stream_with_context
+from flask import Flask, Response, abort, jsonify, render_template, request, stream_with_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from store import Store                 # noqa: E402
@@ -115,6 +115,59 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True   # the page is edited while the server runs; never serve a stale tile
 app.jinja_env.auto_reload = True
 _local = threading.local()
+
+# ── who may talk to this server ──────────────────────────────────────────
+# The dashboard is served on loopback (app.run binds 127.0.0.1). Every request
+# must also *name* a loopback host, and a request that changes something must
+# come from a page on one (its Origin) — or, from a tool with no Origin such as
+# curl or the tests, say it is sending JSON. HAKAKE_ALLOWED_HOSTS adds host
+# names for someone who deliberately serves the page elsewhere (comma list).
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+MUTATING = ("POST", "PUT", "DELETE", "PATCH")
+
+
+def allowed_hosts():
+    extra = env("HAKAKE_ALLOWED_HOSTS") or ""
+    return set(LOOPBACK_HOSTS) | {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def _hostname(netloc):
+    """'127.0.0.1:5000' -> '127.0.0.1'; '[::1]:5000' -> '[::1]'; lower-cased."""
+    netloc = (netloc or "").strip().lower()
+    if netloc.startswith("["):
+        return netloc[:netloc.find("]") + 1] if "]" in netloc else netloc
+    return netloc.rsplit(":", 1)[0] if netloc.count(":") == 1 else netloc
+
+
+@app.before_request
+def check_request_source():
+    hosts = allowed_hosts()
+    if _hostname(request.host) not in hosts:
+        abort(403)
+    if request.method in MUTATING:
+        origin = request.headers.get("Origin")
+        if origin is not None:
+            scheme, _, rest = origin.partition("://")
+            if scheme != "http" or _hostname(rest) not in hosts:
+                abort(403)
+        elif not request.is_json:
+            abort(403)
+
+
+# No third-party resource is loaded by either page; scripts and styles are this
+# server's own (plus the pages' inline blocks). connect-src also allows the
+# simulator's control API, which runs on another loopback port.
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; "
+       "object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Content-Security-Policy", CSP)
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
 
 
 def store():

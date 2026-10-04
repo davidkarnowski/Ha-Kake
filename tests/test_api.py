@@ -197,15 +197,15 @@ def test_layouts_save_list_load_delete(api):
     listed = api.get("/api/layouts").get_json()["layouts"]
     assert [l["name"] for l in listed] == ["night"]
 
-    loaded = api.post("/api/layouts/night/load").get_json()
+    loaded = api.post("/api/layouts/night/load", json={}).get_json()
     assert loaded["tiles"]
 
-    assert api.delete("/api/layouts/night").get_json() == {"deleted": True}
+    assert api.delete("/api/layouts/night", json={}).get_json() == {"deleted": True}
     assert api.get("/api/layouts").get_json() == {"layouts": []}
 
 
 def test_loading_an_unknown_layout_is_404(api):
-    assert api.post("/api/layouts/nope/load").status_code == 404
+    assert api.post("/api/layouts/nope/load", json={}).status_code == 404
 
 
 def test_saving_a_layout_with_a_blank_name_is_400(api):
@@ -237,7 +237,7 @@ def test_zero_current_uses_the_latest_raw_reading(api):
 
 def test_calibration_delete_clears(api):
     api.put("/api/calibration", json={"current_offset_a": 2.0})
-    assert api.delete("/api/calibration").get_json() == {}
+    assert api.delete("/api/calibration", json={}).get_json() == {}
     assert api.get("/api/calibration").get_json() == {}
 
 
@@ -401,9 +401,9 @@ def test_bookmarks_put_get_delete(api):
     assert (api.tmp / "bookmarks.json").exists()
     assert len(api.get("/api/bookmarks?from=1699999999&to=1700000001").get_json()["bookmarks"]) == 1
     assert api.put("/api/bookmarks", json={"t": "nope"}).status_code == 400
-    assert api.delete("/api/bookmarks").status_code == 400
-    assert api.delete("/api/bookmarks?t=1700000000.5").get_json() == {"deleted": True}
-    assert api.delete("/api/bookmarks?t=1700000000.5").get_json() == {"deleted": False}
+    assert api.delete("/api/bookmarks", json={}).status_code == 400
+    assert api.delete("/api/bookmarks?t=1700000000.5", json={}).get_json() == {"deleted": True}
+    assert api.delete("/api/bookmarks?t=1700000000.5", json={}).get_json() == {"deleted": False}
     assert len(api.get("/api/bookmarks").get_json()["bookmarks"]) == 1
 
 
@@ -494,3 +494,56 @@ def test_demo_mode_has_no_stream(api, monkeypatch, tmp_path):
     monkeypatch.setattr(webapp, "DEMO", str(tmp_path))
     r = api.get("/api/stream")
     assert r.status_code == 204                                       # EventSource will not retry a 204
+
+
+# ── who may talk to the server ───────────────────────────────────────────
+
+def test_a_request_naming_another_host_is_refused(api):
+    write_state(api)
+    assert api.get("/api/status", headers={"Host": "other.example"}).status_code == 403
+    assert api.get("/api/status", headers={"Host": "other.example:5000"}).status_code == 403
+    assert api.get("/api/status", headers={"Host": "127.0.0.1.other.example"}).status_code == 403
+    for host in ("localhost", "127.0.0.1:5000", "localhost:5055", "[::1]:5000"):
+        assert api.get("/api/status", headers={"Host": host}).status_code == 200, host
+
+
+def test_extra_hosts_can_be_allowed_deliberately(api, monkeypatch):
+    monkeypatch.setenv("HAKAKE_ALLOWED_HOSTS", "carpi.lan, dash.home")
+    assert api.get("/api/status", headers={"Host": "carpi.lan:5000"}).status_code == 200
+    assert api.get("/api/status", headers={"Host": "other.example"}).status_code == 403
+
+
+def test_a_change_from_a_page_elsewhere_is_refused(api):
+    body = {"current_offset_a": 0.5}
+    r = api.put("/api/calibration", json=body, headers={"Origin": "http://other.example"})
+    assert r.status_code == 403 and not (api.tmp / "calibration.json").exists()
+    assert api.put("/api/calibration", json=body, headers={"Origin": "https://127.0.0.1:5000"}).status_code == 403
+    assert api.put("/api/calibration", json=body, headers={"Origin": "null"}).status_code == 403
+    assert api.put("/api/calibration", json=body, headers={"Origin": "http://127.0.0.1:5000"}).status_code == 200
+
+
+def test_a_change_without_an_origin_must_say_it_is_json(api):
+    api.put("/api/layouts/minimal", json={})
+    r = api.post("/api/layouts/minimal/load", data="x", headers={"Content-Type": "text/plain"})
+    assert r.status_code == 403
+    r = api.post("/api/layouts/minimal/load", data="a=1", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert r.status_code == 403
+    assert api.post("/api/layouts/minimal/load", json={}).status_code == 200
+
+
+def test_reads_carry_no_origin_requirement_and_the_stream_still_opens(api):
+    write_state(api, soc=58.0)
+    assert api.get("/api/status", headers={"Origin": "http://other.example"}).status_code == 200
+    r = api.get("/api/stream", buffered=False)
+    try:
+        assert r.status_code == 200
+    finally:
+        r.close()
+
+
+def test_responses_carry_the_security_headers(api):
+    r = api.get("/api/status")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    csp = r.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
+    assert api.get("/").headers["Content-Security-Policy"] == csp

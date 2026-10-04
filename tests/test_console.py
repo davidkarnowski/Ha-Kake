@@ -682,7 +682,7 @@ def test_demo_mode_never_opens_the_file(api, monkeypatch):
 def test_the_endpoint_is_read_only(api):
     client, _ = api
     for method in ("post", "put", "delete"):
-        assert getattr(client, method)("/api/console").status_code == 405
+        assert getattr(client, method)("/api/console", json={}).status_code == 405
 
 
 # ── the tile: markup, page wiring and the pure half of console.js ──

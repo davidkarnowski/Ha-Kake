@@ -444,12 +444,12 @@
   });
   if ($('layout-load')) $('layout-load').addEventListener('click', async () => {
     const name = $('layout-sel').value; if (!name) return;
-    const r = await fetch(API.layouts + '/' + encodeURIComponent(name) + '/load', { method: 'POST' });
+    const r = await fetch(API.layouts + '/' + encodeURIComponent(name) + '/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (r.ok) await reloadLayout();
   });
   if ($('layout-del')) $('layout-del').addEventListener('click', async () => {
     const name = $('layout-sel').value; if (!name || !confirm(`Delete saved layout "${name}"?`)) return;
-    await fetch(API.layouts + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    await fetch(API.layouts + '/' + encodeURIComponent(name), { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
     await refreshLayouts();
   });
   async function reloadLayout() {

@@ -257,7 +257,7 @@ def test_alert_rules_survive_saved_layouts_and_the_cockpit_store(api):
     api.put("/api/layouts/quiet", json=api.get("/api/tiles").get_json())
     api.put("/api/tiles", json={"tiles": []})
     assert "alerts" not in api.get("/api/tiles").get_json()["tiles"][0].get("opts", {})
-    api.post("/api/layouts/quiet/load")
+    api.post("/api/layouts/quiet/load", json={})
     assert api.get("/api/tiles").get_json()["tiles"][0]["opts"]["alerts"][0]["min"] == 20.0
     sim = api.put("/api/sim/tiles", json={"tiles": [{"id": "vehicle", "opts": {"alerts": RULES[:3]}}]}).get_json()
     assert [r["signal"] for r in sim["tiles"][0]["opts"]["alerts"]] == ["soc", "door_any"]

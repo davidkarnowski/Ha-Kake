@@ -14,7 +14,13 @@
 ## Processes
 
 **`web/app.py`** — Flask, bound to 127.0.0.1. Serves the single-page dashboard
-and a small JSON API. Spawns **`web/reader.py`** as a supervised subprocess and
+and a small JSON API. Every request must name a loopback host (`Host`), and one
+that changes something (POST/PUT/DELETE) must come from a page on one (`Origin`)
+or, from a tool with no Origin such as curl, be sent as `application/json`;
+anything else gets 403. Responses carry `X-Content-Type-Options: nosniff` and a
+Content-Security-Policy that allows only the server's own scripts and styles
+(the pages load nothing third-party). `HAKAKE_ALLOWED_HOSTS` (comma list) adds
+host names for someone who deliberately serves the page elsewhere. Spawns **`web/reader.py`** as a supervised subprocess and
 restarts it if it exits (a crash costs seconds, not the page). Each request
 thread gets its own SQLite connection — sharing one segfaulted (2026-08-24).
 

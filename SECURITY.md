@@ -80,6 +80,9 @@ broker, Pi or car.
   anything other than their own JSON files (`web/tiles.json`,
   `web/sim_tiles.json`, `web/calibration.json`, `web/layouts.json`,
   `web/bookmarks.json`).
+- A request reaching the API from a page on another origin, or naming a host
+  other than a loopback one: the server checks `Host` on every request, and
+  `Origin` (or a JSON content type) on every change.
 - The simulator's control API (`hakake_sim.py`, `127.0.0.1` only, no
   authentication) reaching anything but the in-memory model — it can put a
   fault on a dashboard someone is reading, and it must never be exposed.
