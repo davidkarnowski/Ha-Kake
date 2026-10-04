@@ -118,10 +118,13 @@ CORS_HEADERS = ("Access-Control-Allow-Origin",
                 "Access-Control-Allow-Methods")
 
 
-def _raw(base, method, path):
+COCKPIT = "http://127.0.0.1:5000"          # the dashboard's /sim page: another loopback origin
+
+
+def _raw(base, method, path, headers=None, data=None):
     """One request, returning (status, headers, body-bytes) — the `api` fixture's
     client parses JSON and throws the headers away, and headers are the point."""
-    req = urllib.request.Request(base + path, method=method)
+    req = urllib.request.Request(base + path, method=method, headers=headers or {}, data=data)
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, r.headers, r.read()
@@ -130,11 +133,11 @@ def _raw(base, method, path):
 
 
 def test_the_preflight_is_a_204_with_the_cors_headers_and_no_body(api):
-    status, headers, body = _raw(api.base, "OPTIONS", "/sim/knobs")
+    status, headers, body = _raw(api.base, "OPTIONS", "/sim/knobs", {"Origin": COCKPIT})
     assert status == 204
     for h in CORS_HEADERS:
         assert headers.get(h), f"preflight is missing {h}"
-    assert headers.get("Access-Control-Allow-Origin") == "*"
+    assert headers.get("Access-Control-Allow-Origin") == COCKPIT
     assert "OPTIONS" in headers.get("Access-Control-Allow-Methods")
     assert "content-type" in headers.get("Access-Control-Allow-Headers").lower()
     # the regression that already happened once: a 204 must carry nothing
@@ -145,9 +148,9 @@ def test_the_preflight_is_a_204_with_the_cors_headers_and_no_body(api):
 
 def test_an_ordinary_json_response_carries_the_same_origin_header(api):
     """The preflight is worthless if the real request is not allowed too."""
-    status, headers, body = _raw(api.base, "GET", "/sim/state")
+    status, headers, body = _raw(api.base, "GET", "/sim/state", {"Origin": COCKPIT})
     assert status == 200
-    assert headers.get("Access-Control-Allow-Origin") == "*"
+    assert headers.get("Access-Control-Allow-Origin") == COCKPIT
     assert headers.get("Content-Type") == "application/json"
     assert json.loads(body.decode())["simulated"] is True
 
@@ -497,3 +500,46 @@ def test_record_is_501_not_500_on_a_core_whose_model_lacks_record():
         assert "record()" in body["error"] and body["simulated"] is True
     finally:
         httpd.shutdown()
+
+
+# ── who may call it ──────────────────────────────────────────────────────
+
+def test_cors_answers_loopback_origins_only(api):
+    for origin in ("https://example.com", "http://example.com:5000", "http://127.0.0.1.example.com", "null"):
+        status, headers, _ = _raw(api.base, "GET", "/sim/state", {"Origin": origin})
+        assert status == 200 and headers.get("Access-Control-Allow-Origin") is None, origin
+    status, headers, _ = _raw(api.base, "GET", "/sim/state")
+    assert headers.get("Access-Control-Allow-Origin") is None             # no Origin, nothing to allow
+
+
+def test_a_request_naming_another_host_is_refused(api):
+    status, _, _ = _raw(api.base, "GET", "/sim/state", {"Host": "other.example:8099"})
+    assert status == 403
+    status, _, _ = _raw(api.base, "GET", "/sim/state", {"Host": "localhost:8099"})
+    assert status == 200
+
+
+def test_a_write_from_a_page_elsewhere_changes_nothing(api):
+    before = api("GET", "/sim/knobs")[1]
+    body = json.dumps({"soc": 12}).encode()
+    status, _, _ = _raw(api.base, "POST", "/sim/knobs",
+                        {"Origin": "https://example.com", "Content-Type": "application/json"}, body)
+    assert status == 403
+    status, _, _ = _raw(api.base, "POST", "/sim/knobs", {"Content-Type": "text/plain"}, body)
+    assert status == 403                                                  # no Origin and not JSON
+    assert api("GET", "/sim/knobs")[1] == before
+    status, _, _ = _raw(api.base, "POST", "/sim/knobs",
+                        {"Origin": COCKPIT, "Content-Type": "application/json"}, body)
+    assert status == 200
+
+
+def test_over_http_a_scenario_is_loaded_by_name_only(api, tmp_path):
+    real = tmp_path / "s.json"
+    real.write_text('{"timeline": []}')
+    a = api("POST", "/sim/scenario", {"path": str(real)})
+    b = api("POST", "/sim/scenario", {"path": str(tmp_path / "missing.json")})
+    c = api("POST", "/sim/scenario", {"name": str(real)})
+    assert a[0] == b[0] == c[0] == 400
+    assert a[1]["scenarios"] == b[1]["scenarios"]                          # same answer, file or no file
+    assert "drive" in a[1]["scenarios"]
+    assert api("POST", "/sim/scenario", {"name": "drive"})[0] == 200

@@ -267,7 +267,8 @@ class _NullLock:
 #   GET  /sim/info        vehicle, seed, scenario, uptime
 #   GET  /health          {"ok": true}
 #   POST /sim/knobs       {"soc": 20, "fault.cell_degraded": true}
-#   POST /sim/scenario    {"name": "drive"}  or {"path": "..."};
+#   POST /sim/scenario    {"name": "drive"} — shipped scenarios by name (a file
+#                         path is the CLI's --scenario, never this route's);
 #                         {"name": ""} (or null) clears the scenario — the
 #                         model free-runs from where it is
 #   POST /sim/power       {"brake": true}      — one push of the car's power
@@ -280,6 +281,28 @@ class _NullLock:
 # Unknown knob → 400 with near matches. Never a 500 for a typo. A capability
 # the core lacks (record, clear_scenario) is a 501/400 that says so, never a
 # 500 — the Lancer core has no record() and that is how it hides Leaf tiles.
+#
+# Who may call it: the API binds 127.0.0.1, and every request must also name a
+# loopback host. A POST must come from a page on a loopback origin, or — from a
+# tool that sends no Origin, such as curl — be sent as application/json. CORS
+# answers only loopback origins (the cockpit on the dashboard's port is one).
+# Over HTTP a scenario is loaded by its shipped name; a file path is a CLI-only
+# option (--scenario), where the person typing it is the one choosing the file.
+
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+
+def _hostname(netloc):
+    netloc = (netloc or "").strip().lower()
+    if netloc.startswith("["):
+        return netloc[:netloc.find("]") + 1] if "]" in netloc else netloc
+    return netloc.rsplit(":", 1)[0] if netloc.count(":") == 1 else netloc
+
+
+def loopback_origin(origin):
+    scheme, _, rest = (origin or "").partition("://")
+    return scheme == "http" and _hostname(rest) in LOOPBACK_HOSTS
+
 
 def make_handler(sim, lock, log):
     lock = lock or threading.RLock()
@@ -302,11 +325,14 @@ def make_handler(sim, lock, log):
             if body:
                 self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
-            # A simulator control port is loopback-only, but a browser tab on
-            # the dashboard is a natural client, so allow it explicitly.
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers", "content-type")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            # The cockpit on the dashboard's port is a different origin on the
+            # same machine; answer loopback origins only, by name.
+            origin = self.headers.get("Origin")
+            if origin and loopback_origin(origin):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+                self.send_header("Access-Control-Allow-Headers", "content-type")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.end_headers()
             if body:
                 self.wfile.write(body)
@@ -323,7 +349,21 @@ def make_handler(sim, lock, log):
             with lock:
                 return getattr(sim, name)(*a, **kw)
 
+        def _refused(self, write=False):
+            """Send 403 and return True unless the request names a loopback host
+            and, for a write, comes from a loopback origin or is JSON."""
+            ok = _hostname(self.headers.get("Host")) in LOOPBACK_HOSTS
+            if ok and write:
+                origin = self.headers.get("Origin")
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                ok = loopback_origin(origin) if origin is not None else ctype == "application/json"
+            if not ok:
+                self._send(403, {"error": "this control API answers this machine only"})
+            return not ok
+
         def do_OPTIONS(self):
+            if self._refused():
+                return
             self._send(204, {})
 
         # ── reads ────────────────────────────────────────────────────────
@@ -338,6 +378,8 @@ def make_handler(sim, lock, log):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self._refused():
+                return
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
             try:
                 if path in ("/", "/panel", "/sim/panel"):
@@ -409,6 +451,8 @@ def make_handler(sim, lock, log):
         # ── writes ───────────────────────────────────────────────────────
 
         def do_POST(self):
+            if self._refused(write=True):
+                return
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
             try:
                 body = self._body()
@@ -442,6 +486,11 @@ def make_handler(sim, lock, log):
                     if not name:
                         return self._send(400, {"error": 'expected {"name": "drive"}, {"path": "..."} '
                                                          'or {"name": ""} to clear'})
+                    shipped = scenario_list()
+                    if "path" in body or str(name) not in shipped:
+                        return self._send(400, {"error": f"no shipped scenario named {str(name)!r} "
+                                                         "(over HTTP scenarios are loaded by name)",
+                                                "scenarios": shipped})
                     try:
                         self._call("load_scenario", name)
                     except (ValueError, KeyError, FileNotFoundError) as e:

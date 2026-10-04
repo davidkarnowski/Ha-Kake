@@ -136,8 +136,8 @@ dashboard's own styled tiles (four of `web/templates/tiles/*.html` — vehicle,
 tires, body and climate; the fifth, the 3D pack, is not in the cockpit),
 `web/static/tiles.js`) — so what you drive here looks exactly like what the
 dashboard shows. Its JavaScript talks to the control API cross-origin
-(the API sends `Access-Control-Allow-Origin: *` on JSON and answers
-`OPTIONS` with 204).
+(the API names the cockpit's loopback origin in
+`Access-Control-Allow-Origin` and answers `OPTIONS` with 204).
 
 **It always renders.** With no simulator behind it — the dashboard was
 started on a real adapter, or with `--no-sim-control` — the page shows the
@@ -768,9 +768,12 @@ python web/app.py --adapter sim --sim-serial "$PTY" --sim-control 8099 --port 50
 ### 3. The control API
 
 Loopback only (`127.0.0.1`), stdlib `http.server`, no authentication, no new
-dependency. Every JSON response carries `"simulated": true` and
-`Access-Control-Allow-Origin: *` (the cockpit calls it from the dashboard's
-origin); `OPTIONS` answers 204 with the three CORS headers and **no body** — a
+dependency. Every request must name a loopback host (403 otherwise), and a
+`POST` must come from a page on a loopback origin or, from a tool with no
+`Origin` such as curl, be sent as `application/json`. Every JSON response
+carries `"simulated": true`; when the request comes from a loopback origin
+(the cockpit, on the dashboard's port) that origin is named in
+`Access-Control-Allow-Origin`, and no other is. `OPTIONS` answers 204 with the three CORS headers and **no body** — a
 204 that carries one may make a browser reject the preflight and with it the
 real request, which happened once and is now pinned by
 `tests/test_sim_control.py`.
@@ -787,7 +790,7 @@ real request, which happened once and is now pinned by
 | GET | `/health` (also `/sim/health`) | — | `{"ok": true, "simulated": true}` |
 | GET | `/`, `/panel`, `/sim/panel` | — | the **fallback panel** (HTML) |
 | POST | `/sim/knobs` | `{"soc": 20, "fault.cell_degraded": true}` | `{"applied": {...}}` |
-| POST | `/sim/scenario` | `{"name": "drive"}` or `{"path": "..."}` | the loaded scenario and its knobs |
+| POST | `/sim/scenario` | `{"name": "drive"}` — a shipped scenario by name (a file path is the CLI's `--scenario`, not this route's) | the loaded scenario and its knobs; 400 with the shipped list otherwise |
 | POST | `/sim/scenario` | `{"name": ""}` (or `null`) | **clears** the scenario: the timeline stops, every knob stays where it is, the model free-runs. 400 on a core with no `clear_scenario()` |
 | POST | `/sim/power` | `{"brake": true}` | one push of the car's power switch: `{"start_state", "gear", "message", "accepted"}` — **501** when the core has no `press_power()`. See [The power button](#the-power-button) |
 | POST | `/sim/reset` | `{}` | every knob back to its schema default |
