@@ -1291,6 +1291,18 @@ python tools/compare_sessions.py tests/fixtures/session_leaf_ze0_pull_sim.json o
 
 Each side is a fixture, a readings database, or a captured `rx/#` stream
 (`mosquitto_sub -F '{"topic":"%t","payload":%p}'` on the bridge, or the rig's).
+A database is opened read-only (`Store(readonly=True)`) — comparing never
+changes it, whichever profile is decoding — and since it usually holds every
+drive, narrow it to the pull with `--obs-from/--obs-to` (or `--exp-from/--exp-to`
+for the expected side; epoch seconds or an ISO time, local unless `Z`):
+
+```bash
+python tools/compare_sessions.py tests/fixtures/session_leaf_ze0_pull_sim.json web/leaf_battery.db \
+    --obs-from 2026-10-05T12:10:00 --obs-to 2026-10-05T12:12:00
+```
+
+Without a window, a database spanning more than two hours gets a warning:
+its figures would cover every drive in it.
 It prints, side by side with the difference: peak current and its time,
 speed and power; time to peak from the pull's start; the lowest cell pair
 and which; pack sag from rest; SOC drop over the pull and the whole run;

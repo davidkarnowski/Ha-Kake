@@ -195,3 +195,64 @@ def test_format_report_handles_missing_values():
     text = cs.format_report(r, series([]), series([], synthetic=False))
     assert "—" in text and "peak current (A)" in text
     assert cs._fmt(None) == "—" and cs._fmt(0.5) == "0.5" and cs._fmt(1234.5) == "1,234.5"
+
+
+# ── a database is only ever looked at ────────────────────────────────────
+
+def _two_pull_db(path):
+    """A Leaf readings database with two pulls three hours apart: -120 A, then -250 A."""
+    import vehicles
+    s = Store(str(path), vehicle=vehicles.get_vehicle("leaf_ze0"))
+    base = dt.datetime(2026, 10, 4, 12, 0, tzinfo=dt.timezone.utc)
+    for start, peak in ((0, -120.0), (3 * 3600, -250.0)):
+        for k in range(10):
+            ts = base + dt.timedelta(seconds=start + k)
+            s.insert_reading({"soc": 70.0, "pack_v": 380.0, "current_a": peak if k == 5 else -2.0},
+                             ts=ts)
+    s.close()
+    return base.timestamp()
+
+
+def _fingerprint(path):
+    import hashlib
+    import sqlite3
+    with open(path, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(readings)")]
+        meta = c.execute("SELECT * FROM meta").fetchall()
+    finally:
+        c.close()
+    return sha, cols, meta
+
+
+def test_loading_a_database_never_changes_it(tmp_path):
+    db = tmp_path / "drive.db"
+    _two_pull_db(db)
+    before = _fingerprint(db)
+    cs.load_db(str(db))
+    cs.load_db(str(db), vehicle="lancer_2009")          # another profile looking: no columns added
+    assert _fingerprint(db) == before
+
+
+def test_a_window_narrows_the_comparison_to_one_pull(tmp_path):
+    db = tmp_path / "drive.db"
+    t0 = _two_pull_db(db)
+    warned = []
+    whole = cs.load_db(str(db), warn=warned.append)
+    assert warned and "spans 3.0 h" in warned[0]
+    assert cs.metrics(whole)["peak_a"] == -250.0                  # the later, harder pull
+    first = cs.load_db(str(db), t_from=t0 - 1, t_to=t0 + 60)
+    assert cs.metrics(first)["peak_a"] == -120.0
+    assert cs.parse_when("2026-10-04T12:00:00Z") == t0
+
+
+def test_the_cli_window_flags_reach_the_loader(tmp_path, capsys):
+    db = tmp_path / "drive.db"
+    _two_pull_db(db)
+    assert cs.main([str(db), str(db), "--json", "--obs-from", "2026-10-04T15:00:00Z",
+                    "--obs-to", "2026-10-04T15:10:00Z", "--exp-from", "2026-10-04T12:00:00Z",
+                    "--exp-to", "2026-10-04T12:10:00Z"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["expected"]["peak_a"] == -120.0 and out["observed"]["peak_a"] == -250.0

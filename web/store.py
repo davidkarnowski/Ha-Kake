@@ -136,13 +136,28 @@ def _iso_z(d):
 
 
 class Store:
-    def __init__(self, path=None, vehicle=None):
+    def __init__(self, path=None, vehicle=None, readonly=False):
         """`vehicle` is a profile module, a profile name, or None for the one
-        the process has bound (reader.set_vehicle → vehicles.active_vehicle)."""
+        the process has bound (reader.set_vehicle → vehicles.active_vehicle).
+
+        `readonly=True` is for tools that only look (compare_sessions, analysis):
+        the file is opened through a read-only URI, nothing is created, migrated
+        or switched to WAL, and the columns read are the profile's that the file
+        actually has — so looking at a database can never change it, whichever
+        profile is doing the looking."""
         self.vehicle = active_vehicle(vehicle)
         self.vname = self.vehicle.NAME
         self.cols = history_cols(self.vehicle)
         self.path = path or self._default_path()
+        self.readonly = bool(readonly)
+        if self.readonly:
+            import pathlib
+            uri = pathlib.Path(self.path).resolve().as_uri() + "?mode=ro"
+            self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            have = {r["name"] for r in self.conn.execute("PRAGMA table_info(readings)")}
+            self.cols = {c: spec for c, spec in self.cols.items() if c in have}
+            return
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")

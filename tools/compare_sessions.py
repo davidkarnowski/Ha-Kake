@@ -115,24 +115,53 @@ def load_fixture(path, vehicle=None):
             "frame_width_s": width, "note": doc.get("notes", "")}
 
 
-def load_db(path, vehicle=None):
+# A readings database usually holds far more than one pull: the owner's holds
+# every drive since August. Without a window the comparison would take the
+# all-time peak, the first rest voltage ever and SOC from months ago.
+WIDE_DB_S = 2 * 3600
+
+
+def parse_when(v):
+    """Epoch seconds or an ISO time ('2026-10-04T18:05:00', Z or offset) → epoch."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        import datetime as dt
+        d = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.astimezone()                    # a bare time is this machine's local time
+        return d.timestamp()
+
+
+def load_db(path, vehicle=None, t_from=None, t_to=None, warn=None):
     """A readings database → series, through `Store.frames()` (the same rows
-    Playback draws). Opened read-only."""
-    import sqlite3
+    Playback draws). Opened read-only (`Store(readonly=True)`): looking at a
+    database never changes it. `t_from`/`t_to` (epoch) narrow it to one pull."""
     from store import Store
 
-    ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    if not os.path.exists(path):
+        raise ValueError(f"{path}: no such database")
+    st = Store(path, vehicle=None, readonly=True)
     try:
-        names = [r[0] for r in ro.execute("SELECT DISTINCT vehicle FROM readings")]
-        meta = dict(ro.execute("SELECT key, value FROM meta").fetchall())
+        names = [r[0] for r in st.conn.execute("SELECT DISTINCT vehicle FROM readings")]
+        meta = dict(st.conn.execute("SELECT key, value FROM meta").fetchall())
     finally:
-        ro.close()
-    vehicle = vehicle or (names[0] if names else None)
-    st = Store(path, vehicle=vehicle)
+        st.close()
+    vehicle = vehicle or next((n for n in names if n), None)
+    st = Store(path, vehicle=vehicle, readonly=True)
     try:
         t0, t1 = st.conn.execute("SELECT MIN(ts_epoch), MAX(ts_epoch) FROM readings").fetchone()
         if t0 is None:
             raise ValueError(f"{path}: no readings")
+        if t_from is None and t_to is None and t1 - t0 > WIDE_DB_S and warn:
+            warn(f"{path} spans {(t1 - t0) / 3600:.1f} h with no window: the figures cover all of it. "
+                 f"Pass --obs-from/--obs-to (or --exp-from/--exp-to) around the pull.")
+        t0 = t0 if t_from is None else max(t0, t_from)
+        t1 = t1 if t_to is None else min(t1, t_to)
+        if t1 < t0:
+            raise ValueError(f"{path}: no readings in the requested window")
         fr = st.frames(t0, t1, max_points=100000, cells=True)
     finally:
         st.close()
@@ -206,10 +235,10 @@ def load_stream(path, vehicle=None, period=0.5):
     return series
 
 
-def load_series(path, vehicle=None):
+def load_series(path, vehicle=None, t_from=None, t_to=None, warn=None):
     ext = os.path.splitext(path)[1].lower()
     if ext == ".db":
-        return load_db(path, vehicle)
+        return load_db(path, vehicle, t_from=t_from, t_to=t_to, warn=warn)
     if ext == ".jsonl":
         return load_stream(path, vehicle)
     return load_fixture(path, vehicle)
@@ -385,10 +414,16 @@ def main(argv=None):
                     help=f"a pull starts when current goes below -AMPS (default {DEFAULT_AMPS:g})")
     ap.add_argument("--vehicle", default=None, help="profile for decoding (default: the input's)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    for side in ("exp", "obs"):
+        ap.add_argument(f"--{side}-from", default=None, metavar="WHEN",
+                        help=f"{'expected' if side == 'exp' else 'observed'} .db: start of the window "
+                             "(epoch seconds or ISO time, local unless Z/offset)")
+        ap.add_argument(f"--{side}-to", default=None, metavar="WHEN", help="… and its end")
     args = ap.parse_args(argv)
+    warn = lambda m: print(f"warning: {m}", file=sys.stderr)    # noqa: E731
     try:
-        exp = load_series(args.expected, args.vehicle)
-        obs = load_series(args.observed, args.vehicle)
+        exp = load_series(args.expected, args.vehicle, parse_when(args.exp_from), parse_when(args.exp_to), warn)
+        obs = load_series(args.observed, args.vehicle, parse_when(args.obs_from), parse_when(args.obs_to), warn)
     except (OSError, ValueError, json.JSONDecodeError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
