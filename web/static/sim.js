@@ -159,14 +159,28 @@
   // ── where the control API is ──
   // ?control= in the URL → what app.py knew at startup → what the reader
   // publishes in /api/status (the port it really bound, e.g. --sim-control 0).
+  // The control API always runs on this machine (hakake_sim.py binds 127.0.0.1),
+  // so only an http URL on a loopback host is accepted from any of the three
+  // sources; anything else is ignored and the notice says why.
+  const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+  function loopbackUrl(u) {
+    let url;
+    try { url = new URL(String(u)); } catch (e) { return null; }
+    if (url.protocol !== 'http:' || !LOOPBACK.has(url.hostname)) return null;
+    return url.origin;
+  }
   async function resolveControl() {
     const q = new URLSearchParams(location.search).get('control');
-    if (q) return q.replace(/\/+$/, '');
-    if (window.SIM_CONTROL_URL) return String(window.SIM_CONTROL_URL).replace(/\/+$/, '');
+    if (q) {
+      const ok = loopbackUrl(q);
+      if (ok) return ok;
+      showNotice(null, 'The control URL must be on this machine (http://127.0.0.1:<port>); ignoring ?control=.');
+    }
+    if (window.SIM_CONTROL_URL && loopbackUrl(window.SIM_CONTROL_URL)) return loopbackUrl(window.SIM_CONTROL_URL);
     for (let i = 0; i < 40; i++) {
       let st = null;
       try { st = await (await fetch('/api/status')).json(); } catch (e) { /* dashboard offline */ }
-      if (st && st.sim_control_url) return String(st.sim_control_url).replace(/\/+$/, '');
+      if (st && st.sim_control_url && loopbackUrl(st.sim_control_url)) return loopbackUrl(st.sim_control_url);
       const simulated = !!(st && st.simulated);
       if (!simulated && i >= 1) return null;       // not a simulated run: say how to start one
       showNotice(simulated ? 'waiting' : null);   // simulated, port not published yet: keep asking
@@ -862,7 +876,7 @@
   function paintTime() {
     const clock = document.getElementById('tm-clock'); if (!clock) return;
     const ts = INFO.time_scale;
-    clock.innerHTML = (ts == null ? '--' : ts + '×') + '<small>simulated s per real s</small>';
+    clock.innerHTML = (typeof ts === 'number' && isFinite(ts) ? ts + '×' : '--') + '<small>simulated s per real s</small>';
     $('#tm-src').textContent = 'Source: ' + (INFO.time_scale_source || 'unknown') + (INFO.time_scale_max ? ` · clamped to ${INFO.time_scale_max}× at most` : '') + '.';
     const t = typeof REC.sim_t === 'number' ? REC.sim_t : (typeof REC.t === 'number' ? REC.t : null);
     $('#tm-elapsed').textContent = t == null ? '--' : fmtDur(t);

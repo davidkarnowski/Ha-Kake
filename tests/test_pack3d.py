@@ -222,7 +222,7 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "Tiles.cellColor(val, f.min, f.max)" in js                      # exactly the grid's call
     assert "LeafSpy" not in js and "№" not in js                             # no third-party app names in the UI
     # pairs are numbered 1–96 on screen (the manual's count); indices stay 0-based underneath
-    assert "${md.name} <b>${v + 1}</b>" in js and "`${b.v + 1} · ${cells[b.v]}`" in js and "${mode().name} ${vs.map(v => v + 1).join(' & ')}" in js
+    assert "${E(md.name)} <b>${v + 1}</b>" in js and "`${b.v + 1} · ${cells[b.v]}`" in js and "${mode().name} ${vs.map(v => v + 1).join(' & ')}" in js
     assert "function valuesOf(data)" in js and "MODES = (pack.modes && pack.modes.length)" in js   # value modes from the profile
     assert "if (md.invert) t = 1 - t;" in js                                                    # temperatures: hot is red
     with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
@@ -233,7 +233,7 @@ def test_tile_matches_the_grid_colours_and_carries_its_tools():
     assert "s.mesh.material.color.copy(c)" in js                           # sensor balls colour-mapped
     assert "function paintPane(i, cells, f, sc)" in js and "pack3d-pane-close" in js
     assert "TileStudio.size('pack3d', null, state.baseH * 2)" in js        # expand doubles the real height
-    assert "flash the lowest ${md.name} white and the highest blue" in js and "state.flashing = flashing" in js
+    assert "flash the lowest ${E(md.name)} white and the highest blue" in js and "state.flashing = flashing" in js
     assert "Flash all below" in js and 'data-k="flashBelow"' in js and 'data-k="flashAbove"' in js   # threshold flashes
     assert "if (below > 0 && cells[v] < below) add(v, WHITE);" in js and "if (above > 0 && cells[v] > above) add(v, BLUE);" in js
     assert "RoundedBoxGeometry(b0.sx, b0.sy, b0.sz, 2, r)" in js              # rounded like the real module

@@ -146,7 +146,9 @@ order: `?control=http://127.0.0.1:PORT` in the URL (what the `--pty` rig's
 printed cockpit link carries), then the URL `web/app.py` knew at startup,
 then `sim_control_url` from `/api/status` (how `--sim-control 0` is found;
 the page keeps asking while the reader says it is simulated and has not
-published a port yet).
+published a port yet). Whichever source it comes from, the URL must be `http://`
+on this machine (`127.0.0.1`, `localhost` or `[::1]`); anything else is ignored
+and the notice says so — the control API only ever runs locally.
 
 **What is on it**, top to bottom by default — every card can be dragged by
 its title, resized or hidden from its ⋯ menu, and the arrangement persists

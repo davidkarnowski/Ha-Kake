@@ -419,7 +419,10 @@ power, history, degradation, cells, and the 3D pack — five of which (vehicle,
 tires, body, climate, pack3d) are `{% include %}`d from
 `web/templates/tiles/*.html`; the first four are painted by
 `web/static/tiles.js`, so the cockpit can host the same markup from the same
-record. Those are Leaf assets: they belong to whichever profile lists them in
+record. Those renderers build markup from numbers only (a non-number shows
+`--`), and every other script that puts a string it did not write into markup —
+a tile title, a layout name, a flag label, a signal label or unit — passes it
+through `Html.esc` from `web/static/html.js`, loaded first on both pages. Those are Leaf assets: they belong to whichever profile lists them in
 `TILES`, and for a profile that lists none (the Lancer's `TILES = []`)
 `tilestudio.js` takes them out of the grid and hides the cards rather than
 leaving twelve that will never take a value.

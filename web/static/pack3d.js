@@ -31,6 +31,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
+// Text from the profile or the record goes through Html.esc (web/static/html.js,
+// loaded before this module) before it becomes markup.
+const E = v => window.Html.esc(v);
+
 const VIEWS = { iso: [1500, 1300, 1700], top: [1, 2600, 1], rear: [-2100, 700, 0], driver: [200, 650, -2300] };
 // scale 'abs' is the cell grid's own colouring, so a pair reads the same colour side by side
 const DEFAULT_OPTS = { scale: 'abs', labels: 'minmax', case: 0.14, view: 'iso', spin: false, flash: true, flashBelow: '', flashAbove: '', mode: '',
@@ -218,8 +222,8 @@ function paint() {
     if (above > 0 && cells[v] > above) add(v, BLUE);
   }
   state.flashing = flashing;
-  state.thresholdNote = (below > 0 ? ` · ${cells.filter(v => v < below).length} below ${below} ${md.unit}` : '') +
-                        (above > 0 ? ` · ${cells.filter(v => v > above).length} above ${above} ${md.unit}` : '');
+  state.thresholdNote = (below > 0 ? ` · ${cells.filter(v => v < below).length} below ${below} ${E(md.unit)}` : '') +
+                        (above > 0 ? ` · ${cells.filter(v => v > above).length} above ${above} ${E(md.unit)}` : '');
   const lmode = state.opts.labels, labelled = new Set();
   for (const b of bodies) {
     const first = !labelled.has(b.v);                    // a shared value is labelled on its first body only
@@ -258,21 +262,21 @@ function readout(i, cells, f) {
   const sj = state.hoverSensor >= 0 ? state.hoverSensor : (i < 0 ? state.pinnedSensor : -1);
   if (sj >= 0 && sensors[sj]) {
     const s = sensors[sj]; hoverBox.visible = false;
-    note.innerHTML = s.f == null ? `sensor <b>${s.n}</b> · ${s.where} · no reading yet`
+    note.innerHTML = s.f == null ? `sensor <b>${s.n}</b> · ${E(s.where)} · no reading yet`
       : `sensor <b>${s.n}</b> · <b style="color:${s.css}">${s.f.toFixed(1)} °F</b> · ${s.c.toFixed(1)} °C` +
-        (state.tempMeanF != null ? ` · ${sign(s.f - state.tempMeanF)} °F vs pack mean` : '') + ` · ${s.where}` + (state.pinnedSensor === sj ? ' · pinned' : '');
+        (state.tempMeanF != null ? ` · ${sign(s.f - state.tempMeanF)} °F vs pack mean` : '') + ` · ${E(s.where)}` + (state.pinnedSensor === sj ? ' · pinned' : '');
     return;
   }
   if (i < 0 || !bodies[i]) {
     hoverBox.visible = false;
     const md = mode();
-    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} ${md.unit}</b> · mean <b>${f.mean.toFixed(0)} ${md.unit}</b> · lowest ${md.name} <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a ${md.name}, click to pin`;
+    note.innerHTML = `spread <b>${(f.max - f.min).toFixed(0)} ${E(md.unit)}</b> · mean <b>${f.mean.toFixed(0)} ${E(md.unit)}</b> · lowest ${E(md.name)} <b>${f.imin + 1}</b> · highest <b>${f.imax + 1}</b>${state.thresholdNote || ''} · hover a ${E(md.name)}, click to pin`;
     return;
   }
   const md = mode(), b = bodies[i], v = b.v, dev = cells[v] - f.mean, drop = state.rest ? cells[v] - state.rest[v] : null;
-  note.innerHTML = `${md.name} <b>${v + 1}</b> · <b>${cells[v]} ${md.unit}</b> · ${sign(dev)} ${md.unit} vs mean` +
-    (drop == null || !md.scales.includes('drop') ? '' : ` · ${sign(drop)} ${md.unit} from rest`) + ` · module ${b.m + 1} of ${modules.length} · ${b.loc}` +
-    (b.verify ? ` <span class="verify" title="${b.verify}">(stack order assumed)</span>` : '') +
+  note.innerHTML = `${E(md.name)} <b>${v + 1}</b> · <b>${E(cells[v])} ${E(md.unit)}</b> · ${sign(dev)} ${E(md.unit)} vs mean` +
+    (drop == null || !md.scales.includes('drop') ? '' : ` · ${sign(drop)} ${E(md.unit)} from rest`) + ` · module ${b.m + 1} of ${modules.length} · ${E(b.loc)}` +
+    (b.verify ? ` <span class="verify" title="${E(b.verify)}">(stack order assumed)</span>` : '') +
     (state.pinned === i ? ' · pinned' : '');
   hoverBox.visible = state.hover === i;
   hoverBox.position.set(b.cx, b.cy, b.cz); hoverBox.scale.set(b.sx + 4, b.sy + 4, b.sz + 4);
@@ -312,8 +316,8 @@ function paintPane(i, cells, f, sc) {
     const css = pairCss(val, f, v, sc);                           // the value's own colour, as the grid paints it
     const sharedBy = b.shared ? modules.filter(x => valuesOfModule(x.m).includes(v)).map(x => x.m + 1) : null;
     return `<div class="pack3d-pane-pair ${v === b.v ? 'on' : ''}" style="border-left-color:${css}">
-      <div class="k">${md.name} ${v + 1} <small>${sharedBy ? 'modules ' + sharedBy.join('–') : 'module ' + (b.m + 1)}</small></div>
-      <div class="v" style="color:${css}">${val}<small>${u}</small></div>
+      <div class="k">${E(md.name)} ${v + 1} <small>${sharedBy ? 'modules ' + sharedBy.join('–') : 'module ' + (b.m + 1)}</small></div>
+      <div class="v" style="color:${css}">${val}<small>${E(u)}</small></div>
       <div class="rows"><span>vs mean</span><b>${sign(dev)} ${u}</b>
         ${md.scales.includes('drop') ? `<span>from rest</span><b>${drop == null ? '—' : sign(drop) + ' ' + u}</b>` : ''}
         <span>rank</span><b>${ordinal(rank)} lowest${rank === 1 ? ' ⚑' : rank === cells.length ? ' ▲' : ''}</b>
@@ -328,18 +332,18 @@ function paintPane(i, cells, f, sc) {
     const modRank = modAvgs.map((v, k) => [v, k]).sort((a, c) => a[0] - c[0]).findIndex(x => x[1] === b.m) + 1;
     const modSpreads = modules.map(x => { const a = mv(x.m); return Math.max(...a) - Math.min(...a); });
     const spreadRank = modSpreads.map((v, k) => [v, k]).sort((a, c) => c[0] - a[0]).findIndex(x => x[1] === b.m) + 1;
-    modHtml = `<div class="pack3d-pane-mod"><div class="k">module ${b.m + 1} — all ${vs.length} ${md.name}s</div>
-      <div class="two"><div><div class="k">spread</div><div class="v">${spread}<small>${u}</small></div></div>
-        <div><div class="k">average</div><div class="v" style="color:${pairCss(avg, f, b.v, sc)}">${avg.toFixed(0)}<small>${u}</small></div></div></div>
+    modHtml = `<div class="pack3d-pane-mod"><div class="k">module ${b.m + 1} — all ${vs.length} ${E(md.name)}s</div>
+      <div class="two"><div><div class="k">spread</div><div class="v">${spread}<small>${E(u)}</small></div></div>
+        <div><div class="k">average</div><div class="v" style="color:${pairCss(avg, f, b.v, sc)}">${avg.toFixed(0)}<small>${E(u)}</small></div></div></div>
       <div class="rows"><span>average vs pack</span><b>${sign(avg - f.mean)} ${u}</b>
         <span>average rank</span><b>${ordinal(modRank)} lowest of ${modules.length}</b>
         <span>spread rank</span><b>${ordinal(spreadRank)} widest of ${modules.length}</b></div></div>`;
   }
-  pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${modules.length}</b><span>${b.loc}</span>
+  pane.innerHTML = `<div class="pack3d-pane-head"><b>Module ${b.m + 1} of ${modules.length}</b><span>${E(b.loc)}</span>
       <button class="pack3d-pane-close" title="unpin">×</button></div>
     ${vs.map(row).join('')}${modHtml}
     <div class="pack3d-pane-foot">pack ${f.min}–${f.max} ${u} · spread ${(f.max - f.min).toFixed(0)} · mean ${f.mean.toFixed(0)}` +
-    (b.verify ? ` · <span class="verify" title="${b.verify}">stack order assumed</span>` : '') + `</div>`;
+    (b.verify ? ` · <span class="verify" title="${E(b.verify)}">stack order assumed</span>` : '') + `</div>`;
   pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinned = -1; paint(); });
   pane.hidden = false;
 }
@@ -357,8 +361,8 @@ function paintSensorPane(sj) {
           <span>vs pack mean</span><b>${mean == null ? '—' : sign(s.f - mean, 1) + ' °F'}</b>
           <span>rank</span><b>${rank === 1 ? 'hottest' : rank === withF.length ? 'coolest' : ordinal(rank) + ' hottest'} of ${withF.length}</b></div></div>`;
   const others = `<div class="pack3d-pane-mod"><div class="k">all ${sensors.length} sensors</div><div class="rows">` +
-    sensors.map(x => `<span>${x.n} <small>${x.where}</small></span><b style="color:${x.css || 'inherit'}">${x.f == null ? '—' : x.f.toFixed(1) + ' °F · ' + x.c.toFixed(1) + ' °C'}</b>`).join('') + `</div></div>`;
-  pane.innerHTML = `<div class="pack3d-pane-head"><b>Sensor ${s.n}</b><span>${s.where}</span>
+    sensors.map(x => `<span>${x.n} <small>${E(x.where)}</small></span><b style="color:${x.css || 'inherit'}">${x.f == null ? '—' : x.f.toFixed(1) + ' °F · ' + x.c.toFixed(1) + ' °C'}</b>`).join('') + `</div></div>`;
+  pane.innerHTML = `<div class="pack3d-pane-head"><b>Sensor ${s.n}</b><span>${E(s.where)}</span>
       <button class="pack3d-pane-close" title="unpin">×</button></div>${main}${others}
     <div class="pack3d-pane-foot">pack mean ${mean == null ? '—' : mean.toFixed(1) + ' °F · ' + ((mean - 32) * 5 / 9).toFixed(1) + ' °C'} · spread ${spreadF.toFixed(1)} °F</div>`;
   pane.querySelector('.pack3d-pane-close').addEventListener('click', () => { state.pinnedSensor = -1; paint(); });
@@ -494,21 +498,21 @@ window.Pack3D = { render, setOpts, dispose };
 // (auto-rotate lives on the pane itself, not here)
 if (window.TileStudio && TileStudio.menuExtra) {
   TileStudio.menuExtra('pack3d', (box, o, commit) => {
-    const sel = (key, entries) => `<select data-k="${key}">${entries.map(([v, l]) => `<option value="${v}" ${(o[key] ?? DEFAULT_OPTS[key]) == v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const sel = (key, entries) => `<select data-k="${key}">${entries.map(([v, l]) => `<option value="${E(v)}" ${(o[key] ?? DEFAULT_OPTS[key]) == v ? 'selected' : ''}>${E(l)}</option>`).join('')}</select>`;
     const on = key => (o[key] ?? DEFAULT_OPTS[key]) ? 'checked' : '';
     const md = mode();
     box.innerHTML = `<h5>3D pack</h5>
       ${MODES.length > 1 ? `<div class="row"><label>Show</label>${sel('mode', MODES.map(m => [m.id, `${m.name}s (${m.unit})`]))}</div>` : ''}
       <div class="row"><label>Colour by</label>${sel('scale', md.scales.map(k => [k, PackLayout.SCALES[k].label]))}</div>
       <div class="row"><label>Fixed range</label><input type="number" data-k="fixedLo" step="1" value="${o.fixedLo ?? ''}" placeholder="${PackLayout.fixedRange(md, {})[0]}" style="width:78px">
-        <label style="min-width:0">to</label><input type="number" data-k="fixedHi" step="1" value="${o.fixedHi ?? ''}" placeholder="${PackLayout.fixedRange(md, {})[1]}" style="width:78px"> <span style="color:var(--dim)">${md.unit}</span></div>
-      <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Used by the <i>fixed range</i> scale, where one colour always means one ${md.unit} value. Blank uses the profile's range.</div>
+        <label style="min-width:0">to</label><input type="number" data-k="fixedHi" step="1" value="${o.fixedHi ?? ''}" placeholder="${PackLayout.fixedRange(md, {})[1]}" style="width:78px"> <span style="color:var(--dim)">${E(md.unit)}</span></div>
+      <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Used by the <i>fixed range</i> scale, where one colour always means one ${E(md.unit)} value. Blank uses the profile's range.</div>
       <div class="row"><label>Values</label>${sel('labels', [['minmax', 'lowest and highest pair'], ['hover', 'hover only'], ['all', 'every pair']])}</div>
       <div class="row"><label>Case</label><input type="range" data-k="case" min="0" max="60" value="${Math.round((o.case ?? DEFAULT_OPTS.case) * 100)}"> <span style="color:var(--dim)">opacity</span></div>
       <div class="row seg">${Object.keys(VIEWS).map(v => `<button data-view="${v}" class="${(o.view || DEFAULT_OPTS.view) === v ? 'on' : ''}">${v}</button>`).join('')}<span style="color:var(--dim)">view</span></div>
-      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest ${md.name} white and the highest blue</label></div>
-      <div class="row"><label>Flash all below</label><input type="number" data-k="flashBelow" min="0" max="5000" step="1" value="${o.flashBelow ?? ''}" placeholder="${md.unit}" style="width:78px">
-        <label style="min-width:0">above</label><input type="number" data-k="flashAbove" min="0" max="5000" step="1" value="${o.flashAbove ?? ''}" placeholder="${md.unit}" style="width:78px"></div>
+      <div class="row"><label style="min-width:0"><input type="checkbox" data-k="flash" ${on('flash')}> flash the lowest ${E(md.name)} white and the highest blue</label></div>
+      <div class="row"><label>Flash all below</label><input type="number" data-k="flashBelow" min="0" max="5000" step="1" value="${o.flashBelow ?? ''}" placeholder="${E(md.unit)}" style="width:78px">
+        <label style="min-width:0">above</label><input type="number" data-k="flashAbove" min="0" max="5000" step="1" value="${o.flashAbove ?? ''}" placeholder="${E(md.unit)}" style="width:78px"></div>
       <div style="color:var(--dim);font-size:.75em;margin:-2px 0 6px">Every pair under the first value breathes white, every pair over the second breathes blue. Leave blank for none.</div>`;
     box.querySelectorAll('select[data-k]').forEach(s => s.addEventListener('change', () => { o[s.dataset.k] = s.value; commit(); }));
     box.querySelector('input[data-k="case"]').addEventListener('input', e => { o.case = +e.target.value / 100; setOpts(o); });

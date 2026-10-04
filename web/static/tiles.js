@@ -23,9 +23,16 @@
   // be null (derived from `c`). The °F is always whole degrees; the °C is the
   // raw value as the decoder emitted it unless cDec asks for fixed decimals —
   // that one detail is where the dashboard's six inline sites differed.
+  // A value from a record as display text: a finite number, formatted; anything
+  // else '--'. These tiles build markup only from numbers, so an unexpected
+  // string in a record can neither become markup nor throw on .toFixed.
+  function num(v, dec) {
+    if (typeof v !== 'number' || !isFinite(v)) return '--';
+    return dec == null ? String(v) : v.toFixed(dec);
+  }
   function fmtTempParts(c, f, { cDec = null } = {}) {
-    if (f == null) f = c * 9 / 5 + 32;
-    return { f: f.toFixed(0), c: cDec == null ? `${c}` : c.toFixed(cDec) };
+    if (f == null && typeof c === 'number') f = c * 9 / 5 + 32;
+    return { f: num(f, 0), c: num(c, cDec) };
   }
   function fmtTemp(c, f, { cDec = null } = {}) {
     const p = fmtTempParts(c, f, { cDec });
@@ -59,7 +66,7 @@
     for (let a = 0; a < 360; a += 72) { const x = 50 + 26 * Math.cos(a * Math.PI / 180), y = 50 + 26 * Math.sin(a * Math.PI / 180); spokes += `<line x1="50" y1="50" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--card2)" stroke-width="5" stroke-linecap="round"/>`; }
     svg.innerHTML = `<circle cx="50" cy="50" r="46" fill="#141a26" stroke="${col}" stroke-width="5"/>${treads}<circle cx="50" cy="50" r="30" fill="var(--card2)" stroke="var(--border)" stroke-width="2"/>${spokes}<circle cx="50" cy="50" r="9" fill="var(--border)"/>`;
     const p = wrap.querySelector('.wheel-psi');
-    p.innerHTML = psi == null ? '--' : `${psi.toFixed(1)}<small>psi</small>`;
+    p.innerHTML = num(psi, 1) === '--' ? '--' : `${num(psi, 1)}<small>psi</small>`;
     p.style.color = col;
   }
 
@@ -92,10 +99,10 @@
       setShifter(data.gear, root);
     }
     if (data.start_state_name) q(root, 'veh-state').textContent = data.start_state_name.toUpperCase();
-    if (data.speed_mph != null) q(root, 'veh-speed').innerHTML = `${data.speed_mph.toFixed(0)}<small>mph</small>`;
-    if (data.odometer_mi != null) q(root, 'veh-odo').innerHTML = `${data.odometer_mi.toLocaleString()}<small>mi</small>`;
-    if (data.range_mi != null) q(root, 'veh-range').innerHTML = `${data.range_mi.toFixed(0)}<small>mi · scale tbc</small>`;
-    if (data.soh_dash_pct != null) q(root, 'veh-soh').innerHTML = `${data.soh_dash_pct}<small>%</small>`;
+    if (data.speed_mph != null) q(root, 'veh-speed').innerHTML = `${num(data.speed_mph, 0)}<small>mph</small>`;
+    if (data.odometer_mi != null) q(root, 'veh-odo').innerHTML = `${num(data.odometer_mi) === '--' ? '--' : data.odometer_mi.toLocaleString()}<small>mi</small>`;
+    if (data.range_mi != null) q(root, 'veh-range').innerHTML = `${num(data.range_mi, 0)}<small>mi · scale tbc</small>`;
+    if (data.soh_dash_pct != null) q(root, 'veh-soh').innerHTML = `${num(data.soh_dash_pct)}<small>%</small>`;
     if (data.handbrake != null) q(root, 'veh-brake').textContent = data.handbrake ? 'SET' : 'released';
     if (data.doors_raw != null) {
       const open = [];
@@ -233,8 +240,8 @@
       rotor.style.animationDuration = on ? `${(2.4 / Math.max(1, v)).toFixed(2)}s` : '2s';   // 4 V → 0.6 s/rev, 12 V → 0.2 s/rev
       rotor.style.opacity = on ? '0.95' : '0.35';
       // the amp reports 11 V for both speed 6 and 7 (fan walk: identical every sample) — say so
-      const lvlTxt = (on && v >= 11 && lvl === 6) ? '6–7' : String(lvl);
-      q(root, 'hvac-fan').innerHTML = on ? `${lvlTxt}<small style="color:var(--dim);font-weight:400;margin-left:4px">/ 7 · ${v} V</small>` : 'off';
+      const lvlTxt = (on && v >= 11 && lvl === 6) ? '6–7' : num(lvl, 0);
+      q(root, 'hvac-fan').innerHTML = on ? `${lvlTxt}<small style="color:var(--dim);font-weight:400;margin-left:4px">/ 7 · ${num(v)} V</small>` : 'off';
       root.querySelectorAll('#fan-bars i').forEach((b, i) => { b.classList.toggle('on', on && i < lvl); b.style.opacity = (on && i === 6 && v >= 11 && lvl === 6) ? '0.45' : ''; if (on && i === 6 && v >= 11 && lvl === 6) b.classList.add('on'); });
     }
     return CLIMATE_KEYS.some(k => data[k] != null);

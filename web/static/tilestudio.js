@@ -25,6 +25,9 @@
     discover: false,   // add any .card[data-tile] in the grid that the config does not mention
   };
   let OPTS = DEFAULTS, API = DEFAULTS.api;
+  // Every string this file did not write itself goes through E before it
+  // becomes markup: tile titles, layout names, signal labels and units, ids.
+  const E = v => window.Html.esc(v);
   let grid = null;
   let REG = { signals: {}, colors: {}, types: {}, items: {}, tile_signals: {} };
   let cfg = [];                      // tile entries in display order
@@ -135,37 +138,36 @@
 
   // ── renderers ───────────────────────────────────────────────────────
   const R = {};
-  R.number = (t, s, v, col, alt) => `<div class="gt-num" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div>${alt ? `<div class="gt-alt">${alt}</div>` : ''}`;
+  R.number = (t, s, v, col, alt) => `<div class="gt-num" style="color:${col}">${fmt(v, s.dec)}<small>${E(s.unit || '')}</small></div>${alt ? `<div class="gt-alt">${alt}</div>` : ''}`;
   // A text tile normally shouts one short state ("PARK", "READY"). Trouble-code
   // signals arrive from /api/status already described — "P0171 — text (unverified) · P0420"
   // — and must not be uppercased into a wall, nor stripped of the evidence
   // marker the server put there: an unverified guess shown like a
   // service-manual line turns a known unknown into a confident wrong answer.
   // The marker is part of the string, so this only styles what is already said.
-  const htesc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const DTC_MARK = /\s\((unverified|community)\)\s*$/;
   R.text = (t, s, v) => {
     if (v == null) return `<div class="gt-text" style="color:var(--accent)">--</div>`;
     const str = String(v);
-    if (!str.includes('—')) return `<div class="gt-text" style="color:var(--accent)">${htesc(str).toUpperCase()}</div>`;
+    if (!str.includes('—')) return `<div class="gt-text" style="color:var(--accent)">${E(str.toUpperCase())}</div>`;
     const rows = str.split(' · ').map(part => {
       const m = part.match(/^(\S+)\s+—\s+([\s\S]*)$/);
-      if (!m) return `<div style="color:var(--accent);font-weight:700">${htesc(part).toUpperCase()}</div>`;
+      if (!m) return `<div style="color:var(--accent);font-weight:700">${E(part.toUpperCase())}</div>`;
       const mk = m[2].match(DTC_MARK);
       const desc = mk ? m[2].slice(0, mk.index) : m[2];
-      return `<div style="margin:2px 0;line-height:1.25"><span style="color:var(--accent);font-weight:700">${htesc(m[1]).toUpperCase()}</span>`
-        + ` <span style="color:var(--text);font-size:0.85em">${htesc(desc)}</span>`
-        + (mk ? ` <span style="color:var(--dim);font-size:0.72em;font-style:italic" title="Description not verified — see docs/DTC_DICTIONARY.md">(${htesc(mk[1])})</span>` : '')
+      return `<div style="margin:2px 0;line-height:1.25"><span style="color:var(--accent);font-weight:700">${E(m[1].toUpperCase())}</span>`
+        + ` <span style="color:var(--text);font-size:0.85em">${E(desc)}</span>`
+        + (mk ? ` <span style="color:var(--dim);font-size:0.72em;font-style:italic" title="Description not verified — see docs/DTC_DICTIONARY.md">(${E(mk[1])})</span>` : '')
         + `</div>`;
     }).join('');
     return `<div class="gt-text" style="font-size:1.05em;letter-spacing:0;text-align:left;width:100%">${rows}</div>`;
   };
   R.lamp = (t, s, v) => `<div class="gt-lamp ${v ? 'on' : ''}"></div><div class="gt-sub">${v ? 'ON' : 'off'}</div>`;
-  R.bar = (t, s, v, col, alt, pct) => `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div>
+  R.bar = (t, s, v, col, alt, pct) => `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${E(s.unit || '')}</small></div>
       <div class="gt-track"><div class="gt-fill" style="width:${(pct * 100).toFixed(1)}%;background:${col}"></div></div>
-      <div class="gt-sub">${effMin(t, s)} – ${effMax(t, s)} ${s.unit || ''}${alt ? ' · ' + alt : ''}</div>`;
+      <div class="gt-sub">${effMin(t, s)} – ${effMax(t, s)} ${E(s.unit || '')}${alt ? ' · ' + alt : ''}</div>`;
   R.thermo = (t, s, v, col, alt, pct) => `<div class="gt-thermo"><div class="tube"><div style="height:${(pct * 100).toFixed(1)}%;background:${col}"></div></div>
-      <div><div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div><div class="gt-sub">${alt || ''}</div></div></div>`;
+      <div><div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${E(s.unit || '')}</small></div><div class="gt-sub">${alt || ''}</div></div></div>`;
   R.ring = (t, s, v, col, alt, pct) => {
     const C = 2 * Math.PI * 42;
     return `<svg viewBox="0 0 100 100" style="max-width:170px">
@@ -173,7 +175,7 @@
       <circle cx="50" cy="50" r="42" fill="none" stroke="${col}" stroke-width="9" stroke-linecap="round"
         stroke-dasharray="${C}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}" transform="rotate(-90 50 50)" style="transition:stroke-dashoffset .4s"/>
       <text x="50" y="50" text-anchor="middle" dominant-baseline="central" fill="${col}" font-size="19" font-weight="700">${fmt(v, s.dec)}</text>
-      <text x="50" y="66" text-anchor="middle" fill="var(--dim)" font-size="8">${s.unit || ''}${alt ? ' · ' + alt : ''}</text></svg>`;
+      <text x="50" y="66" text-anchor="middle" fill="var(--dim)" font-size="8">${E(s.unit || '')}${alt ? ' · ' + alt : ''}</text></svg>`;
   };
   function polar(cx, cy, r, deg) { const a = (deg - 90) * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
   function arcPath(cx, cy, r, a0, a1) { const [x0, y0] = polar(cx, cy, r, a0), [x1, y1] = polar(cx, cy, r, a1); const large = a1 - a0 > 180 ? 1 : 0; return `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)}`; }
@@ -188,7 +190,7 @@
       ${ticks}
       <line x1="60" y1="62" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>
       <circle cx="60" cy="62" r="4" fill="var(--text)"/>
-      <text x="60" y="92" text-anchor="middle" fill="${col}" font-size="15" font-weight="700">${fmt(v, s.dec)}<tspan fill="var(--dim)" font-size="8" font-weight="400"> ${s.unit || ''}</tspan></text>
+      <text x="60" y="92" text-anchor="middle" fill="${col}" font-size="15" font-weight="700">${fmt(v, s.dec)}<tspan fill="var(--dim)" font-size="8" font-weight="400"> ${E(s.unit || '')}</tspan></text>
       <text x="60" y="104" text-anchor="middle" fill="var(--dim)" font-size="7">${alt || ''}</text></svg>`;
   };
   R.dial = (t, s, v, col, alt, pct) => {
@@ -204,20 +206,20 @@
       <text class="gt-axis" x="26" y="104" text-anchor="middle">${lo}</text><text class="gt-axis" x="94" y="104" text-anchor="middle">${hi}</text>
       <line x1="60" y1="60" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="${col}" stroke-width="3" stroke-linecap="round"/>
       <circle cx="60" cy="60" r="5" fill="var(--text)"/>
-      <text x="60" y="84" text-anchor="middle" fill="${col}" font-size="13" font-weight="700">${fmt(v, s.dec)}<tspan fill="var(--dim)" font-size="7" font-weight="400"> ${s.unit || ''}</tspan></text></svg>`;
+      <text x="60" y="84" text-anchor="middle" fill="${col}" font-size="13" font-weight="700">${fmt(v, s.dec)}<tspan fill="var(--dim)" font-size="7" font-weight="400"> ${E(s.unit || '')}</tspan></text></svg>`;
   };
   R.battery = (t, s, v, col, alt, pct) => `<svg viewBox="0 0 120 60" style="max-width:220px">
       <rect x="4" y="10" width="100" height="40" rx="7" fill="var(--card2)" stroke="var(--border)" stroke-width="3"/>
       <rect x="106" y="22" width="9" height="16" rx="3" fill="var(--border)"/>
       <rect x="9" y="15" width="${(90 * pct).toFixed(1)}" height="30" rx="4" fill="${col}" style="transition:width .4s"/>
-      <text x="54" y="35" text-anchor="middle" dominant-baseline="central" fill="var(--text)" font-size="14" font-weight="700" style="paint-order:stroke;stroke:var(--card);stroke-width:3px">${fmt(v, s.dec)} ${s.unit || ''}</text></svg>${alt ? `<div class="gt-sub">${alt}</div>` : ''}`;
+      <text x="54" y="35" text-anchor="middle" dominant-baseline="central" fill="var(--text)" font-size="14" font-weight="700" style="paint-order:stroke;stroke:var(--card);stroke-width:3px">${fmt(v, s.dec)} ${E(s.unit || '')}</text></svg>${alt ? `<div class="gt-sub">${alt}</div>` : ''}`;
   function graph(t, s, v, col, alt, kind) {
     const key = s.hist;
-    if (!key) return `<div class="gt-sub">no history for ${s.label}</div>`;
+    if (!key) return `<div class="gt-sub">no history for ${E(s.label)}</div>`;
     const range = +(t.opts && t.opts.range) || 60;
     const cutoff = range ? Date.now() - range * 60000 : 0;
     const rows = lastHist.filter(h => h[key] != null && (!cutoff || new Date(h.t) >= cutoff));
-    if (rows.length < 2) return `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div><div class="gt-sub">collecting history…</div>`;
+    if (rows.length < 2) return `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${E(s.unit || '')}</small></div><div class="gt-sub">collecting history…</div>`;
     const W = 300, H = 80, vals = rows.map(r => r[key]);
     const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
     const X = i => (i / (rows.length - 1)) * W, Y = y => H - ((y - lo) / span) * (H - 6) - 3;
@@ -230,7 +232,7 @@
       if (kind === 'area') body += `<path d="${d}L${W},${H}L0,${H}Z" fill="${col}" opacity="0.18"/>`;
       body += `<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
     }
-    return `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${s.unit || ''}</small></div>
+    return `<div class="gt-val" style="color:${col}">${fmt(v, s.dec)}<small>${E(s.unit || '')}</small></div>
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="max-width:100%;height:80px">${body}</svg>
       <div class="gt-sub" style="display:flex;justify-content:space-between;width:100%"><span>${fmt(lo, s.dec)}</span><span>${range ? range >= 1440 ? (range / 1440) + 'd' : range >= 60 ? (range / 60) + 'h' : range + 'm' : 'all'} · ${rows.length} pts</span><span>${fmt(hi, s.dec)}</span></div>`;
   }
@@ -246,7 +248,7 @@
     const pct = v == null ? 0 : Math.min(1, Math.max(0, (v - min) / ((max - min) || 1)));
     const col = s.kind === 'number' ? colorFor(v, effColor(t, s), min, max, t.opts && t.opts.invert) : 'var(--accent)';
     const altV = s.alt ? getVal(lastData, s.alt) : null;
-    const alt = altV != null ? `${fmt(altV, s.dec)} ${s.alt_unit || ''}` : '';
+    const alt = altV != null ? `${fmt(altV, s.dec)} ${E(s.alt_unit || '')}` : '';
     let type = t.type || 'number';
     if (s.kind === 'text') type = 'text'; else if (s.kind === 'bool') type = 'lamp';
     el.innerHTML = (R[type] || R.number)(t, s, v, col, alt, pct);
@@ -292,7 +294,7 @@
       card = document.createElement('div');
       card.className = 'card';
       card.dataset.tile = t.id;
-      card.innerHTML = `<div class="card-title"><span class="ttl">${t.title || (s ? s.label : t.id)}</span> <span class="tile-age" data-age-for="${s ? s.item : ''}"></span></div><div class="gtile" id="gt-${t.id}"></div>`;
+      card.innerHTML = `<div class="card-title"><span class="ttl"></span> <span class="tile-age" data-age-for="${E(s ? s.item : '')}"></span></div><div class="gtile" id="gt-${E(t.id)}"></div>`;
       grid.appendChild(card);
     }
     if (!card) return null;
@@ -430,7 +432,7 @@
     const sel = document.getElementById('layout-sel'); if (!sel) return;
     let names = [];
     try { names = (await (await fetch(API.layouts)).json()).layouts; } catch (e) {}
-    sel.innerHTML = names.length ? names.map(l => `<option value="${l.name.replace(/"/g, '&quot;')}">${l.name} · ${l.tiles} tiles</option>`).join('') : '<option value="">(no saved layouts)</option>';
+    sel.innerHTML = names.length ? names.map(l => `<option value="${E(l.name)}">${E(l.name)} · ${E(l.tiles)} tiles</option>`).join('') : '<option value="">(no saved layouts)</option>';
   }
   const $ = id => document.getElementById(id);
   if ($('layout-save')) $('layout-save').addEventListener('click', async () => {
@@ -467,8 +469,8 @@
       const row = document.createElement('div');
       row.className = 'row';
       const s = sigOf(t);
-      const name = t.kind === 'signal' ? (t.title || (s ? s.label : t.id)) + ` <span class="items">(${REG.types[t.type] || t.type})</span>` : t.name || t.id;
-      row.innerHTML = `<input type="checkbox" ${t.enabled ? 'checked' : ''}><label>${name}<div class="items">${(t.items || (s ? [s.item] : [])).join(', ')} · ${t.span}×${t.h || '?'}</div></label><span class="items">⋯</span>`;
+      const name = t.kind === 'signal' ? E(t.title || (s ? s.label : t.id)) + ` <span class="items">(${E(REG.types[t.type] || t.type)})</span>` : E(t.name || t.id);
+      row.innerHTML = `<input type="checkbox" ${t.enabled ? 'checked' : ''}><label>${name}<div class="items">${E((t.items || (s ? [s.item] : [])).join(', '))} · ${E(t.span)}×${E(t.h || '?')}</div></label><span class="items">⋯</span>`;
       row.querySelector('input').addEventListener('change', e => { t.enabled = e.target.checked; if (t.enabled) { delete t.x; delete t.y; } if (alertEngine) alertEngine.clear(); apply(); save(); });
       row.querySelector('label').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); const el = grid.querySelector(`[data-tile="${t.id}"]`); if (el && t.enabled) { if (panel) panel.classList.remove('open'); openTileMenu(t.id, el); } });
       list.appendChild(row);
@@ -477,8 +479,8 @@
     add.className = 'row';
     add.style.marginTop = '8px';
     const sigs = Object.entries(REG.signals).sort((a, b) => a[1].label.localeCompare(b[1].label));
-    add.innerHTML = `<select id="add-sig" style="flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px">${sigs.map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}</select>
-      <select id="add-type" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px">${Object.entries(REG.types).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+    add.innerHTML = `<select id="add-sig" style="flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px">${sigs.map(([k, s]) => `<option value="${E(k)}">${E(s.label)}</option>`).join('')}</select>
+      <select id="add-type" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px">${Object.entries(REG.types).map(([k, v]) => `<option value="${E(k)}">${E(v)}</option>`).join('')}</select>
       <button id="add-tile" title="add tile" style="width:auto;padding:0 8px">＋ add</button>`;
     add.querySelector('#add-tile').addEventListener('click', () => {
       const id = 'u' + Date.now().toString(36);
@@ -537,19 +539,19 @@
     const m = document.createElement('div');
     m.className = 'tile-menu';
     m.dataset.for = id;
-    const colorOpts = Object.entries(REG.colors).map(([k, v]) => `<option value="${k}" ${effColor(t, s) === k ? 'selected' : ''}>${v.label}</option>`).join('');
-    const typeOpts = Object.entries(REG.types).filter(([k]) => !s || s.kind === 'number' ? true : (s.kind === 'text' ? k === 'text' : k === 'lamp')).map(([k, v]) => `<option value="${k}" ${(t.type || 'number') === k ? 'selected' : ''}>${v}</option>`).join('');
-    const sigOpts = Object.entries(REG.signals).sort((a, b) => a[1].label.localeCompare(b[1].label)).map(([k, v]) => `<option value="${k}" ${t.signal === k ? 'selected' : ''}>${v.label}</option>`).join('');
+    const colorOpts = Object.entries(REG.colors).map(([k, v]) => `<option value="${E(k)}" ${effColor(t, s) === k ? 'selected' : ''}>${E(v.label)}</option>`).join('');
+    const typeOpts = Object.entries(REG.types).filter(([k]) => !s || s.kind === 'number' ? true : (s.kind === 'text' ? k === 'text' : k === 'lamp')).map(([k, v]) => `<option value="${E(k)}" ${(t.type || 'number') === k ? 'selected' : ''}>${E(v)}</option>`).join('');
+    const sigOpts = Object.entries(REG.signals).sort((a, b) => a[1].label.localeCompare(b[1].label)).map(([k, v]) => `<option value="${E(k)}" ${t.signal === k ? 'selected' : ''}>${E(v.label)}</option>`).join('');
     m.innerHTML = `
       <h5>Size — or drag the corner</h5>
       <div class="row seg">${SPANS.map(n => `<button data-span="${n}" class="${t.span == n ? 'on' : ''}">${n}</button>`).join('')}<span style="color:var(--dim)">wide</span></div>
       <div class="row seg" style="margin-top:4px"><button data-h="auto">auto</button>${[4, 6, 8, 10, 14].map(n => `<button data-h="${n}" class="${t.h == n ? 'on' : ''}">${n}</button>`).join('')}<span style="color:var(--dim)">tall</span></div>
       ${isSig ? `<h5>Signal</h5><div class="row"><select id="tm-sig">${sigOpts}</select></div>
       <h5>Display</h5><div class="row"><select id="tm-type">${typeOpts}</select></div>
-      <div class="row"><label>Title</label><input type="text" id="tm-title" value="${(t.title || '').replace(/"/g, '&quot;')}" placeholder="${s ? s.label : ''}"></div>` : ''}
+      <div class="row"><label>Title</label><input type="text" id="tm-title" value="${E(t.title || '')}" placeholder="${E(s ? s.label : '')}"></div>` : ''}
       ${!s || s.kind === 'number' ? `<h5>Colour</h5><div class="row"><select id="tm-color">${colorOpts}</select><label style="min-width:0"><input type="checkbox" id="tm-invert" ${o.invert ? 'checked' : ''}> invert</label></div>
       <span class="swatch" id="tm-swatch" style="background:${gradientCss(effColor(t, s))}"></span>
-      <div class="row" style="margin-top:6px"><label>Range</label><input type="number" id="tm-min" value="${o.min != null ? o.min : ''}" placeholder="${s ? s.min : ''}"> – <input type="number" id="tm-max" value="${o.max != null ? o.max : ''}" placeholder="${s ? s.max : ''}"></div>` : ''}
+      <div class="row" style="margin-top:6px"><label>Range</label><input type="number" id="tm-min" value="${E(o.min != null ? o.min : '')}" placeholder="${E(s ? s.min : '')}"> – <input type="number" id="tm-max" value="${E(o.max != null ? o.max : '')}" placeholder="${E(s ? s.max : '')}"></div>` : ''}
       ${isSig ? `<div class="row" id="tm-graph-row" style="${GRAPH_TYPES.has(t.type) ? '' : 'display:none'}"><label>History</label><select id="tm-range">${[[5, '5 min'], [15, '15 min'], [60, '1 h'], [360, '6 h'], [1440, '24 h'], [10080, '7 d'], [0, 'all']].map(([v, l]) => `<option value="${v}" ${(+o.range || 60) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
       ${MENU_EXTRAS[id] ? '<div id="tm-extra"></div>' : ''}
       ${window.Alerts ? `<h5>Alerts — beep when a value goes out of bounds</h5><div id="tm-alerts">${alertRows(t)}</div>` : ''}
@@ -586,20 +588,19 @@
   function alertRows(t) {
     const keys = candidateSignals(t);
     if (!keys.length) return '<div class="gt-sub">no alertable values on this tile</div>';
-    const esc = v => v == null ? '' : String(v).replace(/"/g, '&quot;');
     const tones = Object.entries(Alerts.PATTERNS);
     const rows = keys.map(k => {
       const s = REG.signals[k], r = ruleFor(t, k, false) || {};
       const armed = !!(r.signal && r.enabled !== false);
       const thr = s.kind === 'bool'
         ? `<select class="al-when"><option value="">— pick —</option><option value="on" ${r.when === 'on' ? 'selected' : ''}>when on</option><option value="off" ${r.when === 'off' ? 'selected' : ''}>when off</option></select>`
-        : `<input type="number" class="al-min" step="any" placeholder="below" title="alert when the value drops below this" value="${esc(r.min)}">
-           <input type="number" class="al-max" step="any" placeholder="above" title="alert when the value rises above this" value="${esc(r.max)}">`;
-      return `<div class="al-row ${armed ? '' : 'off'}" data-sig="${k}">
-        <label class="al-head"><input type="checkbox" class="al-on" ${armed ? 'checked' : ''}> ${s.label}${s.unit ? ` <small>${s.unit}</small>` : ''}</label>
+        : `<input type="number" class="al-min" step="any" placeholder="below" title="alert when the value drops below this" value="${E(r.min)}">
+           <input type="number" class="al-max" step="any" placeholder="above" title="alert when the value rises above this" value="${E(r.max)}">`;
+      return `<div class="al-row ${armed ? '' : 'off'}" data-sig="${E(k)}">
+        <label class="al-head"><input type="checkbox" class="al-on" ${armed ? 'checked' : ''}> ${E(s.label)}${s.unit ? ` <small>${E(s.unit)}</small>` : ''}</label>
         <button class="al-test" title="play this alert's tone (also enables sound)">▶</button>
         <div class="row al-thr">${thr}
-          <select class="al-tone" title="tone">${tones.map(([n, p]) => `<option value="${n}" ${(r.tone || 'low') === n ? 'selected' : ''}>${p.label}</option>`).join('')}</select>
+          <select class="al-tone" title="tone">${tones.map(([n, p]) => `<option value="${E(n)}" ${(r.tone || 'low') === n ? 'selected' : ''}>${E(p.label)}</option>`).join('')}</select>
         </div>
         <div class="row al-rep-row"><label>repeat</label><input type="range" class="al-rep" min="${Alerts.REPEAT.min}" max="${Alerts.REPEAT.max}" step="1" value="${Alerts.repeatSeconds(r.repeat)}" title="how often it sounds and flashes while out of bounds"><output class="al-rep-val">${repLabel(Alerts.repeatSeconds(r.repeat))}</output></div></div>`;
     }).join('');

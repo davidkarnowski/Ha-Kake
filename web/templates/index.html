@@ -873,6 +873,7 @@
      import map points 'three' at the vendored copy. Module scripts are deferred, so
      pack3d.js runs after every classic script below and publishes window.Pack3D. -->
 <script type="importmap">{"imports":{"three":"/static/vendor/three/three.module.min.js","three/addons/":"/static/vendor/three/addons/"}}</script>
+<script src="/static/html.js"></script>
 <script src="/static/pack_layout.js"></script>
 <script type="module" src="/static/pack3d.js"></script>
 <script src="/static/tiles.js"></script>
@@ -1537,7 +1538,7 @@ function exitPlayback() {
 async function loadSessions() {
   const sel = $t('tl-session');
   try { SESSIONS = await (await fetch('/api/sessions')).json(); } catch (e) { SESSIONS = []; }
-  sel.innerHTML = SESSIONS.length ? SESSIONS.map((s, i) => `<option value="${i}">${sessionLabel(s)}</option>`).join('')
+  sel.innerHTML = SESSIONS.length ? SESSIONS.map((s, i) => `<option value="${i}">${Html.esc(sessionLabel(s))}</option>`).join('')
                                   : '<option value="">no recorded sessions yet</option>';
 }
 const fmtSoc = v => v == null ? '–' : (+v).toFixed(0);
@@ -1559,7 +1560,7 @@ async function loadFlags(from, to) {
     FLAGS = { user: (await u.json()).bookmarks || [], auto: (await a.json()).pulls || [] };
   } catch (e) { FLAGS = { user: [], auto: [] }; }
   const sel = $t('tl-flags');
-  const opt = (f, k) => `<option value="${f.t}">${k === 'auto' ? '◇ ' : '⚑ '}${new Date(f.t * 1000).toLocaleTimeString()}${f.label ? ' · ' + f.label : ''}</option>`;
+  const opt = (f, k) => `<option value="${Html.esc(f.t)}">${k === 'auto' ? '◇ ' : '⚑ '}${new Date(f.t * 1000).toLocaleTimeString()}${f.label ? ' · ' + Html.esc(f.label) : ''}</option>`;
   sel.innerHTML = '<option value="">⚑ jump to…</option>' + FLAGS.user.map(f => opt(f, 'user')).join('') + FLAGS.auto.map(f => opt(f, 'auto')).join('');
   drawStrip();
 }
@@ -1745,15 +1746,15 @@ window.cellColorMenu = function (box, o, commit) {
   const row = document.createElement('div'); row.className = 'row';
   row.innerHTML = `<label>Colour by</label>
     <select id="tm-cellscale">
-      <option value="abs" ${o.scale !== 'fixed' ? 'selected' : ''}>${PackLayout.SCALES.abs.label}</option>
-      <option value="fixed" ${o.scale === 'fixed' ? 'selected' : ''}>${PackLayout.SCALES.fixed.label}</option>
+      <option value="abs" ${o.scale !== 'fixed' ? 'selected' : ''}>${Html.esc(PackLayout.SCALES.abs.label)}</option>
+      <option value="fixed" ${o.scale === 'fixed' ? 'selected' : ''}>${Html.esc(PackLayout.SCALES.fixed.label)}</option>
     </select>`;
   const row2 = document.createElement('div'); row2.className = 'row';
   row2.innerHTML = `<label>Fixed range</label>
-    <input type="number" id="tm-cellfixedlo" step="1" value="${o.fixedLo ?? ''}" placeholder="${dflt[0]}" style="width:78px">
+    <input type="number" id="tm-cellfixedlo" step="1" value="${Html.esc(o.fixedLo ?? '')}" placeholder="${Html.esc(dflt[0])}" style="width:78px">
     <label style="min-width:0">to</label>
-    <input type="number" id="tm-cellfixedhi" step="1" value="${o.fixedHi ?? ''}" placeholder="${dflt[1]}" style="width:78px">
-    <span style="color:var(--dim)">${md.unit}</span>`;
+    <input type="number" id="tm-cellfixedhi" step="1" value="${Html.esc(o.fixedHi ?? '')}" placeholder="${Html.esc(dflt[1])}" style="width:78px">
+    <span style="color:var(--dim)">${Html.esc(md.unit)}</span>`;
   const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
   why.textContent = `On the frame's own range the lowest pair is always red, so a colour means a different voltage as the pack sags. `
                   + `On a fixed range one colour is always one voltage. Blank uses the profile's ${dflt[0]}–${dflt[1]} ${md.unit}. Display only.`;
@@ -1784,7 +1785,7 @@ window.consoleMenu = function (box, o, commit) {
   const row = document.createElement('div'); row.className = 'row';
   row.innerHTML = `<label style="min-width:0"><input type="checkbox" id="tm-conall" ${o.everything ? 'checked' : ''}> every id on the bus, not only the ids the enabled tiles poll</label>`;
   const row2 = document.createElement('div'); row2.className = 'row';
-  row2.innerHTML = `<label>Rate cap</label><input type="number" id="tm-conrate" min="1" max="200" step="1" value="${o.rate ?? 10}" style="width:78px"><span style="color:var(--dim)">frames per id per second</span>`;
+  row2.innerHTML = `<label>Rate cap</label><input type="number" id="tm-conrate" min="1" max="200" step="1" value="${Html.esc(o.rate ?? 10)}" style="width:78px"><span style="color:var(--dim)">frames per id per second</span>`;
   const why = document.createElement('div'); why.style.cssText = 'color:var(--dim);font-size:.75em;margin:-2px 0 6px';
   why.textContent = 'Every id is lossy and says so — Car-CAN carries about 1,700 frames a second and nothing useful reaches a browser at that rate. '
                   + 'Whatever is thrown away is counted per id and shown. This is a window, not a capture: record_session.py and the MQTT bridge are the capture tools.';
@@ -1914,7 +1915,7 @@ function drawDegradation(days) {
   line.setAttribute('d', pts.map((d, i) => (i ? 'L' : 'M') + X(xs[i]).toFixed(1) + ',' + Y(ys[i]).toFixed(1)).join(''));
   ptsG.innerHTML = pts.map((d, i) => {
     const temp = d.temp_avg_c != null ? `, ${d.temp_avg_c.toFixed(0)}°C / ${d.temp_avg_f.toFixed(0)}°F` : '';
-    return `<circle cx="${X(xs[i]).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="3.5" fill="var(--accent)" vector-effect="non-scaling-stroke"><title>${d.day}: ${d.capacity_ah.toFixed(2)} Ah (${d.soh.toFixed(1)}% SOH)${temp}, ${d.n} readings</title></circle>`;
+    return `<circle cx="${X(xs[i]).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="3.5" fill="var(--accent)" vector-effect="non-scaling-stroke"><title>${Html.esc(d.day)}: ${d.capacity_ah.toFixed(2)} Ah (${d.soh.toFixed(1)}% SOH)${temp}, ${d.n} readings</title></circle>`;
   }).join('');
   const last = pts[pts.length - 1];
   if (slope != null) {

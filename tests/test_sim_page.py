@@ -102,7 +102,7 @@ def test_sim_hosts_the_four_tiles_and_its_own_cards_once_each(client):
 def test_sim_loads_the_shared_engine_in_order_and_nothing_external(client):
     page = client.get("/sim").get_data(as_text=True)
     srcs = re.findall(r'<script src="([^"]+)"', page)
-    assert srcs == ["/static/alerts.js", "/static/vendor/gridstack-all.js", "/static/tilestudio.js",
+    assert srcs == ["/static/html.js", "/static/alerts.js", "/static/vendor/gridstack-all.js", "/static/tilestudio.js",
                     "/static/tiles.js", "/static/sim.js"]
     links = re.findall(r'<link rel="stylesheet" href="([^"]+)"', page)
     assert links[:4] == ["/static/vendor/gridstack.min.css", "/static/tilestudio.css",
