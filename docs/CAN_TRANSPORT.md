@@ -133,11 +133,14 @@ mode this transport ever opens the EV bus in:
   2026-10-03 it did ask, the Leaf's liveness (the LBC answering) read every
   refusal as a dead ECU, and a listen-only Car-CAN board hearing 1,700
   frames/s reported "car asleep?".
-- **candleLight (`gs_usb`)**: python-can opens the device in normal mode with
-  no way to ask for another, so the transport re-opens it silent through the
-  `gs_usb` package and **reads the mode back** from the device. A firmware
-  that does not advertise listen-only drops the bit silently — in which case
-  the transport refuses to open the bus at all, rather than open it normal.
+- **candleLight (`gs_usb`)**: python-can's `GsUsbBus` always starts the
+  device in normal mode (and restarts it on shutdown), so a listen-only bus
+  never uses it. The transport's own `silent_gs_usb_class()` checks that the
+  firmware **advertises** listen-only before starting anything — refusing the
+  bus outright if it does not — then starts the device exactly once with the
+  listen-only flag, refuses to send, and only stops it on shutdown. (The flags
+  `gs_usb` reports back are its own mask of the advertised features, not a
+  read-back from the controller; the guarantee is the single silent start.)
 - **slcan (stock firmware)**: silent mode is `M1` sent before `O`. The stock
   firmware neither implements python-can's `L` command nor acknowledges `M1`,
   so this cannot be verified from the host; the log says so. The software

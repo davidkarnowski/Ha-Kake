@@ -728,7 +728,6 @@ class LocalSource(FrameSource):
             os.environ.setdefault("DYLD_FALLBACK_LIBRARY_PATH", self.libusb_path or "/opt/homebrew/lib")
         try:
             from can.interfaces.gs_usb import GsUsbBus
-            from gs_usb.constants import GS_CAN_MODE_LISTEN_ONLY, GS_CAN_MODE_HW_TIMESTAMP
         except ImportError as e:
             raise ConnectionError("candleLight firmware needs the gs_usb driver: "
                                   f"pip install \"python-can[gs-usb]\" ({e})") from e
@@ -736,18 +735,18 @@ class LocalSource(FrameSource):
         if self.channel.strip().isdigit():
             index = int(self.channel.strip())
         try:
-            b = GsUsbBus(channel="canable", index=index, bitrate=self.bitrate)
+            if self.listen_only:
+                # Silent from the first start: python-can's GsUsbBus always starts
+                # the device in normal mode, so a listen-only bus never uses it.
+                b = silent_gs_usb_class()(channel="canable", index=index, bitrate=self.bitrate)
+            else:
+                b = GsUsbBus(channel="canable", index=index, bitrate=self.bitrate)
+        except ConnectionError:
+            raise
         except Exception as e:
             raise ConnectionError(f"cannot open gs_usb device {index}: {type(e).__name__}: {e}") from e
         if self.listen_only:
-            try:
-                apply_listen_only_gs_usb(b.gs_usb, GS_CAN_MODE_LISTEN_ONLY, GS_CAN_MODE_HW_TIMESTAMP)
-            except Exception:
-                try:
-                    b.shutdown()
-                finally:
-                    raise
-            self.log("  [can] gs_usb: listen-only mode set and read back from the device")
+            self.log("  [can] gs_usb: started once, in listen-only mode (the firmware advertises it)")
         vp = f" {dev.idVendor:04x}:{dev.idProduct:04x}" if dev is not None else ""
         self.firmware = "gs_usb"
         self.name = self.name or f"candleLight gs_usb{vp}"
@@ -872,25 +871,59 @@ class HakakeSlcanBus(_SlcanBus):
         self._write("O")
 
 
-def apply_listen_only_gs_usb(gs, listen_only_bit, timestamp_bit=0):
-    """Re-open a gs_usb device in listen-only mode and VERIFY it took.
+def silent_gs_usb_class():
+    """A python-can GsUsbBus that is listen-only from its first start.
 
-    python-can 4.6.1 starts the device in normal mode with no way to ask for
-    another; `gs_usb.start()` masks the flags by what the firmware advertises
-    and drops an unsupported bit silently. So: stop, start with the bit, read
-    `device_flags` back, and refuse the bus if the bit is not there. A bus we
-    cannot prove silent is not opened at all."""
-    gs.stop()
-    gs.start(listen_only_bit | timestamp_bit)
-    flags = getattr(gs, "device_flags", None) or 0
-    if not (flags & listen_only_bit):
-        try:
-            gs.stop()
-        except Exception:
-            pass
-        raise ConnectionError("adapter firmware has no listen-only mode (device_flags "
-                              f"0x{flags:x}) — not opening the bus silent, so not opening it")
-    return flags
+    python-can 4.6.1's GsUsbBus.__init__ always starts the device in normal
+    mode, and its shutdown() re-scans and starts it again; a listen-only bus
+    must do neither. This subclass reuses GsUsbBus's receive path and does its
+    own setup: it refuses a device whose firmware does not advertise
+    listen-only *before* starting anything, starts it exactly once with the
+    listen-only flag, refuses to send, and only stops it on shutdown. The
+    flags gs_usb reports back are its software mask of the advertised features,
+    not a read-back from the controller; the guarantee is the single, silent
+    start. Built lazily: gs_usb and pyusb are optional dependencies."""
+    import can
+    from can.interfaces.gs_usb import GsUsbBus
+    from gs_usb.constants import GS_CAN_MODE_HW_TIMESTAMP, GS_CAN_MODE_LISTEN_ONLY
+
+    class SilentGsUsbBus(GsUsbBus):
+        def __init__(self, channel, bitrate=DEFAULT_BITRATE, index=0, device=None, **kwargs):
+            self._is_shutdown = False
+            if device is None:
+                from gs_usb.gs_usb import GsUsb
+                devs = GsUsb.scan()
+                if len(devs) <= index:
+                    raise ConnectionError(f"no gs_usb device {index} (found {len(devs)})")
+                device = devs[index]
+            cap = device.device_capability
+            if not cap.feature & GS_CAN_MODE_LISTEN_ONLY:
+                raise ConnectionError("adapter firmware does not offer listen-only mode — not opening "
+                                      "the bus at all rather than opening it normal")
+            self.gs_usb = device
+            self._index = None                     # never re-scan and restart on shutdown
+            self.channel_info = channel
+            self._can_protocol = can.CanProtocol.CAN_20
+            timing = can.BitTiming.from_sample_point(f_clock=cap.fclk_can, bitrate=bitrate, sample_point=87.5)
+            device.set_timing(prop_seg=1, phase_seg1=timing.tseg1 - 1, phase_seg2=timing.tseg2,
+                              sjw=timing.sjw, brp=timing.brp)
+            device.start(GS_CAN_MODE_LISTEN_ONLY | GS_CAN_MODE_HW_TIMESTAMP)    # the only start
+            self._bitrate = bitrate
+            can.BusABC.__init__(self, channel=channel, **kwargs)
+
+        def send(self, msg, timeout=None):
+            raise can.CanOperationError("listen-only bus: this transport never transmits")
+
+        def shutdown(self):
+            if self._is_shutdown:
+                return
+            try:
+                can.BusABC.shutdown(self)
+                self.gs_usb.stop()
+            finally:
+                self._is_shutdown = True
+
+    return SilentGsUsbBus
 
 
 # ── finding the board (memo §2.3) ────────────────────────────────────────

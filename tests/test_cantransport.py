@@ -23,6 +23,7 @@ import json
 import os
 import threading
 import time
+import types
 
 import can
 import pytest
@@ -442,29 +443,62 @@ def test_the_source_itself_refuses_when_listen_only():
     assert run(src.send_uds("79B", "7BB", b"\x2e\x01", 0, 0, 1.0)) == {"ok": False, "error": "refused"}
 
 
-class StubGs:
+class StubGsDevice:
+    """A gs_usb device that records what is done to it (gs_usb.GsUsb's surface)."""
+
     def __init__(self, feature):
-        self.feature = feature
+        self.device_capability = types.SimpleNamespace(feature=feature, fclk_can=48_000_000)
         self.calls = []
         self.device_flags = None
+
+    def set_timing(self, **kw):
+        self.calls.append("timing")
+
+    def start(self, flags):
+        self.calls.append(("start", flags))
+        self.device_flags = flags & self.device_capability.feature
 
     def stop(self):
         self.calls.append("stop")
 
-    def start(self, flags):
-        self.calls.append(("start", flags))
-        self.device_flags = flags & self.feature       # what gs_usb.start() does: mask by capability
+
+def test_a_listen_only_gs_usb_bus_starts_once_silent_and_never_sends():
+    gs = pytest.importorskip("gs_usb.constants")
+    LO, TS = gs.GS_CAN_MODE_LISTEN_ONLY, gs.GS_CAN_MODE_HW_TIMESTAMP
+    dev = StubGsDevice(feature=LO | TS)
+    bus = ct.silent_gs_usb_class()(channel="canable", bitrate=500000, device=dev)
+    assert dev.calls == ["timing", ("start", LO | TS)]            # one start, silent from the first
+    with pytest.raises(can.CanOperationError):
+        bus.send(msg(0x79B, b"\x02\x21\x01"))
+    bus.shutdown()
+    bus.shutdown()
+    assert dev.calls == ["timing", ("start", LO | TS), "stop"]    # no normal-mode restart on the way out
 
 
-def test_gs_usb_listen_only_is_verified_from_the_device():
-    LO, TS = 0x02, 0x10
-    gs = StubGs(feature=LO | TS)
-    assert ct.apply_listen_only_gs_usb(gs, LO, TS) & LO
-    assert gs.calls == ["stop", ("start", LO | TS)]
-    gs = StubGs(feature=TS)                              # firmware without listen-only
+def test_a_gs_usb_device_without_listen_only_is_refused_before_any_start():
+    gs = pytest.importorskip("gs_usb.constants")
+    dev = StubGsDevice(feature=gs.GS_CAN_MODE_HW_TIMESTAMP)
     with pytest.raises(ConnectionError, match="listen-only"):
-        ct.apply_listen_only_gs_usb(gs, LO, TS)
-    assert gs.calls[-1] == "stop"                        # left stopped, not running normal
+        ct.silent_gs_usb_class()(channel="canable", bitrate=500000, device=dev)
+    assert dev.calls == []
+
+
+def test_the_ev_bus_on_gs_usb_never_uses_the_normal_mode_opener(monkeypatch):
+    gsmod = pytest.importorskip("can.interfaces.gs_usb")
+    opened = []
+
+    class Normal:
+        def __init__(self, **kw):
+            opened.append("normal")
+
+    class Silent:
+        def __init__(self, **kw):
+            opened.append("silent")
+    monkeypatch.setattr(gsmod, "GsUsbBus", Normal)
+    monkeypatch.setattr(ct, "silent_gs_usb_class", lambda: Silent)
+    ct.LocalSource(bus="ev", interface="gs_usb", log=lambda *a: None)._open_gs_usb(None)
+    ct.LocalSource(bus="car", interface="gs_usb", log=lambda *a: None)._open_gs_usb(None)
+    assert opened == ["silent", "normal"]
 
 
 def test_socketcan_ev_bus_refuses_unless_the_kernel_says_listen_only(monkeypatch):

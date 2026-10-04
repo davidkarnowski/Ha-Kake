@@ -40,9 +40,16 @@ ISO-TP flow-control frames — and nothing else; the façade refuses any request
 whose service byte is outside that set before it reaches a bus, and logs it.
 On EV-CAN — the battery, inverter and charger network — the adapter is opened
 in the controller's listen-only mode, in which it transmits nothing, not even
-the acknowledgement bit other nodes see; the transport refuses to open EV-CAN
-in any other mode (and refuses the bus outright when it cannot confirm the
-mode from the device), and answers every request on it with `NO DATA`. The
+the acknowledgement bit other nodes see. In software it is absolute on every
+path: nothing is ever sent on an EV bus, and every request on it answers
+`NO DATA`. How far the controller's silence can be checked depends on the
+firmware: on `socketcan` the kernel enforces it and the transport refuses an
+interface not up `listen-only on`; on candleLight (`gs_usb`) the transport
+refuses firmware that does not offer listen-only and starts the device once,
+silent; on the stock `slcan` firmware it sends `M1` before opening, which that
+firmware does not acknowledge — so there the silence is the firmware's word,
+and the startup log says so. candleLight is the choice when it must be
+checkable. The
 onboard termination resistor must be disabled: both of the Leaf's buses are
 already terminated, and a third terminator degrades the signal for every
 controller on that bus. Reviewed 2026-09-09 as a transport, not a new service.
