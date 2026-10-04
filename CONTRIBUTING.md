@@ -30,7 +30,8 @@ here is what makes a contribution easy to merge.
   local run is the check — a pull request is verified the same way before merge. Home paths, adapter UUIDs,
   VINs, keys and session URLs never go public; personal captures live in
   `research/`, which is gitignored. Mark a deliberately public line (like the
-  security contact) with `privacy-ok`.
+  security contact) with `privacy-ok:<rule>` (e.g. `privacy-ok:e-mail`); a
+  bare `privacy-ok` only silences warnings.
 - **Temperatures** are always presented as °C / °F together.
 - **Safety:** read-only. See SECURITY.md before adding any UDS service other
   than `0x21`.

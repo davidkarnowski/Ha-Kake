@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email **kn6irv@gmail.com** with "Leaf OBD security" in the subject. Expect an <!-- privacy-ok -->
+Email **kn6irv@gmail.com** with "Leaf OBD security" in the subject. Expect an <!-- privacy-ok:e-mail -->
 acknowledgment within a few days. Please do not open a public issue for
 anything you believe is exploitable before we have had a chance to respond.
 

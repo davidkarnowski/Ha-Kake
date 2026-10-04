@@ -15,9 +15,18 @@ the data; see docs/DTC_DICTIONARY.md).
   ./venv/bin/python scripts/privacy_sweep.py --history  # + every blob in history
   ./venv/bin/python scripts/privacy_sweep.py --strict   # warnings also fail
 
-Exit 1 on any ERROR (or on WARN with --strict). Allow-listed lines carry the
-marker  privacy-ok  in the same line (use sparingly, e.g. the contact e-mail
-in SECURITY.md).
+Exit 1 on any ERROR (or on WARN with --strict). A line meant to be public
+carries a marker: a bare  privacy-ok  silences WARN rules on that line only;
+silencing an ERROR rule needs its label, e.g.  privacy-ok:e-mail  for the
+security contact in SECURITY.md (labels: comma-separated). Use sparingly.
+
+Beyond the line rules it also refuses, by path: any tracked file under
+research/ (the private folder), and any SQLite database or *.db/*.sqlite file;
+it scans file paths themselves; and it decodes base64-looking tokens and
+scans what they hide with the ERROR rules. --push reads the refs a git
+pre-push hook receives on stdin and scans exactly the commits being pushed —
+their messages, every added line and every added path — so a leak that was
+committed and then removed from the working tree is still caught.
 
 Why --history exists: a working tree can be spotless while the history still
 carries the leak. That happened here — an adapter UUID was committed and
@@ -35,22 +44,52 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # (severity, label, regex)
+HEX = "[0-9A-Fa-f]"
 RULES = [
-    ("ERROR", "home path",        re.compile(r"(/Users/[A-Za-z0-9_.-]+|/home/[A-Za-z0-9_.-]+|C:\\\\Users\\\\)")),
-    ("ERROR", "secret-looking",   re.compile(r"(sk-ant-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|xox[bp]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")),
-    ("ERROR", "claude session",   re.compile(r"claude\.ai/code/session_[A-Za-z0-9]+")),
+    ("ERROR", "home path",        re.compile(r"(/Users/[A-Za-z0-9_.-]+|/home/[A-Za-z0-9_.-]+|[A-Za-z]:\\{1,2}Users\\{1,2}[A-Za-z0-9_.-]+)")),
+    ("ERROR", "secret-looking",   re.compile(r"(sk-ant-[A-Za-z0-9_-]{8,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}"
+                                             r"|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}"
+                                             r"|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")),
+    ("ERROR", "claude session",   re.compile(r"claude\.ai/(code/session_[A-Za-z0-9]+|(chat|share|project)/[0-9A-Fa-f-]{8,})")),
+    # macOS (CoreBluetooth) device identifiers are upper-case; the lower-case
+    # form is how public GATT service/characteristic UUIDs are written, so it
+    # is a WARN, and the Bluetooth base UUID (0000xxxx-0000-1000-8000-00805f9b34fb)
+    # is not flagged at all.
     ("ERROR", "device UUID",      re.compile(r"\b[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b")),
+    ("WARN",  "uuid (lower)",     re.compile(r"\b(?!0000[0-9a-f]{4}-0000-1000-8000-00805f9b34fb)"
+                                             r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")),
+    ("ERROR", "BLE/MAC address",  re.compile(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}(?![0-9A-Fa-f:])")),
     # A VIN always carries letters (the manufacturer code alone is alphabetic), so a
     # run of 17 digits is not one — it is a float literal like 0.15915494309189535,
-    # which vendored three.js has four of. The lookahead keeps those from tripping.
-    ("ERROR", "VIN",              re.compile(r"\b(?![0-9]{17}\b)[A-HJ-NPR-Z0-9]{17}\b")),
-    ("WARN",  "e-mail",           re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
-    ("WARN",  "IPv4",             re.compile(r"\b(?!127\.0\.0\.1)(?!0\.0\.0\.0)(\d{1,3}\.){3}\d{1,3}\b")),
+    # which vendored three.js has four of. The lookarounds treat '_' as a boundary
+    # (a VIN inside a file name like JN1..._drive.jsonl) without matching inside
+    # longer alphanumeric runs.
+    ("ERROR", "VIN",              re.compile(r"(?<![A-Za-z0-9])(?![0-9]{17}(?![A-Za-z0-9]))[A-HJ-NPR-Z0-9]{17}(?![A-Za-z0-9])")),
+    # bounded to an address's real limits (64 before the @, 253 after): the
+    # unbounded form was quadratic on a long line with no @ in it
+    ("ERROR", "e-mail",           re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}")),
+    ("ERROR", "IPv4",             re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
+    # a serial-port name that ends in a hardware serial number identifies the
+    # adapter; a short generic one (usbserial-0001, -XXX) does not
+    ("ERROR", "serial port",      re.compile(r"/dev/(?:tty|cu)\.(?:usbserial-|usbmodem|wchusbserial|SLAB_USBtoUART)[A-Za-z0-9]{6,}")),
+    ("WARN",  "serial port",      re.compile(r"/dev/(?:tty|cu)\.(?:usbserial-|usbmodem|wchusbserial)[A-Za-z0-9]{1,5}\b")),
     ("WARN",  "username",         re.compile(r"\b(dk|kn6irv|hustleyourcity)\b")),
-    ("WARN",  "serial port",      re.compile(r"/dev/(tty|cu)\.usbserial-[A-Za-z0-9]+")),
     ("WARN",  "phone number",     re.compile(r"\b\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b")),
+    ("WARN",  "secret assignment", re.compile(r"(?i)\b(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*['\"][^'\"\s]{8,64}['\"]")),
 ]
+# Matches that are public by construction, per rule.
+ALLOW = {
+    "e-mail": re.compile(r"^(noreply@anthropic\.com|[^@]+@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|org|net)|example))$", re.I),
+    "IPv4": re.compile(r"^(127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$"),
+}
+# Not scanned line by line. research/ is the private, gitignored folder: a
+# tracked file there is itself the finding (see scan_paths), and the history
+# scan keeps skipping it (the folder was once in the repo; history is reviewed
+# by hand).
 SKIP_DIRS = ("venv/", ".venv/", "research/")
+PRIVATE_DIRS = ("research/",)
+DB_EXT = (".db", ".sqlite", ".sqlite3")
+SQLITE_MAGIC = b"SQLite format 3\x00"
 
 # Trouble-code dictionaries are never committed. The project ships the format
 # and none of the data (docs/DTC_DICTIONARY.md): description text is
@@ -123,14 +162,104 @@ def scan_dtc(path, text, findings):
                          "— see docs/DTC_DICTIONARY.md"))
 
 
-def scan_text(label, text, findings):
+MARKER = re.compile(r"privacy-ok(?::([A-Za-z0-9 ,/()-]+))?")
+
+
+def _allowed(line):
+    """(silence_warn, labels) from a privacy-ok marker on the line."""
+    m = MARKER.search(line)
+    if not m:
+        return False, set()
+    # trailing spaces/dashes belong to the comment syntax around it (<!-- … -->)
+    return True, {x.strip(" -") for x in (m.group(1) or "").split(",") if x.strip(" -")}
+
+
+def _hit(sev, name, rx, line):
+    """The first match of `rx` in `line` that the per-rule allow list does not cover."""
+    for m in rx.finditer(line):
+        allow = ALLOW.get(name)
+        if allow is None or not allow.match(m.group(0)):
+            return m
+    return None
+
+
+def scan_text(label, text, findings, rules=None, skip=()):
     for n, line in enumerate(text.splitlines(), 1):
-        if "privacy-ok" in line:
-            continue
-        for sev, name, rx in RULES:
-            m = rx.search(line)
-            if m:
+        marked, labels = _allowed(line)
+        for sev, name, rx in rules or RULES:
+            if name in skip or name in labels or (marked and sev == "WARN"):
+                continue
+            if _hit(sev, name, rx, line):
                 findings.append((sev, name, f"{label}:{n}", line.strip()[:110]))
+    scan_encoded(label, text, findings)
+
+
+# ---------------------------------------------------- encoded secrets ----
+# A secret can be committed base64-encoded (a config blob, a data: URL, a
+# token pasted from a header). Bounded on purpose: at most MAX_TOKENS tokens
+# per text and MAX_DECODED bytes decoded in total, and only bounded
+# repetition, so a hostile file cannot make the sweep slow.
+B64 = re.compile(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{24,4096}={0,2}(?![A-Za-z0-9+/_=-])")
+MAX_TOKENS, MAX_DECODED = 40, 64 * 1024
+
+
+def _decode(token):
+    import base64
+    import binascii
+    t = token.rstrip("=")
+    t += "=" * (-len(t) % 4)
+    for dec in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            raw = dec(t)
+        except (binascii.Error, ValueError):
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if text and sum(c.isprintable() or c in "\r\n\t" for c in text) >= 0.95 * len(text):
+            return text
+    return None
+
+
+def scan_encoded(label, text, findings):
+    budget, n_tok = MAX_DECODED, 0
+    errors = [r for r in RULES if r[0] == "ERROR"]
+    for n, line in enumerate(text.splitlines(), 1):
+        if n_tok >= MAX_TOKENS or budget <= 0:
+            return
+        marked, labels = _allowed(line)
+        for m in B64.finditer(line):
+            n_tok += 1
+            if n_tok > MAX_TOKENS or budget <= 0:
+                return
+            decoded = _decode(m.group(0))
+            if not decoded:
+                continue
+            budget -= len(decoded)
+            for sev, name, rx in errors:
+                if name not in labels and _hit(sev, name, rx, decoded):
+                    findings.append((sev, name + " (base64)", f"{label}:{n}", line.strip()[:110]))
+
+
+def scan_paths(paths, findings, read_head=None):
+    """Rules on the path names themselves; refuse private and database files.
+    `read_head(path)` returns a file's first bytes (working tree or a commit)."""
+    for p in paths:
+        for sev, name, rx in RULES:
+            if sev == "ERROR" and _hit(sev, name, rx, p):
+                findings.append((sev, name + " (path)", p, p[:110]))
+        if p.startswith(PRIVATE_DIRS):
+            findings.append(("ERROR", "private folder", p, "research/ is the private folder — never committed"))
+            continue
+        head = b""
+        if read_head is not None:
+            try:
+                head = read_head(p) or b""
+            except Exception:
+                head = b""
+        if p.lower().endswith(DB_EXT) or head.startswith(SQLITE_MAGIC):
+            findings.append(("ERROR", "database file", p, "databases hold readings — never committed"))
 
 
 # ---------------------------------------------------------------- history ---
@@ -282,6 +411,11 @@ def main():
     args = ap.parse_args()
 
     findings = []
+
+    def head(p):
+        with open(os.path.join(ROOT, p), "rb") as fh:
+            return fh.read(16)
+    scan_paths(tracked_files(), findings, head)
     for f in tracked_files():
         if f.endswith(BINARY) or any(f.startswith(d) for d in SKIP_DIRS) or f in SKIP_FILES:
             continue
@@ -294,12 +428,7 @@ def main():
             continue
     if args.log:
         log = git("log", f"-{args.log}", "--format=%H%n%B")
-        for sev, name, rx in RULES:
-            if name in LOG_SKIP:            # see LOG_SKIP for why these two only
-                continue
-            for n, line in enumerate(log.splitlines(), 1):
-                if rx.search(line) and "privacy-ok" not in line:
-                    findings.append((sev, name, f"git-log:{n}", line.strip()[:110]))
+        scan_text("git-log", log, findings, skip=LOG_SKIP)   # see LOG_SKIP for why these two
 
     errors = [x for x in findings if x[0] == "ERROR"]
     warns = [x for x in findings if x[0] == "WARN"]
@@ -313,7 +442,8 @@ def main():
         herr, hwarn = report_history(rows, images, head_blobs)
 
     if errors or herr or (args.strict and (warns or hwarn)):
-        print("privacy sweep FAILED — fix, move to research/, or mark the line privacy-ok if it is meant to be public")
+        print("privacy sweep FAILED — fix it, move the material to research/, or mark a line meant to be "
+              "public with privacy-ok (WARN) or privacy-ok:<rule> (ERROR)")
         return 1
     print("privacy sweep OK")
     return 0

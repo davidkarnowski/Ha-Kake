@@ -24,7 +24,7 @@ HIST=
 
 "$PY" scripts/privacy_sweep.py --log 50 $HIST || {
     echo "pre-push: privacy sweep failed — push aborted."
-    echo "  fix the flagged line, move the file to research/, or mark it privacy-ok"
+    echo "  fix the flagged line, move the file to research/, or mark a public line privacy-ok:<rule>"
     echo "  re-check with: $PY scripts/privacy_sweep.py --log 50"
     exit 1
 }

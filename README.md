@@ -437,9 +437,11 @@ pytest -q
 The hook runs both before every push. There is no hosted CI: these local
 checks are the gate.
 
-The sweep refuses home paths, device UUIDs, VINs, secrets and session URLs
-in tracked files, and warns on e-mails, IPs and usernames. Personal captures
-belong in `research/` (gitignored).
+The sweep refuses home paths, e-mail and IP addresses, device and Bluetooth
+identifiers, VINs, adapter serial numbers, secrets (also base64-encoded) and
+session links — in file contents, file names and commit messages — as well as
+any committed database or file under `research/`; it warns on usernames and
+generic port names. Personal captures belong in `research/` (gitignored).
 
 ## Safety
 

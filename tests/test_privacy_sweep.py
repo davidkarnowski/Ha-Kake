@@ -39,7 +39,7 @@ def names(findings):
     ("ADDR = \"0A2B71BF-7812-999C-8905-B1D28E23973A\"", "device UUID"),
     ("see https://claude.ai/code/session_01AbCdEf", "claude session"),
     ("port = /dev/tty.usbserial-1420", "serial port"),
-    ("mail me at someone@example.com", "e-mail"),
+    ("mail me at someone@mailhost.invalid", "e-mail"),
     ("adapter at 192.168.1.44", "IPv4"),
 ])
 def test_rules_fire(text, rule):
@@ -52,6 +52,84 @@ def test_privacy_ok_marker_exempts_the_line():
     found = []
     ps.scan_text("f", "contact someone@example.com  privacy-ok", found)
     assert found == []
+
+
+@pytest.mark.parametrize("text,rule,sev", [
+    ('char = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"', "uuid (lower)", "WARN"),
+    ("adapter AA:BB:CC:11:22:33 paired", "BLE/MAC address", "ERROR"),
+    ("captures/JN1AZ0CP5BT012345_drive.jsonl", "VIN", "ERROR"),
+    (r"dir C:\Users\alice\leaf", "home path", "ERROR"),
+    ("https://claude.ai/chat/0f2c1a7e-1234-4cde-9abc-0123456789ab", "claude session", "ERROR"),
+    ("port /dev/cu.usbmodem2071385A4E5B1", "serial port", "ERROR"),
+    ("port /dev/cu.wchusbserial14A2B3C", "serial port", "ERROR"),
+    ("token github_pat_11ABCDEFG0123456789abcdefghij", "secret-looking", "ERROR"),
+    ("key AIzaSyA-0123456789abcdefghijklmnopqrstuv", "secret-looking", "ERROR"),
+    ("key sk-proj-abcdefghijklmnopqrstuvwxyz0123", "secret-looking", "ERROR"),
+    ('password = "hunter2hunter2"', "secret assignment", "WARN"),
+])
+def test_broadened_rules_fire_at_their_severity(text, rule, sev):
+    found = []
+    ps.scan_text("f", text, found)
+    assert (sev, rule) in {(f[0], f[1]) for f in found}, found
+
+
+@pytest.mark.parametrize("text", [
+    'BLE_FFE1 = "0000ffe1-0000-1000-8000-00805f9b34fb"',       # the Bluetooth base UUID
+    "write to jane@example.com or ops@lab.example.org",
+    "Co-Authored-By: Claude <noreply@anthropic.com>",
+    "binds 127.0.0.1 and documents 192.0.2.10, 198.51.100.7, 203.0.113.9",
+    "a float 0.15915494309189535 is not a VIN",
+])
+def test_public_by_construction_is_not_an_error(text):
+    found = []
+    ps.scan_text("f", text, found)
+    assert [f for f in found if f[0] == "ERROR"] == [], found
+
+
+def test_a_short_generic_serial_port_name_is_only_a_warning():
+    found = []
+    ps.scan_text("f", "DEFAULT_PORT = '/dev/tty.usbserial-0001'", found)
+    assert {(f[0], f[1]) for f in found} == {("WARN", "serial port")}
+
+
+def test_a_bare_marker_silences_warnings_but_not_errors():
+    found = []
+    ps.scan_text("f", "contact someone@mailhost.invalid, user dk  privacy-ok", found)
+    assert {(f[0], f[1]) for f in found} == {("ERROR", "e-mail")}
+    found = []
+    ps.scan_text("f", "contact someone@mailhost.invalid, user dk  <!-- privacy-ok:e-mail -->", found)
+    assert found == []
+
+
+def test_an_encoded_secret_is_found():
+    import base64
+    blob = base64.b64encode(b"path=/Users/alice/Projects/leaf secret").decode()
+    found = []
+    ps.scan_text("f", f'CONFIG = "{blob}"', found)
+    assert "home path (base64)" in names(found)
+    found = []
+    ps.scan_text("f", "x = " + base64.b64encode(b"\x00\x01binary noise\xff" * 4).decode(), found)
+    assert found == []
+
+
+def test_a_hostile_megabyte_line_is_scanned_quickly():
+    import time
+    t0 = time.monotonic()
+    ps.scan_text("f", "A" * 1_000_000 + " " + "a1:" * 200_000 + " " + "/" * 500_000, [])
+    assert time.monotonic() - t0 < 2.0
+
+
+def test_paths_private_folders_and_databases_are_refused():
+    found = []
+    heads = {"data/blob.bin": b"SQLite format 3\x00", "web/static/app.js": b"// js"}
+    ps.scan_paths(["research/notes.md", "web/leaf_battery.db", "data/blob.bin", "web/static/app.js",
+                   "captures/JN1AZ0CP5BT012345_drive.jsonl"], found, heads.get)
+    got = {(f[1], f[2]) for f in found}
+    assert ("private folder", "research/notes.md") in got
+    assert ("database file", "web/leaf_battery.db") in got
+    assert ("database file", "data/blob.bin") in got
+    assert ("VIN (path)", "captures/JN1AZ0CP5BT012345_drive.jsonl") in got
+    assert not any(p == "web/static/app.js" for _, p in got)
 
 
 def test_clean_text_is_clean():

@@ -102,12 +102,16 @@ The rule in §2 does not bend: docs land in the same commit as the change.
 ## 4b. Before any push — privacy sweep (non-negotiable)
 
 Run `python scripts/privacy_sweep.py --log 50` (the pre-push hook
-does it too). It must report `privacy sweep OK`. Look for: absolute home
-paths (`/Users/…`), usernames, e-mails, the BLE adapter UUID, VIN, serial
-numbers, IPs, keys, Claude session URLs in files. Fix the file, move the
-material to `research/` (gitignored), or — only for content meant to be
-public, like the security contact — mark the line `privacy-ok`. Machine
-specifics go in `config.local.json` (gitignored), never in code.
+does it too). It must report `privacy sweep OK`. Errors: absolute home
+paths, e-mails and IPs (documentation addresses and ranges excepted), device
+UUIDs, BLE/MAC addresses, VINs, adapter serial numbers in port names, keys and
+tokens (also base64-encoded), Claude session/chat links, file paths carrying
+any of these, any tracked file under `research/`, and any database file.
+Fix the file, move the material to `research/` (gitignored), or — only for
+content meant to be public, like the security contact — mark the line:
+a bare `privacy-ok` silences warnings only; an error needs its rule named,
+`privacy-ok:e-mail`. Machine specifics go in `config.local.json` (gitignored),
+never in code.
 
 ## 5. Things that are intentional
 

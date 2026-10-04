@@ -60,7 +60,7 @@ grant you different terms.
 
 ## How to ask
 
-Email **kn6irv@gmail.com** with "Ha-Kake commercial license" in the subject. <!-- privacy-ok -->
+Email **kn6irv@gmail.com** with "Ha-Kake commercial license" in the subject. <!-- privacy-ok:e-mail -->
 
 Useful things to say up front: what the product or service is, roughly how many
 vehicles or installations, whether you need to modify the code, and whether you
