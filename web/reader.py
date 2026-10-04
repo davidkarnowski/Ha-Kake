@@ -34,7 +34,7 @@ Usage:
   python reader.py --adapter sim      # no car: run against the vehicle simulator
   python reader.py --adapter can      # a native USB-CAN adapter (CANable); config names the bus
   python reader.py --adapter mqtt     # frames from a bridge through an MQTT broker
-  python reader.py --interval 1       # minimum seconds per cycle (default 0.5)
+  python reader.py --interval 1       # minimum seconds per cycle (default: the adapter's MIN_INTERVAL)
   python reader.py --budget 1.5       # seconds of slow-lane work per cycle
   python reader.py --vehicle lancer_2009   # a different vehicle profile
 """
@@ -96,6 +96,21 @@ BOOKMARK_LABEL_MAX = 80
 SIM_TILES_FILE = os.path.join(DIR, "sim_tiles.json")
 
 ASLEEP_INTERVAL = 60
+# The minimum cycle period for a transport that does not set MIN_INTERVAL.
+# 0.5 s keeps an ELM327 from spinning when only cheap items are due; the
+# native CAN façade sets 0, because there the cycle IS the requests (the
+# LBC's own ~10 ms frame pacing) and padding it only delays the next cell
+# read. An explicit --interval overrides either.
+DEFAULT_INTERVAL = 0.5
+
+
+def interval_for(elm, explicit=None):
+    """The minimum cycle period: `explicit` (--interval) when given, else the
+    transport's MIN_INTERVAL, else DEFAULT_INTERVAL."""
+    if explicit is not None:
+        return float(explicit)
+    v = getattr(elm, "MIN_INTERVAL", None)
+    return DEFAULT_INTERVAL if v is None else float(v)
 BACKOFF_MIN, BACKOFF_MAX = 2, 8
 MAX_DETECT_ATTEMPTS = 1   # after this many failed reconnects, exit so app.py relaunches a
                           # FRESH process — macOS leaves CoreBluetooth broken across sleep,
@@ -771,7 +786,11 @@ class Reader:
     console = None
 
     def __init__(self, interval, adapter_pref, fast=False, store=None, budget=1.5):
-        self.interval = interval          # minimum cycle period
+        # Minimum cycle period. None = the transport's own MIN_INTERVAL once it
+        # is connected (0.5 s for the ELM327s, 0 for the native CAN façade);
+        # an explicit --interval always wins. See interval_for().
+        self.interval_arg = interval
+        self.interval = DEFAULT_INTERVAL if interval is None else interval
         self.budget = budget              # slow-lane seconds per cycle
         self.adapter_pref = adapter_pref
         self.fast = fast
@@ -781,6 +800,8 @@ class Reader:
         self.cache = {}                   # latest decoded value of every key
         self.item_last = {}               # item → loop time of last successful run
         self.item_age = {}                # item → seconds since last run (published)
+        self.item_dur = {}                # item → seconds its last read took (published, live only)
+        self.item_gap = {}                # item → seconds between its last two reads (published, live only)
         # ── the clocks (docs/TIMING.md) ──
         # item_last / item_age are monotonic (scheduling); item_ts is the wall
         # clock (storage): when each item's answer, or its newest passive
@@ -1154,8 +1175,12 @@ class Reader:
                 lines = await elm.send(it["cmd"], wait=0.05, timeout=it.get("timeout", 8.0))
             responses[i] = lines
             self.console_item(bus, elm, i, it, lines)
-            timing[i] = round(loop.time() - t, 2)
-            self.item_last[i] = loop.time()
+            done = loop.time()
+            timing[i] = self.item_dur[i] = round(done - t, 3)
+            prev = self.item_last.get(i)
+            if prev is not None:
+                self.item_gap[i] = round(done - prev, 3)
+            self.item_last[i] = done
             self.stamp(elm, i, it)
             if any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines):
                 got_data = True
@@ -1209,13 +1234,15 @@ class Reader:
             # silence there is a sleeping car, frames are a waking one.
             alive = self.bus_alive.get(PRIMARY_BUS, False)
 
-        self.item_age = {i: round(loop.time() - self.item_last[i], 1) for i in self.item_last}
+        self.item_age = {i: round(loop.time() - self.item_last[i], 3) for i in self.item_last}
         self.resolve()
         self.apply_policy()
         self.emit_events()
         merged = dict(self.cache)
         merged["timing"] = timing
         merged["item_age"] = self.item_age
+        merged["item_dur"] = dict(self.item_dur)
+        merged["item_gap"] = dict(self.item_gap)
         merged["item_ts"] = {i: _iso_ms(e) for i, e in self.item_ts.items()}
         merged["item_ts_epoch"] = {i: round(e, 3) for i, e in self.item_ts.items()}
         if self.frame_ts:
@@ -1431,6 +1458,7 @@ class Reader:
                 elm = self.transports[PRIMARY_BUS]
                 self.speed = float(getattr(elm, "SPEED", 1.0) or 1.0)
                 self.passive_instant = bool(getattr(elm, "PASSIVE_INSTANT", False))
+                self.interval = interval_for(elm, self.interval_arg)
                 self.ts_source = str(getattr(elm, "ts_source", None) or "laptop")
                 self.frame_ts = {}
                 self._stored_offset = None
@@ -1512,7 +1540,7 @@ class Reader:
             rec.update({
                 "timestamp": utc_now_iso(),
                 "readings": self.readings,
-                "cycle_s": round(elapsed, 1),
+                "cycle_s": round(elapsed, 3),
                 "adapter_type": elm.adapter_type,
                 "adapter_name": elm.adapter_name,
                 "adapter_port": elm.adapter_port,
@@ -1585,7 +1613,8 @@ async def main(interval, adapter_pref, fast=False, budget=1.5, db=None):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--interval", type=float, default=0.5, help="Minimum seconds per cycle (default: 0.5)")
+    ap.add_argument("--interval", type=float, default=None,
+                    help="Minimum seconds per cycle (default: the adapter's own — 0.5 for an ELM327, 0 for native CAN)")
     ap.add_argument("--budget", type=float, default=1.5, help="Slow-lane seconds per cycle (default: 1.5)")
     ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim", "can", "mqtt"], default="auto")
     ap.add_argument("--fast", action="store_true", help="Fast-lane primary item only (ignores tiles)")

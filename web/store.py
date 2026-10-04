@@ -40,7 +40,9 @@ DEFAULT_DB = os.path.join(DIR, "leaf_battery.db")
 # A profile adds its own bulky/raw keys through EXTRA_SKIP.
 BASE_SKIP = {"cells", "timestamp", "status", "adapter_type", "adapter_name", "adapter_port",
              "ts_source",          # its own column
-             "item_ts"}            # rebuilt from item_ts_epoch on the way back (docs/TIMING.md)
+             "item_ts",            # rebuilt from item_ts_epoch on the way back (docs/TIMING.md)
+             "item_dur", "item_gap"}   # live-only read duration / gap per item: at the cell
+                                       # log's ~2.5 rows/s they would double each row's extra
 
 
 def _coerce(kind, v):

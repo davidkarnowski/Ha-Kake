@@ -166,7 +166,7 @@ specifics go in `config.local.json` (gitignored), never in code.
 | Question | File |
 |---|---|
 | What does byte N mean? | `docs/SIGNALS.md`, then `leaf_decoders.py` |
-| Why is the dashboard slow / stale? | `web/reader.py` scheduler, `item_age` in `/api/status` |
+| Why is the dashboard slow / stale? | `web/reader.py` scheduler; `item_age` / `item_dur` / `item_gap` in `/api/status` (ms, `docs/TIMING.md`); the page is fed by `/api/stream` (SSE push) with a 1 s fallback fetch — `docs/ARCHITECTURE.md` "Dashboard" |
 | How did we find X? | `WORKLOG.md` (search the CAN ID) |
 | Adapter won't talk | `elm327.py` header comments, README "Hardware" |
 | Add another vehicle? | `vehicles/__init__.py` contract docstring; `vehicles/lancer_2009.py` is the minimal example |

@@ -230,6 +230,12 @@ did not mind (6 of 6 at 0, 5 and 10) and does not notice: it paces its own
 frames at ~10 ms, so the cell read is ~0.29 s and group 01 ~0.06 s at 0 and
 at 5 alike. `can_isotp_stmin` still forces one value for every ECU.
 
+`MIN_INTERVAL = 0.0`: the reader's cycle floor (`reader.interval_for()`) is
+the transport's, and on the façade there is none — the cycle is the requests,
+paced by the ECUs, so padding it to the ELM327's 0.5 s only delayed the next
+cell read (a 0.4 s cycle was being stretched to 0.5 on the car). `--interval`
+still sets one explicitly.
+
 Every record carries `can_bus` and `listen_only`, so the header can say
 "EV-CAN · listen-only" and a stored row remembers where it came from.
 

@@ -85,11 +85,32 @@
     return typeof a === 'number' ? a : null;
   }
 
-  // "3s ago" / "4m ago" / "1.2h ago"; '' for null
-  function fmtAge(sec) {
+  // A short duration with the precision it deserves: "290 ms" under a second,
+  // "1.4 s" under ten, "12 s" after that; '' for null. A native CAN adapter
+  // reads the pack every ~0.4 s, and whole seconds hid that (2026-10-03).
+  function fmtMs(sec) {
     if (sec == null || !(sec >= 0)) return '';
-    return sec < 60 ? `${Math.round(sec)}s ago` : sec < 5400 ? `${Math.round(sec / 60)}m ago` : `${(sec / 3600).toFixed(1)}h ago`;
+    const ms = Math.round(sec * 1000);                 // 0.9996 is "1.0 s", not "1000 ms"
+    return ms < 1000 ? `${ms} ms` : sec < 9.95 ? `${sec.toFixed(1)} s` : `${Math.round(sec)} s`;
   }
 
-  window.Playback = { SPEEDS, frameIndex, createTransport, fmtDur, itemAge, fmtAge };
+  // "290 ms ago" / "3.4 s ago" / "42 s ago" / "4m ago" / "1.2h ago"; '' for null
+  function fmtAge(sec) {
+    if (sec == null || !(sec >= 0)) return '';
+    return sec < 60 ? `${fmtMs(sec)} ago` : sec < 5400 ? `${Math.round(sec / 60)}m ago` : `${(sec / 3600).toFixed(1)}h ago`;
+  }
+
+  // How the item's last read went, from the reader's live-only item_dur /
+  // item_gap: "read 290 ms · every 430 ms". '' when the record has neither
+  // (a stored frame in playback, an older reader).
+  function fmtRead(data, item) {
+    if (!data || !item) return '';
+    const d = data.item_dur ? data.item_dur[item] : null, g = data.item_gap ? data.item_gap[item] : null;
+    const parts = [];
+    if (typeof d === 'number') parts.push(`read ${fmtMs(d)}`);
+    if (typeof g === 'number') parts.push(`every ${fmtMs(g)}`);
+    return parts.join(' · ');
+  }
+
+  window.Playback = { SPEEDS, frameIndex, createTransport, fmtDur, itemAge, fmtAge, fmtMs, fmtRead };
 })();

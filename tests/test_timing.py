@@ -401,12 +401,14 @@ def test_item_age_measures_from_now_live_and_from_the_frame_in_playback():
       out.push(P.itemAge(old, 'lbc01', 5000));
       out.push(P.itemAge({timestamp: '1970-01-01T00:16:50Z', item_ts_epoch: {lbc01: 1012.0}}, 'lbc01', null)); // clamped at 0
       out.push(P.fmtAge(3.4), P.fmtAge(125), P.fmtAge(7200), P.fmtAge(null), P.fmtAge(-1));
+      out.push(P.fmtAge(0.113), P.fmtAge(0.9996), P.fmtAge(42));
       console.log(JSON.stringify(out));
     """)
     assert out[:3] == [3.5, 63.5, None]
     assert out[3:5] == [10, 70]
     assert out[5] == 4.2 and out[6] == 0
-    assert out[7:] == ["3s ago", "2m ago", "2.0h ago", "", ""]
+    assert out[7:12] == ["3.4 s ago", "2m ago", "2.0h ago", "", ""]
+    assert out[12:] == ["113 ms ago", "1.0 s ago", "42 s ago"]
 
 
 def test_the_page_uses_the_helper_for_its_read_at_badges():
@@ -446,3 +448,16 @@ def test_scheduling_is_monotonic_and_storage_is_wall_clock():
     assert "self.store.insert_reading(row, ts=now, adapter=elm.adapter_type, ts_source=self.ts_source)" in src
     assert "now = dt.datetime.now(dt.timezone.utc)" in src
     assert "time.time() - self.item_last" not in src and "loop.time() - self.item_ts" not in src
+
+
+@needs_node
+def test_fmt_ms_and_the_read_readout_show_milliseconds():
+    """Whole seconds hid a ~0.4 s cell cadence (car, CANable, 2026-10-03)."""
+    out = run_node(HARNESS + """
+      out.push(P.fmtMs(0.29), P.fmtMs(0.004), P.fmtMs(1.234), P.fmtMs(9.96), P.fmtMs(75), P.fmtMs(null));
+      const d = {item_dur: {lbc02: 0.291}, item_gap: {lbc02: 0.43, lbc01: 0.43}};
+      out.push(P.fmtRead(d, 'lbc02'), P.fmtRead(d, 'lbc01'), P.fmtRead(d, 'lbc04'), P.fmtRead({}, 'lbc02'));
+      console.log(JSON.stringify(out));
+    """)
+    assert out[:6] == ["290 ms", "4 ms", "1.2 s", "10 s", "75 s", ""]
+    assert out[6:] == ["read 291 ms · every 430 ms", "every 430 ms", "", ""]

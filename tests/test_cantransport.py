@@ -720,3 +720,53 @@ def test_a_listen_only_car_bus_that_is_silent_is_asleep(isolated_reader, leaf_pr
     r, rec, alive, requests, refused = _listen_only_cycle(channel(), tmp_store, broadcast=False)
     assert alive is False
     assert requests == []
+
+
+# ── cadence: no padding on native CAN, and the read readout ──────────────
+
+def test_the_cycle_floor_comes_from_the_transport_unless_given():
+    """The ELM327s keep the 0.5 s floor; the façade has none, because there
+    the cycle is the requests (car, 2026-10-03: a 0.4 s cycle padded to 0.5)."""
+    assert ct.CanFacade.MIN_INTERVAL == 0.0
+    assert rd.interval_for(ct.CanFacade) == 0.0
+    assert rd.interval_for(elm327.SerialELM) == rd.DEFAULT_INTERVAL == 0.5
+    assert rd.interval_for(object()) == 0.5
+    assert rd.interval_for(ct.CanFacade, explicit=1.0) == 1.0          # --interval wins
+    assert rd.interval_for(elm327.SerialELM, explicit=0) == 0.0
+    r = rd.Reader(interval=None, adapter_pref="can", store=None)
+    assert r.interval_arg is None and r.interval == 0.5                # until a transport says otherwise
+
+
+def test_poll_once_publishes_read_duration_and_gap_in_milliseconds(isolated_reader, leaf_profile, tmp_store):
+    chan = channel()
+    lbc = FakeECU(chan, 0x79B, 0x7BB, LBC)
+    lbc.start()
+    elm = facade(chan)
+    run(elm.connect(log=lambda *a: None))
+    try:
+        run(rd.configure_vehicle(elm))
+        r = rd.Reader(interval=0, adapter_pref="can", store=tmp_store, budget=1.5)
+        r.speed, r.passive_instant = elm.SPEED, elm.PASSIVE_INSTANT
+        rec1, _ = run(r.poll_once(elm))
+        assert rec1["item_dur"]["lbc01"] == rec1["timing"]["lbc01"]
+        assert "lbc01" not in rec1["item_gap"]                          # one read: no gap yet
+        time.sleep(0.05)
+        rec2, _ = run(r.poll_once(elm))
+        gap = rec2["item_gap"]["lbc01"]
+        assert 0.05 <= gap < 2.0
+        assert round(gap, 3) == gap                                      # milliseconds, not tenths
+        assert all(round(v, 3) == v for v in rec2["item_age"].values())
+        assert any(round(v, 1) != v for v in rec2["item_dur"].values())   # a ~ms read survives unrounded
+    finally:
+        run(elm.close())
+        lbc.stop()
+
+
+def test_read_duration_and_gap_are_never_stored(tmp_store):
+    rid = tmp_store.insert_reading({"soc": 50.0, "timestamp": "2026-10-03T19:40:00Z",
+                                    "item_dur": {"lbc02": 0.29}, "item_gap": {"lbc02": 0.43},
+                                    "item_age": {"lbc02": 0.1}})
+    extra = tmp_store.conn.execute("SELECT extra FROM readings WHERE id = ?", (rid,)).fetchone()[0]
+    extra = json.loads(extra or "{}")
+    assert "item_dur" not in extra and "item_gap" not in extra
+    assert "item_age" in extra                                         # unchanged: only the two new maps are live-only

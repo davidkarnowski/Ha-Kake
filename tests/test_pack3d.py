@@ -363,6 +363,11 @@ def test_pack3d_never_shadows_the_page_pack():
 def test_poll_logs_what_made_the_dashboard_say_offline():
     with open(os.path.join(ROOT, "web", "templates", "index.html")) as f:
         page = f.read()
-    catch = page[page.index("async function poll()"):]
-    catch = catch[catch.index("} catch (e) {"):catch.index("'Dashboard offline'")]
-    assert "console.error(" in catch
+    # poll() and the live stream both land in offline(), which must log
+    helper = page[page.index("function offline(e)"):]
+    helper = helper[:helper.index("'Dashboard offline'")]
+    assert "console.error(" in helper
+    for start in ("async function poll()", "es.onmessage"):
+        body = page[page.index(start):]
+        body = body[body.index("catch (e) {"):]
+        assert body[:body.index("}")].strip().endswith("offline(e);"), start

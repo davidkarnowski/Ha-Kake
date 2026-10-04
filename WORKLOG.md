@@ -1948,3 +1948,57 @@ ARCHITECTURE's STMIN list, ROADMAP status line, SIMULATOR and `bench_canrate.py`
 notes. **1,191 passing.** Still open: EV-CAN (13/12, listen-only) not yet
 connected; `M1` silence unverifiable on the stock firmware; `SPEED` still the
 modelled 0.05.
+
+## 2026-10-03 (evening) — a pushed live page, and timings to the millisecond
+
+**Why.** With the CANable the dashboard showed the cell grid's badge at "0s
+ago" / "1s ago" and nothing finer. The live record (`/api/status`, three reads
+1.3 s apart) said more: cell log on, `cells_seq` 164 → 169 in ~2.6 s — a cell
+read every ~0.45 s — with `lbc02` taking 0.29 s, `lbc01` 0.06 s, one rotating
+slow item 0.04–0.11 s, and the cycle padded to the reader's 0.5 s floor. The
+page fetched `/api/status` once a second, so it drew one read in two or three.
+
+**Push.** The owner asked whether a WebSocket should replace the polling; we
+chose Server-Sent Events: the data flows one way, Flask streams it with no new
+dependency, and EventSource reconnects on its own. The owner's follow-up — does
+plain HTTP expose the data to a packet scan? — has the same answer for both:
+the server binds 127.0.0.1 only (`app.run`, confirmed with `lsof`), loopback
+never reaches the network, and SSE versus WebSocket changes nothing about
+encryption (`http`/`https`, `ws`/`wss`). Reaching the page from another device
+would need TLS and a login either way; nothing here opens that.
+`/api/stream` stats `battery_state.json` every 20 ms and sends the
+`/api/status` record — now built by one `status_payload()` — whenever the
+reader has replaced the file, with a comment line after 10 s of silence so a
+closed tab frees its thread; demo mode answers 204. The page paints every
+pushed record; its 1 s `poll()` stays for `/api/history`, the ticking "ago"
+badges and stale check, and as the whole feed when the stream is down.
+
+**Milliseconds.** `timing`, `item_age` and `cycle_s` are kept to 3 decimals
+(were 0.01–0.1 s); two new live-only maps, `item_dur` (the last read's duration
+per item) and `item_gap` (end-to-end time between its last two reads), feed
+"read 290 ms · every 430 ms" beside the cell grid and 3D pack badges and the
+hover title of every other badge. `fmtMs` / `fmtAge` / `fmtRead` in
+`playback.js`, node-tested. The two maps are in `store.BASE_SKIP`: at the cell
+log's ~2.5 rows/s they would roughly double each row's `extra`.
+
+**Padding.** `reader.interval_for()`: an explicit `--interval` wins, else the
+transport's `MIN_INTERVAL`, else 0.5 s. `CanFacade.MIN_INTERVAL = 0`, so the
+CANable's cycle is just its requests; the ELM327s keep 0.5. `app.py` passes
+`--interval` to the reader only when given.
+
+**What else sits between cell reads** (with the cell log on, `lbc01` and
+`lbc02` run every cycle, ~0.35 s together): the slow lane adds `hvac10` every
+3 s (+0.04 s) and `lbc05` every 5 s (+0.11 s), the rest every 15–30 s; a cycle
+where everything comes due at once adds ~0.3 s, and they drift apart after
+the first. The store insert and state write sit outside the measured cycle
+but inside `item_gap`, which now shows the real figure. Not changed: measure
+first.
+
+**Tests** (1,199 passing): the stream pushes each write once and only
+heartbeats in between (fake clock), its payload equals `/api/status`, the
+route is `text/event-stream`, demo answers 204; `interval_for` for both
+transports and the explicit override; `poll_once` publishes `item_dur` equal to
+`timing` and a millisecond `item_gap` on the second read; the two maps are never
+stored; `fmtMs` / `fmtRead` and the new `fmtAge` strings from node. Not yet
+checked in the car with the new code: the owner's restart of the dashboard is
+the next step.

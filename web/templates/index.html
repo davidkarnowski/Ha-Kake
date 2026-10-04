@@ -851,7 +851,7 @@
 <!-- Cell Tree -->
 <div class="card tree-card" data-tile="cells" data-span="12">
   <div class="tree-header">
-    <div class="card-title" style="margin-bottom:0">Cell Pairs — 48 Modules × 2 Cells <span class="tile-age" data-age-for="lbc02"></span></div>
+    <div class="card-title" style="margin-bottom:0">Cell Pairs — 48 Modules × 2 Cells <span class="tile-age" data-age-for="lbc02"></span><span class="tile-age" data-read-for="lbc02"></span></div>
     <div class="tree-stats">
       <span><span class="ts-label">Min </span><span class="ts-val" id="c-min">--</span></span>
       <span><span class="ts-label">Max </span><span class="ts-val" id="c-max">--</span></span>
@@ -1064,7 +1064,7 @@ function updateDash(data) {
   if (data.readings != null) document.getElementById('readings-val').textContent = data.readings;
   if (data.timestamp) {
     document.getElementById('time-sub').textContent = new Date(data.timestamp).toLocaleTimeString()
-      + (data.cycle_s != null ? ` · ${data.cycle_s.toFixed(1)}s cycle` : '');
+      + (data.cycle_s != null ? ` · ${Playback.fmtMs(data.cycle_s)} cycle` : '');
   }
 
   // Temps (dual F/C) — gauge for average, mini for individual
@@ -1147,8 +1147,12 @@ function updateDash(data) {
   const ageNow = Date.now();
   document.querySelectorAll('[data-age-for]').forEach(el => {
     el.textContent = Playback.fmtAge(Playback.itemAge(data, el.dataset.ageFor, ageNow));
+    el.title = Playback.fmtRead(data, el.dataset.ageFor);      // hover: how long the read took, how often
   });
-  if (data.items) document.getElementById('tiles-poll').textContent = `polling ${data.items.length} source${data.items.length === 1 ? '' : 's'}` + (data.cycle_s != null ? ` · ${data.cycle_s.toFixed(1)}s cycle` : '');
+  document.querySelectorAll('[data-read-for]').forEach(el => {
+    el.textContent = Playback.fmtRead(data, el.dataset.readFor);
+  });
+  if (data.items) document.getElementById('tiles-poll').textContent = `polling ${data.items.length} source${data.items.length === 1 ? '' : 's'}` + (data.cycle_s != null ? ` · ${Playback.fmtMs(data.cycle_s)} cycle` : '');
 
   // ── Vehicle / Tires / Body / Climate tiles (web/static/tiles.js) ──
   Tiles.renderVehicle(document, data);
@@ -1793,40 +1797,70 @@ window.consoleMenu = function (box, o, commit) {
 };
 
 let lastTimestamp = null;
+// The live feed. /api/stream pushes the /api/status record every time the reader
+// writes it (Server-Sent Events, loopback only), so every cell read reaches the
+// page — the 1 s fetch drew one read in two or three once a native CAN adapter
+// read the pack every ~0.4 s. The 1 s timer stays: it refreshes the history
+// (trend, sparklines), keeps the "ago" badges and the stale check ticking between
+// pushes, and is the whole feed whenever the stream is down (demo mode, an older
+// server, a dropped connection — EventSource reconnects on its own).
+let lastData = null, lastHistory = [], streamLive = false;
+
+function paint(data) {
+  // Compute SOC trend first so power gauge knows charge vs draw state
+  updateTrend(lastHistory || []);
+  updateDash(data);
+  document.getElementById('sim-badge').classList.toggle('on', !!data.simulated);
+  updateSparkline(lastHistory);
+  if (window.TileStudio) { TileStudio.update(data); TileStudio.history(lastHistory); }
+
+  // Fire pulse when new data arrives
+  if (data.timestamp && data.timestamp !== lastTimestamp) {
+    lastTimestamp = data.timestamp;
+    firePulse();
+  }
+}
+
+function offline(e) {
+  // A drawing error lands here as well as a failed fetch; say which in the console,
+  // or a tile that throws on every poll looks exactly like a dead server
+  console.error('poll failed:', e);
+  document.getElementById('status-dot').className = 'error';
+  document.getElementById('status-text').textContent = 'Dashboard offline';
+}
+
 async function poll() {
   if (isPlayback()) return;            // every tile is being painted from stored frames
   try {
-    const [statusResp, histResp] = await Promise.all([
-      fetch('/api/status'),
-      fetch('/api/history?minutes=' + historyMinutesNeeded())
-    ]);
-    const data = await statusResp.json();
-    const history = await histResp.json();
-    // Compute SOC trend first so power gauge knows charge vs draw state
-    updateTrend(history || []);
-    updateDash(data);
-    document.getElementById('sim-badge').classList.toggle('on', !!data.simulated);
-    updateSparkline(history);
-    if (window.TileStudio) { TileStudio.update(data); TileStudio.history(history); }
-
-    // Fire pulse when new data arrives
-    if (data.timestamp && data.timestamp !== lastTimestamp) {
-      lastTimestamp = data.timestamp;
-      firePulse();
-    }
+    const histP = fetch('/api/history?minutes=' + historyMinutesNeeded()).then(r => r.json());
+    const dataP = streamLive && lastData ? null : fetch('/api/status').then(r => r.json());
+    lastHistory = await histP;
+    if (dataP) lastData = await dataP;
+    if (lastData) paint(lastData);
   } catch (e) {
-    // A drawing error lands here as well as a failed fetch; say which in the console,
-    // or a tile that throws on every poll looks exactly like a dead server
-    console.error('poll failed:', e);
-    document.getElementById('status-dot').className = 'error';
-    document.getElementById('status-text').textContent = 'Dashboard offline';
+    offline(e);
   }
+}
+
+function openStream() {
+  if (!window.EventSource) return;
+  const es = new EventSource('/api/stream');
+  es.onopen = () => { streamLive = true; };
+  es.onerror = () => { streamLive = false; };       // the 1 s fetch carries on; EventSource retries
+  es.onmessage = ev => {
+    try {
+      lastData = JSON.parse(ev.data);
+      if (!isPlayback()) paint(lastData);
+    } catch (e) {
+      offline(e);
+    }
+  };
 }
 
 const SHOT = new URLSearchParams(location.search).has('shot');
 if (SHOT) document.documentElement.classList.add('shot');
 poll();
-if (!SHOT) setInterval(poll, 1000);
+if (!SHOT) { setInterval(poll, 1000); openStream(); }
 // ?playback=1&from=<epoch>&to=<epoch> reopens a recorded moment (a shareable link);
 // with ?shot it renders that first frame once and holds it.
 { const q = new URLSearchParams(location.search);

@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1191%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1199%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -271,7 +271,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-pytest -q                          # 1191 offline tests, no car needed
+pytest -q                          # 1199 offline tests, no car needed
 
 # Dashboard (car IGN-ON or READY)
 python web/app.py --adapter ble    # → http://127.0.0.1:5000
@@ -399,7 +399,8 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | Route | Returns |
 |---|---|
 | `GET /` | the dashboard page |
-| `GET /api/status` | latest merged reading + `status`, `cycle_s`, per-item `item_age`. `cells` is a positional list (index 0 = pair 1); `cell_min_no` / `cell_max_no` are the pair numbers as people count them, 1–96, the same numbers the page shows; `cell_min_idx` / `cell_max_idx` are the 0-based list positions |
+| `GET /api/stream` | the `/api/status` record pushed as Server-Sent Events each time the reader writes it — what the live page listens to (`EventSource`); 204 in demo mode |
+| `GET /api/status` | latest merged reading + `status`, `cycle_s`, per-item `item_age` / `item_dur` / `item_gap` (ms precision; `docs/TIMING.md`). `cells` is a positional list (index 0 = pair 1); `cell_min_no` / `cell_max_no` are the pair numbers as people count them, 1–96, the same numbers the page shows; `cell_min_idx` / `cell_max_idx` are the 0-based list positions |
 | `GET /api/history?minutes=N` | downsampled readings (`N=0` → everything) |
 | `GET /api/health` | one row per day: capacity, SOH, temps, spread, 12 V, insulation |
 | `GET /api/cells?limit=N` | per-cell voltages for the last N full reads |
@@ -526,6 +527,10 @@ Being on the bus at all has consequences worth knowing:
   2026-10-03** (CANable 2, stock slcan): 1,692 frames/s with no errors, every
   Leaf item read in a 0.58 s full cycle against ~2 s over BLE. EV-CAN not yet
   connected — `docs/CAN_TRANSPORT.md` says what is verified and what is not.
+- **A pushed live page** (2026-10-03): `/api/stream` sends every reading to the
+  page as it is written (Server-Sent Events, loopback only), so a cell read
+  every ~0.4 s shows every time instead of one in two or three; read times are
+  shown to the millisecond ("read 290 ms · every 430 ms").
 - **A colour scale that holds still** (2026-09-10): the cell grid and the 3D
   pack colour from the frame's own lowest and highest pair by default, which
   rescales every frame — in playback one colour means a different voltage as
@@ -560,7 +565,7 @@ Being on the bus at all has consequences worth knowing:
   drawn with a vendored three.js. Where each module sits is verified against
   the service manual (EVB-20); the order inside a stack is still assumed and
   says so — `docs/PACK3D.md`.
-- 1191 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
+- 1199 offline tests. BLE cycle ~2–3 s with every tile on; over USB a command
   round-trip is 5–10 ms and the cycle is dominated by passive `ATMA` dwell,
   not by the adapter (`tools/bench_transport.py` measures your own).
 - **No car needed** (2026-09-03): replay runs the whole stack off a recorded

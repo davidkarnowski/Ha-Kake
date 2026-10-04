@@ -33,14 +33,16 @@ the MQTT `state` topic) carries, per item polled:
 
 | Key | Type | Meaning | Stored |
 |---|---|---|---|
-| `timing[item]` | s | how long that item's request took this cycle | `extra` |
-| `item_age[item]` | s | seconds since the item last ran, at emission (monotonic) | `extra` |
+| `timing[item]` | s (ms precision) | how long that item's request took this cycle | `extra` |
+| `item_age[item]` | s (ms precision) | seconds since the item last ran, at emission (monotonic) | `extra` |
+| `item_dur[item]` | s (ms precision) | how long the item's **last** read took, whichever cycle it was in — `timing` only holds this cycle's items | **never** (live only) |
+| `item_gap[item]` | s (ms precision) | the time between the item's last two reads, end to end: its real refresh period, padding, slow lane and storage included (monotonic) | **never** (live only) |
 | `item_ts[item]` | ISO ms `Z` | **when the item's value was acquired** (wall clock) | rebuilt from the epoch |
 | `item_ts_epoch[item]` | epoch s | the same, as a number | `extra` |
 | `frame_ts[item]` | epoch s | the *source's* timestamp of the newest frame behind a passive item; only on a transport with a source clock | `extra` |
 | `ts_source` | text | whose clock stamps the rows: `laptop` (ELM, replay, sim), `driver` (python-can), `bridge` (a Pi over MQTT) | its own column |
 | `clock_offset_s` | s | `median(t_rx − t_src)` over the last ≤ 200 frames; absent on an ELM | `sessions.clock_offset_s`, and each row's `extra` |
-| `cycle_s` | s | the whole cycle | `extra` |
+| `cycle_s` | s (ms precision) | the whole cycle | `extra` |
 | `timestamp` | ISO s `Z` | emission time, set *after* the cycle. A row's `ts` is the cycle's **start**, taken before polling, so it can precede every `item_ts` in the same row | column |
 
 **What "acquired" means.** A UDS answer (`lbc01`, `hvac10`, a mode-01 PID) is
@@ -59,6 +61,24 @@ The page shows it as the per-tile "read at" badge (`Playback.itemAge()` in
 `web/static/playback.js`): live, measured from *now*, so the badge keeps
 counting between polls; in playback, measured from the frame's own moment —
 the age as it *was*, because a recorded frame is not stale.
+
+**Milliseconds** (2026-10-03). The reader keeps `timing`, `item_age`,
+`item_dur`, `item_gap` and `cycle_s` to the millisecond (they were rounded to
+0.01–0.1 s), and the page prints them that way: `Playback.fmtMs()` gives
+"290 ms" under a second, "1.4 s" under ten, whole seconds after; the badges
+read "113 ms ago". The cell grid and the 3D pack add `Playback.fmtRead()` beside
+their badge — "read 290 ms · every 430 ms", from `item_dur` / `item_gap` — and
+every other badge carries the same text as its hover title. A native CAN
+adapter reads the pack every ~0.4 s, which whole seconds could not show.
+`item_dur` and `item_gap` are live only (`store.BASE_SKIP`): at the cell
+log's ~2.5 rows/s they would roughly double every row's `extra`, so in
+playback the readout is empty and the badge is what remains.
+
+**Push** (2026-10-03). The live page no longer waits for its 1 s fetch to see
+a new record: `/api/stream` pushes each state-file write as a Server-Sent
+Event (`docs/ARCHITECTURE.md` "Dashboard"). The latency from a read's
+acquisition to the screen is the rest of that cycle plus ≤ 20 ms
+(`app.STREAM_TICK`), where it used to be up to a second more.
 
 ## 3. The two clocks are both kept
 

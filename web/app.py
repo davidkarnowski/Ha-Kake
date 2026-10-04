@@ -8,6 +8,8 @@ Flask web server with integrated reader. The vehicle comes from --vehicle
 
 API:
   /api/status                    latest state (battery_state.json), trouble codes described
+  /api/stream                    the same record pushed as Server-Sent Events each time the
+                                 reader writes it (the live page's feed; 204 in demo mode)
   /api/history?minutes=1440      downsampled readings (omit or minutes=0 → all)
   /api/health                    per-day capacity / SOH / temps for degradation chart
   /api/cells?limit=30            per-cell voltages for the last N full reads
@@ -39,7 +41,7 @@ Usage:
   python app.py --adapter sim --sim-control 0      # ... control API on a free port
   python app.py --adapter sim --no-sim-control     # ... no control API at all
   python app.py --demo               # canned JSON only (docs screenshots), no reader
-  python app.py --interval 0.5       # min seconds per reader cycle (default: 0.5)
+  python app.py --interval 0.5       # min seconds per reader cycle (default: the adapter's own)
   python app.py --fast               # group-01-only power loop
   python app.py --no-reader          # dashboard only (reader.py separate)
   python app.py --db /tmp/ui.db --no-reader --port 5001
@@ -58,7 +60,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from store import Store                 # noqa: E402
@@ -205,6 +207,12 @@ def _demo(name, default):
 
 @app.route("/api/status")
 def api_status():
+    return jsonify(status_payload())
+
+
+def status_payload():
+    """The record /api/status serves and /api/stream pushes — one builder, so
+    the two can never disagree about what the page is shown."""
     if DEMO:
         st = _demo("state.json", {"status": "waiting"})
         now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
@@ -212,7 +220,7 @@ def api_status():
             if k in st or k in ("timestamp", "last_ok"):
                 st[k] = now                       # keep demo looking live (fresh clock, green dot, pulse)
         st["demo"] = True                         # canned data — say so in the payload
-        return jsonify(st)
+        return st
     try:
         with open(STATE_FILE) as f:
             state = json.load(f)
@@ -229,7 +237,59 @@ def api_status():
     # under a running reader (docs/DTC_DICTIONARY.md). With no dictionary this
     # is a no-op and the page shows the bare codes exactly as before.
     dtc.enrich(state, signals.SIGNALS, vehicle=reader.VEHICLE)
-    return jsonify(state)
+    return state
+
+
+# How often the stream looks at the state file, and how long it may stay
+# silent before it sends a comment line. The look is one stat() call; the
+# reader replaces the file atomically (reader.write_state), so a changed
+# mtime is a whole new record. The heartbeat is what tells a threaded server
+# a closed tab has gone: a write to a dead socket ends the generator.
+STREAM_TICK = 0.02
+STREAM_HEARTBEAT = 10.0
+
+
+def _state_mtime():
+    try:
+        return os.stat(STATE_FILE).st_mtime_ns
+    except OSError:
+        return None
+
+
+def stream_events(tick=None, heartbeat=None, clock=time.monotonic, sleep=time.sleep):
+    """Server-Sent Events: one `data:` line per state-file write, carrying
+    exactly what /api/status would have returned at that moment.
+
+    Push, not poll: the page used to fetch /api/status once a second and so
+    drew one cell read in two or three once the CANable made a read every
+    ~0.4 s (2026-10-03). The server still reads the reader's file — the
+    reader is a separate process, and that is deliberate (docs/ARCHITECTURE.md)
+    — but it looks every STREAM_TICK and sends only on a change. Loopback
+    only, like every other route: app.run binds 127.0.0.1."""
+    tick = STREAM_TICK if tick is None else tick
+    heartbeat = STREAM_HEARTBEAT if heartbeat is None else heartbeat
+    yield "retry: 2000\n\n"                     # EventSource's reconnect delay, ms
+    last, quiet = object(), clock()
+    while True:
+        m = _state_mtime()
+        if m != last:
+            last = m
+            yield "data: " + app.json.dumps(status_payload()) + "\n\n"
+            quiet = clock()
+        elif clock() - quiet >= heartbeat:
+            yield ": keepalive\n\n"
+            quiet = clock()
+        sleep(tick)
+
+
+@app.route("/api/stream")
+def api_stream():
+    if DEMO:
+        # 204 tells EventSource not to reconnect; the page keeps its 1 s fetch
+        # of the canned record, which re-stamps the clock on every request.
+        return Response(status=204)
+    return Response(stream_with_context(stream_events()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/api/history")
@@ -498,7 +558,9 @@ def run_reader_supervised(interval, adapter_pref, fast, budget=1.5, vehicle=None
     background thread segfaulted the combined process (2026-08-24). A crash
     now costs a few seconds of data, not the dashboard.
     """
-    args = [sys.executable, "-u", READER, "--interval", str(interval), "--budget", str(budget)]
+    args = [sys.executable, "-u", READER, "--budget", str(budget)]
+    if interval is not None:
+        args += ["--interval", str(interval)]
     if adapter_pref:
         args += ["--adapter", adapter_pref]
     if fast:
@@ -570,7 +632,8 @@ if __name__ == "__main__":
     except AttributeError:
         pass
     ap = argparse.ArgumentParser(description="Ha-Kake — read-only OBD-II telemetry dashboard")
-    ap.add_argument("--interval", type=float, default=0.5, help="Minimum seconds per reader cycle (default: 0.5)")
+    ap.add_argument("--interval", type=float, default=None,
+                    help="Minimum seconds per reader cycle (default: the adapter's own — 0.5 for an ELM327, 0 for native CAN)")
     ap.add_argument("--budget", type=float, default=1.5, help="Slow-lane seconds per cycle (default: 1.5)")
     ap.add_argument("--adapter", choices=["auto", "usb", "ble", "replay", "sim", "can", "mqtt"], default="auto")
     ap.add_argument("--fast", action="store_true", help="Group-01-only power loop")

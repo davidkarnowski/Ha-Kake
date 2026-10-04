@@ -185,6 +185,11 @@ class CanFacade:
     STMIN = "05"
     # Passive items cost no dwell here: Reader.estimate() drops their `secs`.
     PASSIVE_INSTANT = True
+    # No padding between cycles (reader.interval_for): the cycle is the UDS
+    # requests themselves, paced by the ECUs, so a cell read follows the last
+    # one as soon as the slow lane allows. Measured on the car 2026-10-03: a
+    # 0.4-0.5 s cycle was being padded to the ELM's 0.5 s floor.
+    MIN_INTERVAL = 0.0
 
     def __init__(self, source, stmin_override=None, settle=0.3, recent=64, log=print):
         self.source = source

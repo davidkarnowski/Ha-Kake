@@ -427,3 +427,70 @@ def test_demo_bookmarks_are_canned_and_read_only(demo):
     assert demo.get("/api/bookmarks").get_json() == {"bookmarks": []}
     assert demo.put("/api/bookmarks", json={"t": 1}).status_code == 403
     assert demo.get("/api/bookmarks/auto?from=0&to=1").get_json()["pulls"] == []
+
+
+# ── the live stream (Server-Sent Events) ─────────────────────────────────
+
+def _events(api, steps):
+    """Drive stream_events() with a fake clock: `steps[n]` runs after the
+    n-th chunk and may rewrite the state file. Returns (chunk, clock) pairs."""
+    t = [0.0]
+    st_path = str(api.tmp / "state.json")
+
+    def sleep(dt_):
+        t[0] += dt_
+    gen = webapp.stream_events(tick=1.0, heartbeat=3.0, clock=lambda: t[0], sleep=sleep)
+    out = []
+    with webapp.app.app_context():
+        for n, chunk in zip(range(len(steps)), gen):
+            out.append((chunk, t[0]))
+            steps[n](st_path)
+    gen.close()
+    return out
+
+
+def _bump(path, soc, k):
+    with open(path, "w") as f:
+        json.dump({"status": "ok", "soc": soc, "timestamp": "2026-10-03T19:40:00Z"}, f)
+    os.utime(path, ns=(10**18 + k, 10**18 + k))          # a distinct mtime whatever the filesystem's resolution
+
+
+def test_the_stream_pushes_each_state_write_once_and_keeps_alive_between(api):
+    write_state(api, soc=60.0)
+    noop = lambda p: None
+    out = _events(api, [noop, lambda p: _bump(p, 61.0, 1), noop, noop, noop])
+    chunks, clock = [c for c, _ in out], [t for _, t in out]
+    assert chunks[0] == "retry: 2000\n\n"
+    assert chunks[1].startswith("data: ") and chunks[1].endswith("\n\n")
+    assert json.loads(chunks[1][6:])["soc"] == 60.0
+    assert json.loads(chunks[2][6:])["soc"] == 61.0                  # the rewrite, pushed on the next tick
+    assert clock[2] - clock[1] == 1.0
+    assert chunks[3:] == [": keepalive\n\n"] * 2                     # nothing new: only the heartbeat...
+    assert [clock[3] - clock[2], clock[4] - clock[3]] == [3.0, 3.0]  # ...every 3 s of silence, not every tick
+
+
+def test_the_stream_payload_is_the_status_payload(api):
+    write_state(api, soc=55.5, item_dur={"lbc02": 0.291}, item_gap={"lbc02": 0.43})
+    out = _events(api, [lambda p: None, lambda p: None])
+    assert json.loads(out[1][0][6:]) == api.get("/api/status").get_json()
+
+
+def test_the_stream_route_is_an_event_stream(api):
+    write_state(api, soc=58.0)
+    r = api.get("/api/stream", buffered=False)
+    try:
+        assert r.status_code == 200 and r.mimetype == "text/event-stream"
+        assert r.headers["Cache-Control"] == "no-cache"
+        it = iter(r.response)
+        assert next(it) in (b"retry: 2000\n\n", "retry: 2000\n\n")
+        first = next(it)
+        first = first.decode() if isinstance(first, bytes) else first
+        assert json.loads(first[6:])["soc"] == 58.0
+    finally:
+        r.close()
+
+
+def test_demo_mode_has_no_stream(api, monkeypatch, tmp_path):
+    monkeypatch.setattr(webapp, "DEMO", str(tmp_path))
+    r = api.get("/api/stream")
+    assert r.status_code == 204                                       # EventSource will not retry a 204

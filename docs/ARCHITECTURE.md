@@ -4,7 +4,7 @@
         vehicles/<profile>.py — items, decode(), TILES, SIGNALS, HISTORY_COLS
                   │  set_vehicle() binds it to the reader, signals, store, page
                   ▼
-            BLE (bleak)  ─┐                          ┌─ battery_state.json ──► /api/status ─► browser (1 s poll)
+            BLE (bleak)  ─┐                          ┌─ battery_state.json ──► /api/stream (SSE push) · /api/status ─► browser
  car ◄─ ELM327 clone ◄────┤  elm327.py  ◄─ reader.py ─┤
             USB (pyserial)┘   transport    scheduler  └─ leaf_battery.db ─────► /api/history, /api/health, /api/cells
                                                 ▲
@@ -377,9 +377,22 @@ and the raw `balancing` list.
 
 ## Dashboard and Tile Studio
 
-**Two page modes.** In *live* mode `poll()` fetches `/api/status` and
-`/api/history` once a second and fans them out to five sinks — `updateTrend`,
-`updateDash`, `updateSparkline`, `TileStudio.update`, `TileStudio.history`.
+**Two page modes.** In *live* mode every record reaches `paint()`, which fans
+it out to five sinks — `updateTrend`, `updateDash`, `updateSparkline`,
+`TileStudio.update`, `TileStudio.history`. Records arrive **pushed**:
+`/api/stream` is a Server-Sent Events route that stats `battery_state.json`
+every 20 ms (`STREAM_TICK`) and sends the `/api/status` record — one builder,
+`status_payload()` — whenever the reader has replaced it, with a comment line
+after 10 s of silence so a closed tab frees its server thread. The reader stays
+a separate process writing a file; the stream is how the server notices.
+`poll()` still runs once a second: it fetches `/api/history`, repaints the last
+record so the "ago" badges and the stale check keep ticking, and fetches
+`/api/status` itself whenever the stream is down (demo mode answers the
+stream with 204; EventSource reconnects after a drop). SSE rather than a
+WebSocket because the data only flows one way, it needs no dependency, and
+EventSource reconnects on its own; either would be plaintext on loopback, and
+the server binds 127.0.0.1 only (2026-10-03, after the CANable's ~0.4 s cell
+reads showed the 1 s fetch dropping every other one).
 In *playback* mode `poll()` stands down and `renderFrame(k)` feeds the same
 five sinks from a window of stored frames (`/api/playback/frames`), so no tile
 knows the difference; the clock is `web/static/playback.js`, a pure transport
@@ -548,5 +561,5 @@ always did and that the cockpit can reuse them.
 
 CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
 and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 1191 passing at the time of writing (1192 collected; the
+that must stay green. 1199 passing at the time of writing (1200 collected; the
 skip is the profile-policy test on a profile that has no policy).
