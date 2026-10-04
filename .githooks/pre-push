@@ -6,9 +6,10 @@
 #   * it runs on this developer's machine only. A clone that never ran the
 #     `git config` line above has no hook at all, and forks never get it.
 #   * a hook is advisory: `git push --no-verify` skips it entirely.
-#   * so this is a seatbelt, not a gate. The real gate is CI
-#     (.github/workflows/ci.yml), which runs the same two commands on every
-#     push and pull request, including from forks where this hook cannot run.
+#   * there is no hosted CI behind it (no GitHub Actions — the owner's call,
+#     2026-10-03): this hook IS the gate. A pull request from a fork is checked
+#     by running these same two commands locally before it is merged.
+#   * the test suite takes a few minutes; give `git push` the time.
 #
 # `--history` is deliberately NOT run here. It scans every blob ever committed,
 # costs seconds rather than milliseconds, and today it reports leaks that are

@@ -559,7 +559,10 @@ The dashboard's tile engine and the four styled tiles are a library now
 and `tests/test_dashboard_tiles.py` check the page boots them the same way it
 always did and that the cockpit can reuse them.
 
-CI (`.github/workflows/ci.yml`) runs `pytest -q` on Python 3.10 and 3.12
-and then the privacy sweep, on every push and pull request — the two gates
-that must stay green. 1199 passing at the time of writing (1200 collected; the
+There is no hosted CI. The gate is local: `.githooks/pre-push` (enabled once
+per clone with `git config core.hooksPath .githooks`) runs the privacy sweep
+and then `pytest -q` before every push, and refuses the push if either fails;
+a pull request is checked by running the same two commands before merging.
+A GitHub Actions workflow ran them from 2026-09-03 and was removed on
+2026-10-03 — the owner keeps CI local. 1199 passing at the time of writing (1200 collected; the
 skip is the profile-policy test on a profile that has no policy).

@@ -431,7 +431,11 @@ for a new car is a fixture capture. Start with
 ```bash
 git config core.hooksPath .githooks          # once per clone
 python scripts/privacy_sweep.py --log 50
+pytest -q
 ```
+
+The hook runs both before every push. There is no hosted CI: these local
+checks are the gate.
 
 The sweep refuses home paths, device UUIDs, VINs, secrets and session URLs
 in tracked files, and warns on e-mails, IPs and usernames. Personal captures

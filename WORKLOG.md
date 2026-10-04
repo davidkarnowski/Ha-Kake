@@ -2025,3 +2025,14 @@ Docs carry the figures (TIMING, CAN_TRANSPORT, README status, ROADMAP);
 MQTT.md's `state` schema gains `item_dur` / `item_gap` and the ms precision,
 since the MQTT state topic publishes the same record; PLAYBACK.md's paint path
 names `paint()` and the stream.
+
+## 2026-10-03 (night) — CI is local: the GitHub workflow is removed
+
+Checking the public repo for the focus agent showed the hosted CI red on every
+push since 2026-09-09, including today's: the workflow installed a hand-picked
+package list without python-can, so every CAN test failed on import. The owner's
+call: CI runs locally, before pushing, and not on GitHub. `.github/workflows/ci.yml`
+is deleted; `.githooks/pre-push` (privacy sweep, then `pytest -q`) is the gate,
+and its header, ARCHITECTURE, CONTRIBUTING and the README's "Before you push"
+now say so. A pull request is checked by running the same two commands before
+merging. Nothing else changes — the hook already ran both checks.

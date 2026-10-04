@@ -23,8 +23,10 @@ here is what makes a contribution easy to merge.
   physical input) or **tentative** (from community documentation, not yet
   seen to move on this car). Do not promote tentative to verified without a
   capture that shows it.
-- **Before every push:** `python scripts/privacy_sweep.py --log 50`
-  must pass (the `.githooks/pre-push` hook runs it). Home paths, adapter UUIDs,
+- **Before every push:** `python scripts/privacy_sweep.py --log 50` and
+  `pytest -q` must pass. The `.githooks/pre-push` hook runs both (enable it once
+  with `git config core.hooksPath .githooks`); there is no hosted CI, so the
+  local run is the check — a pull request is verified the same way before merge. Home paths, adapter UUIDs,
   VINs, keys and session URLs never go public; personal captures live in
   `research/`, which is gitignored. Mark a deliberately public line (like the
   security contact) with `privacy-ok`.
