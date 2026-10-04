@@ -292,3 +292,86 @@ def test_the_sweep_fails_on_a_dictionary_added_to_a_repo(tmp_path):
                          capture_output=True, text=True)
     assert out.returncode == 1, out.stdout
     assert "dtc dictionary" in out.stdout and "privacy sweep FAILED" in out.stdout
+
+
+# ------------------------------------------------------------- push mode ---
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    r = tmp_path / "p"
+    r.mkdir()
+    _git(r, "init", "-q", "-b", "main")
+    _git(r, "config", "user.email", "t@example.invalid")
+    _git(r, "config", "user.name", "T")
+    (r / "README.md").write_text("hello\n")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "start")
+    monkeypatch.setattr(ps, "ROOT", str(r))
+    return r
+
+
+def _head(r):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=r, capture_output=True, text=True).stdout.strip()
+
+
+def _commit(r, msg, files=None, remove=()):
+    for name, content in (files or {}).items():
+        p = r / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content) if isinstance(content, bytes) else p.write_text(content)
+    for name in remove:
+        (r / name).unlink()
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", msg)
+    return _head(r)
+
+
+def _push_line(local, remote):
+    return [f"refs/heads/main {local} refs/heads/main {remote}"]
+
+
+def test_a_leak_committed_then_deleted_is_still_caught(repo):
+    base = _head(repo)
+    _commit(repo, "add notes", {"notes.txt": "adapter at /Users/alice/Projects\n"})
+    tip = _commit(repo, "tidy", {"notes.txt": "adapter at $HOME\n"})
+    tree = []
+    for rel in ps.tracked_files():
+        ps.scan_text(rel, (repo / rel).read_text(), tree)
+    assert [f for f in tree if f[0] == "ERROR"] == []          # the working tree is clean...
+    found = []
+    shas = ps.scan_push(_push_line(tip, base), found)
+    assert len(shas) == 2
+    assert ("ERROR", "home path") in {(f[0], f[1]) for f in found}   # ...the push is not
+
+
+def test_a_new_branch_is_scanned_from_its_first_unpushed_commit(repo):
+    tip = _commit(repo, "fix", {"a.py": 'KEY = "sk-ant-abcdefghijklmnop"\n'})
+    found = []
+    ps.scan_push(_push_line(tip, ps.ZERO), found)
+    assert "secret-looking" in names(found)
+
+
+def test_commit_messages_paths_research_and_databases_in_a_push(repo):
+    base = _head(repo)
+    _commit(repo, "see https://claude.ai/chat/0f2c1a7e-1234-4cde-9abc-0123456789ab",
+            {"research/x.md": "private\n", "data/run.sqlite": b"SQLite format 3\x00rest",
+             "logs/JN1AZ0CP5BT012345.txt": "x\n"})
+    tip = _head(repo)
+    found = []
+    ps.scan_push(_push_line(tip, base), found)
+    got = names(found)
+    assert {"claude session", "private folder", "database file", "VIN (path)"} <= got
+
+
+def test_a_clean_push_and_a_deletion_pass(repo):
+    base = _head(repo)
+    tip = _commit(repo, "docs", {"docs.md": "SOC 62.4 %, pack 390.2 V\n"})
+    found = []
+    assert len(ps.scan_push(_push_line(tip, base), found)) == 1 and found == []
+    assert ps.scan_push([f"(delete) {ps.ZERO} refs/heads/old {base}"], found) == [] and found == []
+
+
+def test_the_hook_hands_its_stdin_to_the_push_scan():
+    with open(os.path.join(ROOT, ".githooks", "pre-push")) as f:
+        hook = f.read()
+    assert "privacy_sweep.py --log 50 --push" in hook

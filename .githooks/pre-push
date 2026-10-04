@@ -2,6 +2,11 @@
 # Refuse to push anything that fails the privacy sweep or the test suite.
 # Enable once per clone:  git config core.hooksPath .githooks
 #
+# The sweep scans the working tree, the last 50 commit messages, and — through
+# --push, which reads the ref lines git gives this hook on stdin — every commit
+# being pushed: its message, the lines it adds and the paths it adds. A leak
+# committed and later deleted from the files is caught on the way out.
+#
 # Limits of this hook — read before trusting it:
 #   * it runs on this developer's machine only. A clone that never ran the
 #     `git config` line above has no hook at all, and forks never get it.
@@ -22,7 +27,8 @@ PY=./venv/bin/python; [ -x "$PY" ] || PY=python3
 HIST=
 [ -n "$PRIVACY_SWEEP_HISTORY" ] && HIST=--history
 
-"$PY" scripts/privacy_sweep.py --log 50 $HIST || {
+# git passes the refs being pushed on stdin; --push scans exactly those commits
+"$PY" scripts/privacy_sweep.py --log 50 --push $HIST || {
     echo "pre-push: privacy sweep failed — push aborted."
     echo "  fix the flagged line, move the file to research/, or mark a public line privacy-ok:<rule>"
     echo "  re-check with: $PY scripts/privacy_sweep.py --log 50"

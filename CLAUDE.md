@@ -107,6 +107,8 @@ paths, e-mails and IPs (documentation addresses and ranges excepted), device
 UUIDs, BLE/MAC addresses, VINs, adapter serial numbers in port names, keys and
 tokens (also base64-encoded), Claude session/chat links, file paths carrying
 any of these, any tracked file under `research/`, and any database file.
+The pre-push hook also runs it with `--push`, which scans exactly the commits
+being pushed (messages, added lines, added paths), not just the working tree.
 Fix the file, move the material to `research/` (gitignored), or — only for
 content meant to be public, like the security contact — mark the line:
 a bare `privacy-ok` silences warnings only; an error needs its rule named,

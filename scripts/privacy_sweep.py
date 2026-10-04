@@ -262,6 +262,64 @@ def scan_paths(paths, findings, read_head=None):
             findings.append(("ERROR", "database file", p, "databases hold readings — never committed"))
 
 
+# ------------------------------------------------------------ push mode ---
+# git runs the pre-push hook with one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# The working tree is not what is pushed — a leak committed and then deleted
+# from the files (but not from history) would pass a tree scan. So the hook
+# hands those lines here and every commit being pushed is scanned: its message,
+# every line it adds and every path it adds or renames.
+ZERO = "0" * 40
+
+
+def pushed_commits(ref_lines):
+    shas = []
+    for line in ref_lines:
+        parts = line.split()
+        if len(parts) != 4:
+            continue
+        _lref, lsha, _rref, rsha = parts
+        if lsha == ZERO:                       # a branch deletion pushes nothing
+            continue
+        rng = [lsha, "--not", "--remotes"] if rsha == ZERO else [f"{rsha}..{lsha}"]
+        for sha in git("rev-list", *rng).split():
+            if sha not in shas:
+                shas.append(sha)
+    return shas
+
+
+def _blob_head(sha, path, n=16):
+    proc = subprocess.Popen(["git", "cat-file", "-p", f"{sha}:{path}"], cwd=ROOT,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        return proc.stdout.read(n)
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def scan_push(ref_lines, findings):
+    """Scan every commit the push would publish. Returns the commits scanned."""
+    shas = pushed_commits(ref_lines)
+    for sha in shas:
+        short = sha[:8]
+        scan_text(f"commit {short} message", git("show", "-s", "--format=%B", sha), findings, skip=LOG_SKIP)
+        added, cur = {}, None
+        for line in git("show", "--format=", "-U0", "--no-color", "--no-ext-diff", sha).splitlines():
+            if line.startswith("+++ "):
+                cur = line[6:] if line.startswith("+++ b/") else None
+            elif line.startswith("+") and cur is not None:
+                added.setdefault(cur, []).append(line[1:])
+        for path, lines in added.items():
+            if path in SKIP_FILES or path.endswith(BINARY) or any(path.startswith(d) for d in SKIP_DIRS):
+                continue
+            scan_text(f"commit {short} {path} (+)", "\n".join(lines), findings)
+            scan_dtc(path, "\n".join(lines), findings)
+        paths = [p for p in git("show", "--format=", "--name-only", "--diff-filter=AR", sha).splitlines() if p]
+        scan_paths(paths, findings, lambda p, sha=sha: _blob_head(sha, p))
+    return shas
+
+
 # ---------------------------------------------------------------- history ---
 
 def history_objects():
@@ -408,6 +466,8 @@ def main():
     ap.add_argument("--history", action="store_true",
                     help="also scan every blob in the repository's history")
     ap.add_argument("--strict", action="store_true", help="treat WARN as failure")
+    ap.add_argument("--push", action="store_true",
+                    help="also scan the commits being pushed (reads the pre-push hook's ref lines on stdin)")
     args = ap.parse_args()
 
     findings = []
@@ -430,11 +490,17 @@ def main():
         log = git("log", f"-{args.log}", "--format=%H%n%B")
         scan_text("git-log", log, findings, skip=LOG_SKIP)   # see LOG_SKIP for why these two
 
+    pushed = None
+    if args.push:
+        ref_lines = [] if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read().splitlines()
+        pushed = scan_push(ref_lines, findings)
+
     errors = [x for x in findings if x[0] == "ERROR"]
     warns = [x for x in findings if x[0] == "WARN"]
     for sev, name, where, line in sorted(findings, key=lambda x: (x[0] != "ERROR", x[2])):
         print(f"{sev:5} {name:15} {where}\n      {line}")
-    print(f"\n{len(errors)} error(s), {len(warns)} warning(s) across {len(tracked_files())} tracked files")
+    print(f"\n{len(errors)} error(s), {len(warns)} warning(s) across {len(tracked_files())} tracked files"
+          + (f" and {len(pushed)} commit(s) being pushed" if pushed is not None else ""))
 
     herr, hwarn = [], []
     if args.history:
