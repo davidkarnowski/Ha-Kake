@@ -283,3 +283,54 @@ def test_record_from_state_resolves_every_declared_history_column():
     assert len(rec["cells"]) == 96
     assert rec["cell_min"] == min(rec["cells"])
     assert rec["cells"][rec["cell_max_idx"]] == rec["cell_max"]
+
+
+# ── the guard, on a stand-in for the real file ───────────────────────────
+
+def _real_db(path):
+    """A database with one real reading and no synthetic stamp."""
+    from store import Store
+    s = Store(str(path))
+    s.insert_reading({"soc": 50.0, "timestamp": "2026-10-03T19:40:00Z"})
+    s.close()
+    return path
+
+
+def _sha(path):
+    import hashlib
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def test_the_real_database_under_another_spelling_or_link_is_refused(tmp_path):
+    import store as store_mod
+    real = _real_db(store_mod.DEFAULT_DB)                 # the autouse fixture put it in a temp folder
+    before = _sha(real)
+    folder = os.path.dirname(real)
+    case_variant = os.path.join(folder, "LEAF_BATTERY.db")
+    link = tmp_path / "link.db"
+    os.symlink(real, link)
+    hard = tmp_path / "hard.db"
+    os.link(real, hard)
+    for target in (case_variant, str(link), str(hard)):
+        with pytest.raises(ValueError, match="refusing"):
+            history.generate(out=target, days=1)
+    assert _sha(real) == before                            # untouched, byte for byte
+
+
+def test_a_copy_of_real_data_under_any_name_is_refused(tmp_path):
+    import shutil
+    import store as store_mod
+    copy = tmp_path / "backup_2026.db"
+    shutil.copy(_real_db(store_mod.DEFAULT_DB), copy)
+    before = _sha(copy)
+    with pytest.raises(ValueError, match="already holds readings"):
+        history.generate(out=str(copy), days=1)
+    assert _sha(copy) == before
+
+
+def test_a_generated_database_can_be_generated_again(tmp_path):
+    out = str(tmp_path / "sim_history.db")
+    history.generate(out=out, days=1)
+    history.generate(out=out, days=1)                      # synthetic stamp: allowed
+    assert os.path.exists(out)

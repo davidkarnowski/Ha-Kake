@@ -410,17 +410,76 @@ class Generator:
 
 # ── entry point ──────────────────────────────────────────────────────────
 
-def _refuse_real_db(path):
-    """Never, under any circumstance, write generated rows into the car's
-    database. The owner has 12,000+ irreplaceable real readings in it."""
+def _protected_paths():
+    """The databases that hold real readings by name: store.DEFAULT_DB and any
+    profile's own DB_FILE."""
     import store as store_mod
-    real = os.path.realpath(store_mod.DEFAULT_DB)
-    want = os.path.realpath(path)
-    if want == real or os.path.basename(want) == os.path.basename(real):
+    paths = {store_mod.DEFAULT_DB}
+    try:
+        import vehicles
+        for name in vehicles.available():
+            try:
+                f = getattr(vehicles.get_vehicle(name), "DB_FILE", None)
+            except Exception:
+                continue
+            if f:
+                paths.add(os.path.join(store_mod.DIR, f))
+    except Exception:
+        pass
+    return paths
+
+
+def _norm(path):
+    """A path as the filesystem sees it: resolved, and folded for case — the
+    owner's disk (APFS) treats LEAF_BATTERY.db and leaf_battery.db as one file."""
+    return os.path.normcase(os.path.realpath(path)).casefold()
+
+
+def _holds_real_rows(path):
+    """True when `path` is an SQLite database with readings in it that is not
+    stamped synthetic — a backup, a renamed copy, anything real. An SQLite file
+    that cannot be read is assumed to matter."""
+    import pathlib
+    import sqlite3
+    try:
+        with open(path, "rb") as f:
+            if f.read(16) != b"SQLite format 3\x00":
+                return False
+    except OSError:
+        return False
+    try:
+        c = sqlite3.connect(pathlib.Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='readings'").fetchone():
+                return False
+            if not c.execute("SELECT 1 FROM readings LIMIT 1").fetchone():
+                return False
+            try:
+                syn = c.execute("SELECT value FROM meta WHERE key='synthetic'").fetchone()
+            except sqlite3.Error:
+                syn = None
+            return not (syn and str(syn[0]).lower() == "true")
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return True
+
+
+def _refuse_real_db(path):
+    """Never, under any circumstance, write generated rows into a database that
+    holds the car's real readings: not the real file under another spelling or
+    through a link, not a profile's own file, not a backup or renamed copy."""
+    want = _norm(path)
+    for real in _protected_paths():
+        same = os.path.exists(path) and os.path.exists(real) and os.path.samefile(path, real)
+        if same or want == _norm(real) or os.path.basename(want) == os.path.basename(_norm(real)):
+            raise ValueError(
+                f"refusing to generate into {path!r}: that is (or is named like) the "
+                f"real database, {real}. Pass --out web/sim_history.db or any other path.")
+    if _holds_real_rows(path):
         raise ValueError(
-            f"refusing to generate into {path!r}: that is (or is named like) the "
-            f"real database, {store_mod.DEFAULT_DB}. Pass --out web/sim_history.db "
-            f"or any other path.")
+            f"refusing to generate into {path!r}: it already holds readings and is not a "
+            f"generated (synthetic) database — a backup or copy of real data. Pass a new path.")
 
 
 def state_path_for(db_path):

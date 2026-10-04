@@ -633,7 +633,10 @@ from now. So:
 * `web/app.py --db` prints **SYNTHETIC DATABASE** on startup when it sees the
   meta flag, and the state file's `message` says the same;
 * the generator **refuses** to write to `web/leaf_battery.db`, or to any file
-  named like it, with an error rather than a warning.
+  named like it in any letter case, reached through a link, or a profile's own
+  `DB_FILE` — and to any existing database that holds readings and is not
+  stamped synthetic (a backup or a renamed copy) — with an error rather than a
+  warning. The same guard covers `--pull`.
 
 If you ever have a database and cannot tell:
 
@@ -1343,7 +1346,8 @@ a Lancer.
 - Simulated rows go to `web/sim_<profile>.db` and `web/sim_<profile>_state.json`
   (both gitignored). `web/leaf_battery.db` is never opened in this mode.
 - Generated history goes to `--out` (default `web/sim_history.db`, gitignored).
-  The generator refuses `web/leaf_battery.db` and anything named like it, and
+  The generator refuses `web/leaf_battery.db`, anything named like it (in any
+  case, or through a link) and any unstamped database with readings, and
   every generated database is stamped synthetic in its `meta` table. Generated
   data is **never** merged into the real database.
 - The simulator is **read-only about the car** in the only sense that applies:
