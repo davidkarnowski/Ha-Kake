@@ -240,7 +240,7 @@ an unplugged Pi or a lost WiFi link shows as offline within the keep-alive
 ### 3.6 state — `<prefix>/state` (retained)
 
 The reader's whole decoded record, once per polling cycle (typically every
-1–2 s), plus on every status change (connecting, asleep, paused). It is the
+1–2 s over an ELM327, ~0.35 s over a native CAN adapter), plus on every status change (connecting, asleep, paused). It is the
 same JSON the dashboard's `/api/status` serves, with `"v": 1` added.
 
 The record is **open-ended by design**: its keys are whatever the active
@@ -265,8 +265,10 @@ profile's signal registry (§8).
     "replay":       {"type": "boolean", "description": "true: a recorded fixture, NOT a live car"},
     "simulated":    {"type": "boolean", "description": "true: a running model, NOT a car"},
     "remote":       {"type": "object", "properties": {"host": {"type": "string"}, "bus": {"type": "string"}}, "description": "present when the car is read through a bridge"},
-    "cycle_s":      {"type": "number", "description": "how long the last poll took"},
-    "item_age":     {"type": "object", "additionalProperties": {"type": "number"}, "description": "seconds since each polled item was last read — the staleness of every value"},
+    "cycle_s":      {"type": "number", "description": "how long the last poll took, seconds to the millisecond"},
+    "item_age":     {"type": "object", "additionalProperties": {"type": "number"}, "description": "seconds since each polled item was last read — the staleness of every value (ms precision)"},
+    "item_dur":     {"type": "object", "additionalProperties": {"type": "number"}, "description": "seconds each item's last read took (ms precision); live only, never stored"},
+    "item_gap":     {"type": "object", "additionalProperties": {"type": "number"}, "description": "seconds between each item's last two reads — its real refresh period (ms precision); live only, never stored"},
     "items":        {"type": "array", "items": {"type": "string"}, "description": "the items being polled (driven by the dashboard's enabled tiles)"},
     "cells":        {"type": "array", "items": {"type": "number"}, "description": "per-cell-pair voltages when the profile reads them"}
   },

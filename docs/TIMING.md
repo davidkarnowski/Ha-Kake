@@ -80,6 +80,13 @@ Event (`docs/ARCHITECTURE.md` "Dashboard"). The latency from a read's
 acquisition to the screen is the rest of that cycle plus ≤ 20 ms
 (`app.STREAM_TICK`), where it used to be up to a second more.
 
+Measured on the car the same evening (CANable, Car-CAN, cell log on, 60 s of
+`/api/stream`): 166 records pushed, 166 distinct cell reads (`cells_seq` +165)
+— none dropped — at **2.77 reads/s**; the gap between cell reads median
+351 ms, p90 394, max 498, min 346; `lbc02` itself 290 ms median. The long
+gaps are the slow lane: +110 ms when `lbc05` is due (every 5 s), +40 ms for
+`hvac10` (every 3 s).
+
 ## 3. The two clocks are both kept
 
 A frame from python-can carries `msg.timestamp` (the driver's clock, epoch

@@ -268,7 +268,10 @@ doors shut, locked); in normal mode the reader's own `poll_once()` read every
 Leaf item — lbc01 0.07 s, lbc02 (96 cells) 0.29 s, lbc04/05/06, the three HVAC
 groups, the passive ids at ~0 s — **a 0.58 s full cycle** against ~2 s over
 BLE; 0x00-padded requests are accepted by the LBC and the HVAC amp; the HVAC
-amp needs STmin ≥ 5 ms (above).
+amp needs STmin ≥ 5 ms (above). With the cell log on and no cycle floor
+(`MIN_INTERVAL`), a fresh 96-cell read every **351 ms** (median over 60 s,
+2.77 reads/s, max 498 ms), every one of them on the page through
+`/api/stream` (`docs/TIMING.md`).
 
 **Not verified:** that `M1` really makes the stock firmware silent (it does
 not acknowledge it — the software never calls `send()` on a listen-only bus

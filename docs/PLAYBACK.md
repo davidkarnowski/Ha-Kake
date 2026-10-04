@@ -61,7 +61,8 @@ the bottom of the window by default (see *Docked* below):
   usually one row — its peak, with that row's cells, but no rise or
   recovery — so they mark *where* to look rather than replay the shape;
   with the cell log armed and USB the rows come every cycle.
-- **Back to live** resumes polling.
+- **Back to live** resumes painting the pushed live record (the stream stays
+  open during playback; its records are simply not painted).
 
 Under `--demo` there is one canned session; under `--adapter replay` or
 `--adapter sim` playback reads that run's own throwaway database, never
@@ -69,8 +70,10 @@ Under `--demo` there is one canned session; under `--adapter replay` or
 
 ## What it is built from
 
-The page keeps one paint path. Live mode's `poll()` fans `/api/status` and
-`/api/history` out to five sinks — `updateTrend`, `updateDash`,
+The page keeps one paint path. Live mode's `paint()` — fed by the pushed
+`/api/stream` record, with `poll()` fetching `/api/history` and standing in for
+the stream when it is down — fans the record and the history out to five
+sinks — `updateTrend`, `updateDash`,
 `updateSparkline`, `TileStudio.update`, `TileStudio.history`. Playback's
 `renderFrame(k)` feeds the same five from `records[k]` and `hist[0..k]`, so
 no tile has a playback branch. The clock is `web/static/playback.js` — a pure

@@ -2002,3 +2002,26 @@ transports and the explicit override; `poll_once` publishes `item_dur` equal to
 stored; `fmtMs` / `fmtRead` and the new `fmtAge` strings from node. Not yet
 checked in the car with the new code: the owner's restart of the dashboard is
 the next step.
+
+## 2026-10-03 (late) — the pushed page, measured on the car
+
+The owner restarted the dashboard on `feature/live-push` (CANable, Car-CAN,
+normal mode, cell log on, no `--interval`: `min period 0.0s`) and reported the
+read times "significantly reduced". 60 s of `/api/stream` captured with curl:
+
+- 166 records pushed, all `ok`; 166 distinct `lbc02` acquisitions
+  (`item_ts_epoch`), `cells_seq` 453 → 618 — **every cell read reached the
+  page**, where the 1 s fetch had drawn one in two or three.
+- **2.77 cell reads/s**; gap between reads median 351 ms, p90 394, max 498,
+  min 346 (histogram: 150 in 300–399 ms, 15 in 400–499).
+- `lbc02` read 290 ms median (306 max) — the LBC's own pacing, the floor;
+  cycle 348 ms median, 494 max.
+- The longer gaps are the slow lane running after `lbc02` in the cycle before:
+  ~460 ms when `lbc05` (+110 ms, every 5 s — ~12 a minute) is due, ~390 ms for
+  `hvac10` (+40 ms, every 3 s). Nothing else measurable sits between reads;
+  the scheduler is left as it is.
+
+Docs carry the figures (TIMING, CAN_TRANSPORT, README status, ROADMAP);
+MQTT.md's `state` schema gains `item_dur` / `item_gap` and the ms precision,
+since the MQTT state topic publishes the same record; PLAYBACK.md's paint path
+names `paint()` and the stream.

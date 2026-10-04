@@ -530,7 +530,8 @@ Being on the bus at all has consequences worth knowing:
 - **A pushed live page** (2026-10-03): `/api/stream` sends every reading to the
   page as it is written (Server-Sent Events, loopback only), so a cell read
   every ~0.4 s shows every time instead of one in two or three; read times are
-  shown to the millisecond ("read 290 ms · every 430 ms").
+  shown to the millisecond ("read 290 ms · every 350 ms"). Measured on the car:
+  2.77 cell reads/s, median gap 351 ms, every one of them drawn.
 - **A colour scale that holds still** (2026-09-10): the cell grid and the 3D
   pack colour from the frame's own lowest and highest pair by default, which
   rescales every frame — in playback one colour means a different voltage as
