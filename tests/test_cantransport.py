@@ -724,7 +724,7 @@ def test_a_listen_only_car_bus_that_is_silent_is_asleep(isolated_reader, leaf_pr
 
 # ── cadence: no padding on native CAN, and the read readout ──────────────
 
-def test_the_cycle_floor_comes_from_the_transport_unless_given():
+def test_the_cycle_floor_comes_from_the_transport_unless_given(tmp_store):
     """The ELM327s keep the 0.5 s floor; the façade has none, because there
     the cycle is the requests (car, 2026-10-03: a 0.4 s cycle padded to 0.5)."""
     assert ct.CanFacade.MIN_INTERVAL == 0.0
@@ -733,7 +733,7 @@ def test_the_cycle_floor_comes_from_the_transport_unless_given():
     assert rd.interval_for(object()) == 0.5
     assert rd.interval_for(ct.CanFacade, explicit=1.0) == 1.0          # --interval wins
     assert rd.interval_for(elm327.SerialELM, explicit=0) == 0.0
-    r = rd.Reader(interval=None, adapter_pref="can", store=None)
+    r = rd.Reader(interval=None, adapter_pref="can", store=tmp_store)
     assert r.interval_arg is None and r.interval == 0.5                # until a transport says otherwise
 
 
