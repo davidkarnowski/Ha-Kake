@@ -16,6 +16,8 @@ can-isotp==2.0.7
 # MQTT ingestion and the gauge-facing state topics (mqttsource.py, docs/MQTT.md);
 # imported lazily, so the ELM paths never need it
 paho-mqtt==2.1.0
-Flask==3.1.2
+Flask==3.1.3
+# Flask's own dependency, pinned so a fresh install gets the patched release
+Werkzeug==3.1.9
 # Tests
 pytest
