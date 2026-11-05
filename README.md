@@ -11,7 +11,7 @@ decodes far more than the OBD-II standard carries — battery state of health,
 **the method used to find all of that is documented in full**, so you can do
 the same on a car nobody has touched yet.
 
-![status](https://img.shields.io/badge/tests-1290%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
+![status](https://img.shields.io/badge/tests-1321%20passing-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkarnowski/Ha-Kake)
 
 > ### ⚠️ Active development
 >
@@ -385,6 +385,8 @@ stays the one-adapter shorthand. `docs/ARCHITECTURE.md` "Several adapters".
 | `web/templates/sim.html`, `web/static/sim.js` | the simulator cockpit (`/sim`), built on the dashboard's own tiles |
 | `docs/SIMULATOR.md` | **the simulator: launch, the cockpit, the load model and its provenance, the control API** |
 | `docs/SIMULATOR_CONTRACT.md` | what a simulator core must provide |
+| `tools/desk_rig.py`, `tools/laggy_link.py` | the whole MQTT chain on the loopback address (simulated ECUs, the bridge, a throwaway broker, the dashboard) behind a proxy that can delay, stall or hold the link; reproduces link-stall faults on demand |
+| `docs/DESK_RIG.md` | **the desk rig: reproducing a slow or stalled link with no car and no network** |
 | `tests/` | pytest suite; `tests/fixtures/` holds real captured frames |
 | `docs/SIGNALS.md` | **every decoded CAN ID and byte offset, with verification status** |
 | `docs/ARCHITECTURE.md` | processes, scheduler, data model |
