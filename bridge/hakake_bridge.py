@@ -588,10 +588,21 @@ class Bridge:
         return False
 
     def _is_duplicate(self, payload):
-        """True when the same req id with the same request was handled within
-        DUP_WINDOW: a QoS 1 redelivery after a reconnect, which must not reach
-        the car twice. A requester that reuses an id later is not affected."""
-        if not isinstance(payload, dict):
+        """True when a request that says who sent it (`src` and `seq`) arrives
+        again with the same req id and the same request within DUP_WINDOW: a
+        QoS 1 redelivery after a reconnect, which must not reach the car twice.
+        A requester that reuses an id later is not affected.
+
+        Only for a request that carries `src` and `seq`. Its id is a name and a
+        count, so meeting it twice means it was delivered twice. A requester
+        that sends neither picks its id as it likes: the reader before this
+        addition drew four random hex digits for every request, and two of
+        those meet inside the window by chance (about 84 / cycle-seconds times
+        a day; a hundred a day at the cycle measured on 2026-11-05). Refusing
+        one would drop a request that was really made, so a request without an
+        identity is always run, as it was before."""
+        src, seq = self._ident(payload)
+        if src is None or seq is None:
             return False
         req = str(payload.get("req", ""))
         if not req:

@@ -689,15 +689,33 @@ def test_a_redelivered_request_reaches_the_car_once(live):
     assert ecu.seen == [b"\x21\x01"] and bridge.stats.duplicates == 1
 
 
-def test_an_id_used_again_later_is_a_new_request(live, monkeypatch):
-    monkeypatch.setattr(hb, "DUP_WINDOW", 0.0)                    # "later": outside the redelivery window
+def test_a_request_without_an_identity_is_never_called_a_redelivery(live):
+    """The reader before `src` and `seq` drew four random hex digits per
+    request. Two of those meet inside the window by chance, and each is a
+    request that was really made: it is run, as it was before this rule."""
     bridge, car = live
     lines, payload = _group01_payload()
     ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
     ecu.start()
     try:
         for n in (1, 2):
-            _queue(bridge, req="demo1")
+            _queue(bridge, req="a3f1")                            # the same id, the same request, inside the window
+            got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/a3f1", n=n, timeout=3.0)
+            assert len(got) == n and got[-1]["ok"] is True and got[-1]["reply"].startswith("61 01")
+    finally:
+        ecu.stop()
+    assert len(ecu.seen) == 2 and bridge.stats.duplicates == 0
+
+
+def test_an_id_used_again_later_is_a_new_request(live, monkeypatch):
+    monkeypatch.setattr(hb, "DUP_WINDOW", -1.0)                   # "later": outside the redelivery window
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        for n in (1, 2):
+            _queue(bridge, req="demo1", src="demo", seq=1)
             got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/demo1", n=n, timeout=3.0)
             assert len(got) == n and got[-1]["ok"] is True
     finally:
@@ -711,9 +729,9 @@ def test_the_same_id_with_a_different_request_is_not_a_redelivery(live):
     ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload, b"\x21\x05": b"\x61\x05\x01"})
     ecu.start()
     try:
-        _queue(bridge, req="x1")
+        _queue(bridge, req="x1", src="x", seq=1)
         bridge.client.wait_for(f"{ROOT_T}/tx/uds/x1", n=1, timeout=3.0)
-        _queue(bridge, req="x1", data="21 05")
+        _queue(bridge, req="x1", src="x", seq=1, data="21 05")
         got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/x1", n=2, timeout=3.0)
     finally:
         ecu.stop()

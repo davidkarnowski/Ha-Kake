@@ -39,7 +39,9 @@ a step-by-step set-up for monitoring a car from your house, see `docs/REMOTE_MQT
 - **Does not run requests nobody is waiting for.** A request overtaken by a
   newer one from the same requester (same `src`, higher `seq`) is acked
   `"superseded"`; the same `req` with the same request seen again within 30 s,
-  a QoS 1 redelivery, is acked `"duplicate"`. Neither reaches the car.
+  a QoS 1 redelivery, is acked `"duplicate"`. Neither reaches the car. Both
+  rules apply only to a request that carries `src` and `seq`: one without them
+  is always run, so a reader from before this addition loses nothing.
 - **Refuses anything that is not a read.** The service byte must be one of
   `0x21`, `0x01`, `0x03`, `0x07` — `SECURITY.md`'s whole allowed set. Mode
   `0x04` (clear codes), `0x2E`, `0x27`, `0x31`, `0x10` and everything else are

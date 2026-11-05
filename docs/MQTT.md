@@ -173,9 +173,12 @@ frame is built.
 
 `req` is chosen by the sender — Ha-Kake uses `<src>-<seq>`, where `src` is a
 short name plus four random hex digits drawn at start — and has to be unique
-among the requests that sender has made recently: the bridge treats the same
-`req` with the same request, seen again within 30 s, as a redelivery (§3.4,
-`duplicate`). It is part of a topic, so it must not contain `/`, `+` or `#`.
+among the requests that sender has made recently: from a sender that gives
+`src` and `seq` (§3.3), the bridge treats the same `req` with the same request,
+seen again within 30 s, as a redelivery (§3.4, `duplicate`). A request without
+them is always run: a sender that draws short random ids repeats one by chance,
+and that is a request it really made. `req` is part of a topic, so it must not
+contain `/`, `+` or `#`.
 The pattern above is a rule for producers: the bridge enforces only that
 `req` is non-empty and free of those three characters, and echoes anything
 else back on the ack topic unchanged.
@@ -243,7 +246,7 @@ simply the first bytes that arrived. Ha-Kake does both in `replyproof.py`.
     "t_done": {"type": "number", "description": "bridge clock, epoch seconds, when the reply was complete"},
     "queue_ms": {"type": "integer", "minimum": 0, "description": "milliseconds the request waited on the bridge before it reached the bus"},
     "bus_ms": {"type": "integer", "minimum": 0, "description": "milliseconds on the CAN bus, from sending the request to the complete reply (or to giving up)"},
-    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "busy", "expired", "superseded", "duplicate", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5), a tx/rx pair not in the bridge's uds_targets, or listen-only; error: malformed request or ISO-TP protocol error (see reason); busy: the bridge's request queue (32) is full; expired: the request waited on the bridge longer than its own timeout and was not sent; superseded: a newer request from the same src was already waiting, so this one had been given up on and was not sent; duplicate: the same req with the same request was handled within the last 30 s (a QoS 1 redelivery) and was not sent again; offline: produced by the reader itself when it has no broker"},
+    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "busy", "expired", "superseded", "duplicate", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5), a tx/rx pair not in the bridge's uds_targets, or listen-only; error: malformed request or ISO-TP protocol error (see reason); busy: the bridge's request queue (32) is full; expired: the request waited on the bridge longer than its own timeout and was not sent; superseded: a newer request from the same src was already waiting, so this one had been given up on and was not sent; duplicate: the same req with the same request, from a sender that gives src and seq, was handled within the last 30 s (a QoS 1 redelivery) and was not sent again; offline: produced by the reader itself when it has no broker"},
     "reason": {"type": "string"}
   }
 }
@@ -298,7 +301,7 @@ an unplugged Pi or a lost WiFi link shows as offline within the keep-alive
     "refused":     {"type": "integer", "description": "tx/uds requests refused since start (§5)"},
     "superseded":  {"type": "integer", "description": "tx/uds requests not run since start because their requester had already sent a newer one"},
     "duplicates":  {"type": "integer", "description": "tx/uds requests not run since start because they were a redelivery"},
-    "caps":        {"type": "array", "items": {"type": "string"}, "description": "what this bridge does beyond the minimum of protocol v1. ack-reply: an ok ack carries reply (§3.4). supersede: overtaken and redelivered requests are not run. Absent on a bridge that does neither"},
+    "caps":        {"type": "array", "items": {"type": "string"}, "description": "what this bridge does beyond the minimum of protocol v1. ack-reply: an ok ack carries reply (§3.4). supersede: overtaken and redelivered requests are not run, for requests that carry src and seq. Absent on a bridge that does neither"},
     "adapter":     {"type": "string", "description": "python-can interface and channel"},
     "bridge":      {"type": "string", "description": "software name and version, e.g. \"hakake-bridge 0.1\""},
     "filter":      {"oneOf": [{"const": "all"}, {"type": "array", "items": {"type": "string"}}], "description": "the ids the bridge mirrors"},
