@@ -14,10 +14,9 @@ These tests rebuild that sequence with the real façade over ``MqttSource`` and
 a fake broker client, using frames captured from the car. No broker, no
 network, no hardware.
 
-The three scenario tests are ``xfail(strict=True)``: they fail today, which is
-the reproduction, and the suite stays green. When the fix lands they start
-passing, strict xfail turns that into an error, and the marker comes off. Run
-them for real with ``pytest --runxfail tests/test_mqtt_reply_integrity.py``.
+The three scenario tests failed on the code as it was (commit 2fc0b6a carried
+them as strict expected failures: SOC 465 %, 1088 % and a silent 40 % for 80 %).
+They pass since the façade proves each reply through replyproof.py.
 """
 
 import asyncio
@@ -129,8 +128,6 @@ def test_the_row_stored_on_2026_11_05_decodes_back_to_a_group05_reply():
 
 # ── the fault, reproduced ────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason="stale reply of another group is decoded as the answer: "
-                                       "reader guard, plan phase 1")
 def test_a_late_reply_to_an_abandoned_request_is_not_decoded_as_the_next_answer(monkeypatch):
     """Today's event: the group-05 request is abandoned, group 01 is asked next,
     and the late group-05 reply arrives first inside that window."""
@@ -156,8 +153,6 @@ def test_a_late_reply_to_an_abandoned_request_is_not_decoded_as_the_next_answer(
     assert rec.get("pack_v") == TRUE["pack_v"] and rec.get("lv_volts") == TRUE["lv_volts"]
 
 
-@pytest.mark.xfail(strict=True, reason="another requester's reply in the window is decoded as ours: "
-                                       "reader guard, plan phase 1")
 def test_another_requesters_reply_in_the_window_is_not_decoded_as_ours():
     """The 2026-10-08 and 2026-10-12 class: a second requester on the same bridge
     asks for the cell voltages and its 192-byte reply lands in our window."""
@@ -180,8 +175,6 @@ def test_another_requesters_reply_in_the_window_is_not_decoded_as_ours():
     assert rec.get("soc") == TRUE["soc"], f"decoded SOC {rec.get('soc')} %, the car said {TRUE['soc']} %"
 
 
-@pytest.mark.xfail(strict=True, reason="a stale reply of the same group cannot be told from the fresh one "
-                                       "without request/reply correlation: plan phase 2")
 def test_a_late_reply_of_the_same_group_is_not_taken_for_the_fresh_one(monkeypatch):
     """The silent case. Echo and length are right, the values are plausible, and
     they are old: only knowing which request a reply answers can catch it."""

@@ -41,6 +41,7 @@ vehicle is named here: ids come from the config file.
 """
 
 import argparse
+import collections
 import json
 import logging
 import math
@@ -59,6 +60,12 @@ HEX = [f"{i:02X}" for i in range(256)]
 MAX_UDS_TIMEOUT = 10.0
 MAX_PAYLOAD = 64 * 1024        # a tx/uds request is a few hundred bytes; anything larger is dropped
 UDS_QUEUE = 32                 # requests waiting for the bus; beyond this a request is acked "busy"
+# What this bridge does beyond protocol v1's minimum, advertised in `status.caps`
+# (docs/MQTT.md §3.5): the ack carries the reassembled reply and echoes the
+# request, and a request its requester has already moved on from is not run.
+CAPS = ["ack-reply", "supersede"]
+DUP_WINDOW = 30.0              # s: the same req id and request seen again this soon is a redelivery, not a new request
+SEEN_REQS = 64                 # how many recent requests are remembered for that
 
 DEFAULTS = {
     "host": "127.0.0.1",
@@ -170,6 +177,23 @@ def parse_hex(s):
     return bytes(int(p, 16) for p in parts)
 
 
+def reply_padding(length, last_frame):
+    """The bytes an ECU filled its last frame with, beyond a reply of `length`
+    bytes. ISO-TP framing is fixed (a single frame, or six bytes then sevens),
+    so with these and the reply a reader can rebuild the frames exactly as the
+    bus carried them. Empty when the last frame is not the one expected."""
+    if not last_frame or length <= 0:
+        return b""
+    last = bytes(last_frame)
+    if length <= 7:
+        kind, used = 0, 1 + length
+    else:
+        kind, used = 2, 1 + ((length - 6) % 7 or 7)
+    if last[0] >> 4 != kind or len(last) < used:
+        return b""
+    return last[used:]
+
+
 # ── the bridge ───────────────────────────────────────────────────────────
 
 class Stats:
@@ -182,6 +206,8 @@ class Stats:
         self.errors = 0           # CAN error frames + bus errors
         self.tx = 0               # frames we put on the bus (UDS only)
         self.refused = 0
+        self.superseded = 0       # requests not run because their requester had already sent a newer one
+        self.duplicates = 0       # requests not run because they were a redelivery
         self._win_t = clock()
         self._win_in = 0
         self._win_out = 0
@@ -273,11 +299,13 @@ class Bridge:
         self._uds_rx = None                       # arbitration id we are collecting
         self._uds_q = queue.Queue()
         self._uds_frames = 0
+        self._uds_last = None                     # data of the newest frame on the response id
         self._stop = threading.Event()
         self._notifier = None
         self._pub_thread = None
         self._uds_thread = None
-        self._uds_requests = queue.Queue(maxsize=UDS_QUEUE)   # (payload, monotonic time received)
+        self._uds_requests = queue.Queue(maxsize=UDS_QUEUE)   # (payload, monotonic time received, clock time received)
+        self._seen = collections.OrderedDict()    # (req, tx, rx, data) → monotonic time handled
         self.connected = False
 
     # ── CAN side ─────────────────────────────────────────────────────────
@@ -354,6 +382,7 @@ class Bridge:
         d = fmt_data(msg.data)
         if self._uds_rx is not None and msg.arbitration_id == self._uds_rx and not msg.is_error_frame:
             self._uds_frames += 1
+            self._uds_last = bytes(msg.data)
             self._uds_q.put(msg)                  # the ISO-TP layer's copy; the mirror still gets it
         if self.batch_ms:
             fl = ""
@@ -468,35 +497,120 @@ class Bridge:
             log.warning("tx/uds: unreadable message ignored (%s)", type(e).__name__)
             return
         try:
-            self._uds_requests.put_nowait((payload, time.monotonic()))  # the UDS thread runs it
+            self._uds_requests.put_nowait((payload, time.monotonic(), self.clock()))  # the UDS thread runs it
         except queue.Full:
             self._ack(payload, {"ok": False, "error": "busy", "reason": "request queue full"})
 
     def _uds_worker(self):
         while not self._stop.is_set():
             try:
-                payload, t_in = self._uds_requests.get(timeout=0.1)
+                payload, t_mono, t_in = self._uds_requests.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                waited = time.monotonic() - t_in
+                waited = time.monotonic() - t_mono
+                timing = {"t_in": round(t_in, 3), "queue_ms": int(round(waited * 1000))}
                 limit = float(payload.get("timeout", 2.0)) if isinstance(payload, dict) else 2.0
                 if not math.isfinite(limit) or waited > limit:
-                    self._ack(payload, {"ok": False, "error": "expired",
-                                        "reason": f"waited {waited:.1f} s for the bus"})
+                    self._ack(payload, dict(timing, ok=False, error="expired",
+                                            reason=f"waited {waited:.1f} s for the bus"))
                     continue
-                self.handle_uds(payload)
+                if self._is_duplicate(payload):
+                    self.stats.duplicates += 1
+                    self._ack(payload, dict(timing, ok=False, error="duplicate",
+                                            reason="this request was already handled"))
+                    continue
+                if self._is_superseded(payload):
+                    self.stats.superseded += 1
+                    self._ack(payload, dict(timing, ok=False, error="superseded",
+                                            reason="a newer request from the same requester is waiting"))
+                    continue
+                self.handle_uds(payload, timing)
             except Exception as e:                # one bad request never stops the worker
                 self.stats.errors += 1
                 log.warning("tx/uds: request failed (%s: %s)", type(e).__name__, e)
                 self._ack(payload, {"ok": False, "error": "error", "reason": "bad request"})
+
+    # ── who asked, and what for ──────────────────────────────────────────
+    # A request may name its requester (`src`) and that requester's running
+    # count (`seq`). Neither is required: a request without them is run as
+    # before. With them the bridge can tell that a request has been overtaken,
+    # and every ack says back what it answers, so a requester never has to
+    # guess which reply is its own (docs/MQTT.md §3.3, §3.4).
+
+    @staticmethod
+    def _ident(payload):
+        if not isinstance(payload, dict):
+            return None, None
+        src, seq = payload.get("src"), payload.get("seq")
+        if not isinstance(src, str) or not src or len(src) > 32:
+            src = None
+        if isinstance(seq, bool) or not isinstance(seq, int):
+            seq = None
+        return src, seq
+
+    def _echo(self, payload):
+        """The request as this bridge understood it, for the ack."""
+        out = {}
+        if not isinstance(payload, dict):
+            return out
+        src, seq = self._ident(payload)
+        if src is not None:
+            out["src"] = src
+        if seq is not None:
+            out["seq"] = seq
+        for key in ("tx", "rx"):
+            try:
+                v = int(str(payload[key]), 16)
+                out[key] = id_hex(v, v > 0x7FF)
+            except (KeyError, TypeError, ValueError):
+                pass
+        try:
+            out["request"] = fmt_data(parse_hex(payload["data"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+        return out
+
+    def _is_superseded(self, payload):
+        """True when a newer request from the same requester is already waiting.
+        A requester asks one thing at a time, so the older one was given up on:
+        running it would only delay the newer one and put a reply on the bus
+        that nobody is waiting for."""
+        src, seq = self._ident(payload)
+        if src is None or seq is None:
+            return False
+        with self._uds_requests.mutex:
+            waiting = list(self._uds_requests.queue)
+        for other in waiting:
+            o_src, o_seq = self._ident(other[0])
+            if o_src == src and o_seq is not None and o_seq > seq:
+                return True
+        return False
+
+    def _is_duplicate(self, payload):
+        """True when the same req id with the same request was handled within
+        DUP_WINDOW: a QoS 1 redelivery after a reconnect, which must not reach
+        the car twice. A requester that reuses an id later is not affected."""
+        if not isinstance(payload, dict):
+            return False
+        req = str(payload.get("req", ""))
+        if not req:
+            return False
+        key = (req, str(payload.get("tx")), str(payload.get("rx")), str(payload.get("data")))
+        now = time.monotonic()
+        before = self._seen.get(key)
+        self._seen[key] = now
+        self._seen.move_to_end(key)
+        while len(self._seen) > SEEN_REQS:
+            self._seen.popitem(last=False)
+        return before is not None and now - before <= DUP_WINDOW
 
     def _ack(self, payload, body):
         """Publish an ack for `payload` when it carries a usable req id."""
         req = str(payload.get("req", "")) if isinstance(payload, dict) else ""
         if not req or "/" in req or "+" in req or "#" in req or len(req) > 64:
             return None
-        ack = dict(body, req=req)
+        ack = dict(self._echo(payload), **dict(body, req=req))
         self.client.publish(f"{self.t_uds}/{req}", json.dumps(ack, separators=(",", ":")), qos=1, retain=False)
         return ack
 
@@ -510,6 +624,7 @@ class Bridge:
                            "bitrate": self.cfg["bitrate"], "listen_only": self.listen_only,
                            "fps": s.fps_in, "fps_out": s.fps_out, "dropped": s.dropped,
                            "queue": self.q.qsize(), "errors": s.errors, "refused": s.refused,
+                           "superseded": s.superseded, "duplicates": s.duplicates, "caps": CAPS,
                            "adapter": adapter, "bridge": BRIDGE,
                            "filter": "all" if self._filters is None else [id_hex(i) for i in self._filters],
                            "batch_ms": self.batch_ms, "t": round(self.clock(), 3)}
@@ -531,13 +646,15 @@ class Bridge:
 
     # ── UDS requests ─────────────────────────────────────────────────────
 
-    def handle_uds(self, payload):
-        """Run one request end to end and publish its ack. Returns the ack dict."""
+    def handle_uds(self, payload, timing=None):
+        """Run one request end to end and publish its ack. Returns the ack dict.
+        `timing` is what the worker measured before the request reached the bus
+        (`t_in`, `queue_ms`); the ack also echoes the request (see `_echo`)."""
         req = str(payload.get("req", "")) if isinstance(payload, dict) else ""
         if not req or "/" in req or "+" in req or "#" in req:
             log.warning("tx/uds: request without a usable req id, ignored")
             return None
-        ack = self._run_uds(req, payload)
+        ack = dict(self._echo(payload), **dict(timing or {}, **self._run_uds(req, payload)))
         self.flush_batch(force=True)              # response frames go out before the ack
         self.drain()
         self.client.publish(f"{self.t_uds}/{req}", json.dumps(ack, separators=(",", ":")), qos=1, retain=False)
@@ -592,6 +709,7 @@ class Bridge:
         with self._uds_q.mutex:
             self._uds_q.queue.clear()
         self._uds_frames = 0
+        self._uds_last = None
         self._uds_rx = rx
 
         def rxfn(t):
@@ -613,6 +731,7 @@ class Bridge:
             address = isotp.Address(mode, txid=tx, rxid=rx)
             layer = isotp.TransportLayer(rxfn=rxfn, txfn=txfn, address=address, params=params,
                                          error_handler=errors.append, read_timeout=0.005)
+            t_start = time.monotonic()
             layer.send(data)
             deadline = self.clock() + timeout
             answer = None
@@ -620,6 +739,7 @@ class Bridge:
                 layer.process()
                 answer = layer.recv()
                 if answer is not None:
+                    t_done = self.clock()
                     break
                 if errors:
                     break
@@ -634,12 +754,21 @@ class Bridge:
                     layer.reset()
             except Exception:
                 pass
+        bus_ms = int(round((time.monotonic() - t_start) * 1000))
         if answer is not None:
-            return {"req": req, "ok": True, "frames": self._uds_frames, "bytes": len(answer)}
+            # The whole reply, service echo included, travels in the ack: the one
+            # message that is addressed to this request and nothing else. The
+            # frames on rx/<rx> are a mirror of the bus, shared by every requester.
+            ack = {"req": req, "ok": True, "frames": self._uds_frames, "bytes": len(answer),
+                   "reply": fmt_data(answer), "t_done": round(t_done, 3), "bus_ms": bus_ms}
+            pad = reply_padding(len(answer), self._uds_last)
+            if pad:
+                ack["pad"] = fmt_data(pad)        # what the ECU filled its last frame with
+            return ack
         if errors:
             return {"req": req, "ok": False, "error": "error",
-                    "reason": type(errors[0]).__name__, "frames": self._uds_frames}
-        return {"req": req, "ok": False, "error": "timeout", "frames": self._uds_frames}
+                    "reason": type(errors[0]).__name__, "frames": self._uds_frames, "bus_ms": bus_ms}
+        return {"req": req, "ok": False, "error": "timeout", "frames": self._uds_frames, "bus_ms": bus_ms}
 
     # ── lifecycle ────────────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ leaves, and what a gauge finds on ``state`` and ``signal/<key>``.
 import asyncio
 import json
 import os
+import re
 import sys
 import types
 
@@ -407,7 +408,9 @@ def test_request_publishes_the_envelope_and_resolves_on_the_ack():
     req = _published_request(client)
     assert req["tx"] == "79B" and req["rx"] == "7BB" and req["data"] == "21 01"
     assert req["bs"] == 0 and req["stmin"] == 32 and req["timeout"] == 0.5
-    assert len(req["req"]) == 4 and int(req["req"], 16) >= 0
+    # who is asking, and which of its requests this is: said in the request, said back in the ack
+    assert req["src"] == src.src and req["seq"] == 1 and req["req"] == f"{src.src}-000001"
+    assert re.fullmatch(r"[0-9a-zA-Z_-]{1,32}", req["req"])            # the id pattern of docs/MQTT.md §3.3
     pub = [p for p in client.published if p[0] == f"{ROOT_T}/tx/uds"][-1]
     assert pub[2] == 1 and pub[3] is False                   # QoS 1, not retained
     assert ack == {"req": req["req"], "ok": True, "frames": 1}
@@ -891,3 +894,110 @@ def test_the_facade_follows_the_sources_listen_only_state():
     assert f.listen_only is True and f.marker()["listen_only"] is True
     assert run(f.send("ATSH 79B")) == [] and run(f.send("2101")) == ["NO DATA"]
     assert [t for t, *_ in client.published if t.endswith("/tx/uds")] == []
+
+
+# ── who is asking; requests given up on; acks that come late ─────────────
+
+def test_a_requester_id_is_short_safe_and_new_each_start():
+    a, b = ms.requester_id("mac"), ms.requester_id("mac")
+    assert a != b and re.fullmatch(r"mac-[0-9a-f]{4}", a)
+    assert re.fullmatch(r"hk-[0-9a-f]{4}", ms.requester_id("")) and re.fullmatch(r"hk-[0-9a-f]{4}", ms.requester_id(None))
+    assert ms.requester_id("my car/+#  reader!").startswith("mycarreader-")
+    assert len(ms.requester_id("x" * 80)) == 12 + 5                  # room left for "-000001" inside 32 characters
+
+
+def test_the_requester_name_comes_from_the_config_or_the_environment(monkeypatch):
+    assert ms.mqtt_config({"host": "h", "src": " mac1 "})["src"] == "mac1"
+    monkeypatch.setenv("HAKAKE_MQTT_SRC", "desk")
+    assert ms.mqtt_config({"host": "h", "src": "mac1"})["src"] == "desk"
+    src, client = make_source({"src": "ignored"})
+    assert src.src.startswith("desk-")
+
+
+def test_requests_count_up_and_two_sources_never_share_an_id():
+    async def go():
+        src, client, sink = await started()
+        other, client2 = make_source()
+        monkey = ms.ACK_GRACE
+        ms.ACK_GRACE = 0.0
+        try:
+            for _ in range(3):
+                await src.send_uds("79B", "7BB", b"\x21\x01", timeout=0.01)
+        finally:
+            ms.ACK_GRACE = monkey
+        return src, other, [json.loads(p) for t, p, q, r in client.published if t == f"{ROOT_T}/tx/uds"]
+
+    src, other, reqs = run(go())
+    assert [r["seq"] for r in reqs] == [1, 2, 3] and len({r["req"] for r in reqs}) == 3
+    assert all(r["src"] == src.src for r in reqs) and src.src != other.src
+
+
+def test_an_ack_that_comes_after_its_request_was_given_up_on_is_kept_as_late(monkeypatch):
+    monkeypatch.setattr(ms, "ACK_GRACE", 0.0)
+
+    async def go():
+        src, client, sink = await started()
+        ack = await src.send_uds("79B", "7BB", b"\x21\x05", timeout=0.02)
+        req = _published_request(client)["req"]
+        assert ack["error"] == "timeout" and src.take_late() == []
+        late = {"req": req, "ok": True, "frames": 11, "reply": "61 05 01", "request": "21 05", "t_done": 123.4}
+        client.deliver(f"{ROOT_T}/tx/uds/{req}", late)
+        client.deliver(f"{ROOT_T}/tx/uds/{req}", late)                 # a second copy is nobody's
+        client.deliver(f"{ROOT_T}/tx/uds/someone-else", {"req": "someone-else", "ok": True})
+        return src, req, late
+
+    src, req, late = run(go())
+    (rec,) = src.take_late()
+    assert rec["req"] == req and rec["ack"] == late and rec["request"] == b"\x21\x05"
+    assert (rec["tx"], rec["rx"]) == ("79B", "7BB") and rec["waited_s"] >= 0 and rec["t"] >= rec["t_asked"]
+    assert src.take_late() == [] and src._abandoned == {}
+
+
+def test_requests_given_up_on_are_not_remembered_for_ever(monkeypatch):
+    monkeypatch.setattr(ms, "ACK_GRACE", 0.0)
+    monkeypatch.setattr(ms, "ABANDONED_KEPT", 3)
+
+    async def go():
+        src, client, sink = await started()
+        for _ in range(5):
+            await src.send_uds("79B", "7BB", b"\x21\x01", timeout=0.01)
+        kept = list(src._abandoned)
+        monkeypatch.setattr(ms, "ABANDONED_FOR", 0.0)
+        await asyncio.sleep(0.01)
+        await src.send_uds("79B", "7BB", b"\x21\x01", timeout=0.01)
+        return src, kept
+
+    src, kept = run(go())
+    assert [k[-6:] for k in kept] == ["000003", "000004", "000005"]
+    assert len(src._abandoned) <= 1                                   # the old ones aged out
+
+
+def test_a_reply_in_the_ack_does_not_wait_for_frames():
+    """With the reply in the ack the frames are a mirror; the request returns at once."""
+    async def go():
+        src, client, sink = await started(ids={"7BB"})
+
+        async def bridge():
+            await asyncio.sleep(0.01)
+            req = _published_request(client)["req"]
+            client.deliver(f"{ROOT_T}/tx/uds/{req}", {"req": req, "ok": True, "frames": 6, "reply": "61 01 FF"})
+
+        asyncio.ensure_future(bridge())
+        t0 = asyncio.get_running_loop().time()
+        ack = await src.send_uds("79B", "7BB", b"\x21\x01", timeout=0.5)
+        return ack, asyncio.get_running_loop().time() - t0
+
+    ack, took = run(go())
+    assert ack["ok"] and took < ms.FRAME_GRACE * 0.6                  # no frame arrived, and nothing waited for one
+
+
+def test_caps_come_from_the_bridges_status_and_default_to_none():
+    async def go():
+        src, client, sink = await started()
+        before = src.caps
+        client.deliver(f"{ROOT_T}/status", {"v": 1, "online": True, "bus": "car", "caps": ["ack-reply", "supersede"]})
+        mid = src.caps
+        client.deliver(f"{ROOT_T}/status", {"v": 1, "online": True, "bus": "car", "caps": "not-a-list"})
+        return before, mid, src.caps
+
+    assert run(go()) == ([], ["ack-reply", "supersede"], [])

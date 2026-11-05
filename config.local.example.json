@@ -17,7 +17,8 @@
     "prefix": "hakake/leaf",
     "bus": "car",
     "subscribe": "auto",
-    "batch": false
+    "batch": false,
+    "src": ""
   },
   "adapters": [],
   "sources": {}

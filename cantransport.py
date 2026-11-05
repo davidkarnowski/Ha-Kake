@@ -67,6 +67,7 @@ import time
 import can
 from can.interfaces.slcan import slcanBus as _SlcanBus      # pyserial is already a dependency
 
+import replyproof
 from util import env
 
 # ── constants ────────────────────────────────────────────────────────────
@@ -224,6 +225,11 @@ class CanFacade:
         self.misses = []          # requests that answered NO DATA
         self.refused = []         # requests refused by policy (listen-only / not a read service)
         self.last_ack = None
+        # One record per request, for whoever accounts for the link (the
+        # reader): what was asked, what the source said, which bytes were
+        # taken as the answer and on what evidence, and every other message
+        # seen while waiting. Bounded; `take_exchanges()` empties it.
+        self._exchanges = collections.deque(maxlen=256)
         # the tables (memo §4.4)
         self.lock = threading.Lock()
         self.latest = {}                                   # id -> (mono_t, src_t, bytes)
@@ -472,6 +478,7 @@ class CanFacade:
         rx = self.rx.upper()
         with self.lock:
             self._captures[rx] = lines = []
+        asked, started = time.time(), time.monotonic()
         try:
             ack = await self.source.send_uds(self.tx, rx, data, self.fc_bs, self.stmin, timeout)
         except Exception as e:            # a dead bus mid-request: let the supervisor reconnect
@@ -481,8 +488,10 @@ class CanFacade:
         ack = dict(ack or {})
         self.last_ack = ack
         # A source whose ack can overtake the frames (a broker delivers
-        # topics independently) gets a short grace to let them land.
-        expected = ack.get("frames") if ack.get("ok") else None
+        # topics independently) gets a short grace to let them land. An ack
+        # that carries the reply itself needs none: the frames are then only a
+        # mirror of the bus.
+        expected = ack.get("frames") if ack.get("ok") and "reply" not in ack else None
         if expected:
             deadline = time.monotonic() + 0.25
             while len(lines) < expected and time.monotonic() < deadline:
@@ -490,12 +499,57 @@ class CanFacade:
         with self.lock:
             self._captures.pop(rx, None)
             got = list(lines)
-        if not ack.get("ok") or not got:
+        # Which bytes are the answer is decided in one place (replyproof.py):
+        # the ack's own reply when the bridge sends one, else the one message
+        # in the window that echoes this request. Whatever else arrived while
+        # we waited is kept, whole, in the exchange record: it is somebody's
+        # reply (perhaps a late one of ours) and the reader accounts for it.
+        ex = replyproof.resolve(data, rx, ack, got, tx_id=self.tx)
+        record = {"tx": str(self.tx or "").upper(), "rx": rx, "cmd": up, "request": bytes(data),
+                  "t_asked": asked, "t": time.time(), "rtt_ms": round((time.monotonic() - started) * 1000.0, 1),
+                  "ack": ack, "ok": ex.ok, "via": ex.via, "payload": ex.payload, "negative": ex.negative,
+                  "problem": ex.problem, "strays": ex.strays, "mirror": ex.mirror}
+        with self.lock:
+            self._exchanges.append(record)
+        if not ex.ok:
             self.misses.append(f"{self.tx}:{up}")
-            if not ack.get("ok") and ack.get("error") not in (None, "timeout"):
-                self._say(f"{up} to {self.tx}: {ack.get('error')}")
+            if ex.problem not in (None, "timeout"):
+                self._say(f"{up} to {self.tx}: {ex.problem}")
             return ["NO DATA"]
-        return got
+        return ex.lines
+
+    def take_exchanges(self):
+        """The record of every request since the last call, oldest first."""
+        with self.lock:
+            out = list(self._exchanges)
+            self._exchanges.clear()
+        return out
+
+    def take_late(self):
+        """Acks that arrived after their request was given up on (a source
+        that keeps them: MQTT), as ``{req, tx, rx, request, ack, t_asked, t,
+        waited_s, payload, lines}``. `payload` and `lines` are the reply such
+        an ack carries, when it carries one: late, and exactly the answer to
+        the request it names."""
+        take = getattr(self.source, "take_late", None)
+        out = []
+        for rec in (take() if take else ()):
+            rec = dict(rec)
+            ack = rec.get("ack") if isinstance(rec.get("ack"), dict) else {}
+            payload = replyproof.parse_hex(ack.get("reply")) if ack.get("ok") and "reply" in ack else None
+            rec["payload"] = rec["lines"] = None
+            if payload and (replyproof.answers(payload, rec.get("request"))
+                            or replyproof.negative_code(payload, rec.get("request")) is not None):
+                pad = replyproof.parse_hex(ack.get("pad")) if "pad" in ack else None
+                rec["payload"] = payload
+                rec["lines"] = replyproof.lines_from_payload(rec.get("rx", ""), payload, pad or b"")
+            out.append(rec)
+        return out
+
+    @property
+    def caps(self):
+        """What the source says its acks carry (``ack-reply``, …); empty when it says nothing."""
+        return list(getattr(self.source, "caps", None) or [])
 
     # ── bookkeeping ──────────────────────────────────────────────────────
 

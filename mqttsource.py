@@ -33,8 +33,10 @@ Machine specifics (the broker host) come from ``config.local.json``
 """
 
 import asyncio
+import collections
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -49,6 +51,8 @@ READ_SERVICES = frozenset({0x21, 0x01, 0x03, 0x07})   # SECURITY.md — the whol
 ACK_GRACE = 1.0                      # seconds added to a request's timeout for the round trip
 FRAME_GRACE = 0.25                   # seconds to wait after an ok ack for its frames to land
 CONNECT_TIMEOUT = 10.0               # seconds to wait for CONNACK in start()
+ABANDONED_KEPT = 64                  # requests given up on that are remembered, in case their ack turns up
+ABANDONED_FOR = 120.0                # seconds a request given up on is remembered
 
 DEFAULTS = {
     "host": "",
@@ -57,7 +61,16 @@ DEFAULTS = {
     "bus": "car",
     "subscribe": "auto",
     "batch": False,
+    "src": "",                       # a short name for this requester in its requests ("" = "hk")
 }
+
+
+def requester_id(name=""):
+    """This process's name in every request it sends (docs/MQTT.md §3.3):
+    the configured short name, cut to what a request id can carry, plus a
+    token that is new each start, so two sessions never share a request id."""
+    base = re.sub(r"[^0-9A-Za-z_]", "", str(name or ""))[:12] or "hk"
+    return f"{base}-{secrets.token_hex(2)}"
 
 
 # ── configuration ────────────────────────────────────────────────────────
@@ -80,7 +93,7 @@ def mqtt_config(raw=None, path=LOCAL_CONFIG):
         raw = _read_local_config(path).get("mqtt") or {}
     cfg = dict(DEFAULTS)
     cfg.update({k: v for k, v in raw.items() if k in DEFAULTS})
-    for key in ("host", "prefix", "bus"):
+    for key in ("host", "prefix", "bus", "src"):
         v = env(f"HAKAKE_MQTT_{key.upper()}")
         if v:
             cfg[key] = v
@@ -92,6 +105,7 @@ def mqtt_config(raw=None, path=LOCAL_CONFIG):
     cfg["prefix"] = str(cfg["prefix"] or DEFAULTS["prefix"]).strip("/")
     cfg["bus"] = str(cfg["bus"] or DEFAULTS["bus"]).strip("/")
     cfg["batch"] = bool(cfg["batch"])
+    cfg["src"] = str(cfg["src"] or "").strip()
     sub = cfg["subscribe"]
     if isinstance(sub, str):
         cfg["subscribe"] = "auto" if sub.strip().lower() in ("", "auto") else [sub.strip()]
@@ -270,6 +284,14 @@ class MqttSource:
         self._suback = None                    # asyncio.Event: a SUBACK arrived
         self._pending = {}                     # req → Future
         self._stopped = set()                  # futures stop() cancelled (vs. the caller being cancelled)
+        # Every request says who sent it and which of its requests it is; the
+        # bridge says both back in the ack, and can tell a request that has been
+        # overtaken. A request this side gave up on is remembered for a while:
+        # its ack may still come, and with it a reply that is late, not lost.
+        self.src = requester_id(self.cfg.get("src"))
+        self._seq = 0
+        self._abandoned = collections.OrderedDict()   # req → {tx, rx, request, t, mono}
+        self._late = []                               # acks that came after their request was given up on
         self._rx_counts = {}                   # id_hex → frames seen
         self._lock = threading.Lock()
         # Optional console event tap (docs/CONSOLE.md), set by the reader while
@@ -394,7 +416,8 @@ class MqttSource:
         anything is published, when the service byte is not a read.
         """
         data = bytes(data)
-        req = secrets.token_hex(2)
+        self._seq += 1
+        req = f"{self.src}-{self._seq:06d}"
         tx_id, rx_id = norm_id(tx), norm_id(rx)
         if not is_read_request(data):
             self.log(f"  mqtt: REFUSED request {hex_bytes(data)!r} to {tx_id}: "
@@ -411,13 +434,14 @@ class MqttSource:
         self._pending[req] = fut
         with self._lock:
             baseline = self._rx_counts.get(rx_id, 0)
-        envelope = {"req": req, "tx": tx_id, "rx": rx_id, "data": hex_bytes(data),
-                    "bs": int(bs), "stmin": int(stmin), "timeout": float(timeout)}
+        envelope = {"req": req, "src": self.src, "seq": self._seq, "tx": tx_id, "rx": rx_id,
+                    "data": hex_bytes(data), "bs": int(bs), "stmin": int(stmin), "timeout": float(timeout)}
         self.client.publish(self.topics.uds, json.dumps(envelope, separators=(",", ":")), qos=1)
         try:
             ack = await asyncio.wait_for(fut, float(timeout) + ACK_GRACE)
         except asyncio.TimeoutError:
             ack = {"req": req, "ok": False, "error": "timeout"}
+            self._abandon(req, tx_id, rx_id, data)
         except asyncio.CancelledError:
             if fut not in self._stopped:
                 raise                          # the caller is being cancelled: let it stop
@@ -425,7 +449,9 @@ class MqttSource:
         finally:
             self._pending.pop(req, None)
             self._stopped.discard(fut)
-        want = ack.get("frames") if ack.get("ok") else None
+        # A reply that rides in the ack needs no frame to arrive: the frames on
+        # rx/<rx> are then only a mirror of the bus, and nothing waits for them.
+        want = ack.get("frames") if ack.get("ok") and "reply" not in ack else None
         if isinstance(want, int) and want > 0:
             # QoS 0 frames and a QoS 1 ack are not strictly ordered; give the
             # last response frames a moment to land before the caller's
@@ -438,6 +464,32 @@ class MqttSource:
                     break
                 await asyncio.sleep(0.01)
         return ack
+
+    # ── requests given up on, and their late acks ────────────────────────
+
+    @property
+    def caps(self):
+        """What the bridge says its acks carry (``status.caps``): a list, empty for an older bridge."""
+        caps = self.status.get("caps")
+        return [str(c) for c in caps] if isinstance(caps, list) else []
+
+    def _abandon(self, req, tx_id, rx_id, data):
+        now = time.monotonic()
+        with self._lock:
+            self._abandoned[req] = {"tx": tx_id, "rx": rx_id, "request": bytes(data), "t": time.time(), "mono": now}
+            while len(self._abandoned) > ABANDONED_KEPT:
+                self._abandoned.popitem(last=False)
+            for old in [r for r, a in self._abandoned.items() if now - a["mono"] > ABANDONED_FOR]:
+                del self._abandoned[old]
+
+    def take_late(self):
+        """Acks that arrived for requests already given up on, oldest first, and
+        forget them: ``{req, tx, rx, request, ack, t_asked, t, waited_s}``. The
+        reply in such an ack is late, not wrong: it answers exactly the request
+        it names."""
+        with self._lock:
+            late, self._late = self._late, []
+        return late
 
     # ── liveness ─────────────────────────────────────────────────────────
 
@@ -528,6 +580,12 @@ class MqttSource:
             raise ValueError("ack is not an object")
         fut = self._pending.get(req)
         if fut is None:
+            with self._lock:
+                gone = self._abandoned.pop(req, None)
+                if gone is not None:
+                    self._late.append({"req": req, "tx": gone["tx"], "rx": gone["rx"], "request": gone["request"],
+                                       "ack": obj, "t_asked": gone["t"], "t": time.time(),
+                                       "waited_s": round(time.monotonic() - gone["mono"], 3)})
             return
 
         def resolve():

@@ -236,12 +236,12 @@ def test_stop_publishes_offline():
 class FakeEcu(threading.Thread):
     """Answers one ISO-TP request id with a canned payload, on the car's end of the bus."""
 
-    def __init__(self, bus, txid, rxid, answers):
+    def __init__(self, bus, txid, rxid, answers, padding=None):
         super().__init__(daemon=True)
         self.bus, self.answers = bus, answers          # request bytes → response bytes
         addr = isotp.Address(isotp.AddressingMode.Normal_11bits, txid=txid, rxid=rxid)
         self.layer = isotp.TransportLayer(rxfn=self._rx, txfn=self._tx, address=addr,
-                                          params={"tx_padding": None, "stmin": 0, "blocksize": 0,
+                                          params={"tx_padding": padding, "stmin": 0, "blocksize": 0,
                                                   "rx_flowcontrol_timeout": 1000,
                                                   "rx_consecutive_frame_timeout": 1000},
                                           read_timeout=0.005)
@@ -339,7 +339,8 @@ def test_silent_ecu_times_out(live):
 def test_non_read_services_never_reach_the_bus(live, data):
     bridge, car = live
     ack = bridge.handle_uds({"req": "r1", "tx": "79B", "rx": "7BB", "data": data, "timeout": 1.0})
-    assert ack == {"req": "r1", "ok": False, "error": "refused", "reason": ack["reason"]}
+    assert (ack["req"], ack["ok"], ack["error"]) == ("r1", False, "refused") and ack["reason"]
+    assert "reply" not in ack and (ack["tx"], ack["rx"]) == ("79B", "7BB")     # refused, and it says what it refused
     assert car.recv(timeout=0.1) is None
     assert bridge.stats.refused == 1 and bridge.stats.tx == 0
     topic, payload, qos, retain = bridge.client.published[-1]
@@ -528,9 +529,10 @@ def test_a_full_request_queue_answers_busy():
 def test_a_request_that_waited_too_long_is_not_sent(live):
     bridge, car = live
     bridge._uds_requests.put_nowait(({"req": "old", "tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 0.5},
-                                     time.monotonic() - 10))
+                                     time.monotonic() - 10, time.time() - 10))
     got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/old", timeout=3.0)
     assert got and got[0]["error"] == "expired"
+    assert got[0]["queue_ms"] >= 10000 and got[0]["request"] == "21 01"      # how long it waited, and for what
     assert _nothing_on(car)
 
 
@@ -544,3 +546,216 @@ def test_a_receive_error_marks_the_bridge_offline():
     finally:
         car.shutdown()
         bridge.bus.shutdown()
+
+
+# ── the ack is the reply (docs/MQTT.md §3.4) ─────────────────────────────
+# The frames on rx/<rx> are a mirror of the bus that every requester shares.
+# The ack is the one message addressed to a request and nothing else, so the
+# reply rides in it, with the request said back.
+
+def test_the_ack_carries_the_reply_and_echoes_the_request(live):
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        ack = bridge.handle_uds({"req": "mac1-000007", "src": "mac1", "seq": 7, "tx": "79b", "rx": "7bb",
+                                 "data": "21 01", "timeout": 2.0}, {"t_in": 100.0, "queue_ms": 3})
+    finally:
+        ecu.stop()
+    assert ack["ok"] is True
+    assert bytes(int(b, 16) for b in ack["reply"].split()) == payload           # service echo included
+    assert ack["bytes"] == len(payload) == len(ack["reply"].split())
+    assert (ack["request"], ack["tx"], ack["rx"]) == ("21 01", "79B", "7BB")     # normalised, as the bus saw it
+    assert (ack["src"], ack["seq"]) == ("mac1", 7)
+    assert (ack["t_in"], ack["queue_ms"]) == (100.0, 3)
+    assert isinstance(ack["t_done"], float) and 0 <= ack["bus_ms"] < 2000
+    topic, sent, qos, retain = bridge.client.published[-1]
+    assert topic == f"{ROOT_T}/tx/uds/mac1-000007" and json.loads(sent) == ack and qos == 1 and retain is False
+
+
+def test_a_request_that_names_nobody_is_run_as_before(live):
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        ack = bridge.handle_uds({"req": "a1b2", "tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 2.0})
+    finally:
+        ecu.stop()
+    assert ack["ok"] is True and ack["frames"] >= 6 and ack["reply"].startswith("61 01")
+    assert "src" not in ack and "seq" not in ack and "queue_ms" not in ack
+
+
+@pytest.mark.parametrize("src, seq", [("", 1), ("x" * 33, 1), (7, 1), ("mac1", "1"), ("mac1", True), ("mac1", 1.5)])
+def test_a_malformed_identity_is_left_out_not_trusted(live, src, seq):
+    bridge, car = live
+    ack = bridge.handle_uds({"req": "r1", "src": src, "seq": seq, "tx": "79B", "rx": "7BB", "data": "04"})
+    assert ack["error"] == "refused"
+    assert ("src" in ack, "seq" in ack) == (isinstance(src, str) and 0 < len(src) <= 32,
+                                             isinstance(seq, int) and not isinstance(seq, bool))
+
+
+def test_a_negative_response_travels_in_the_reply(live):
+    bridge, car = live
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x7f": b"\x7f\x21\x12"})
+    ecu.start()
+    try:
+        ack = bridge.handle_uds({"req": "n1", "tx": "79B", "rx": "7BB", "data": "21 7F", "timeout": 2.0})
+    finally:
+        ecu.stop()
+    assert ack["ok"] is True and ack["reply"] == "7F 21 12"       # the car answered; what it said is the reader's to judge
+
+
+def test_a_timeout_says_how_long_the_bus_was_given(live):
+    bridge, car = live
+    ack = bridge.handle_uds({"req": "t1", "src": "mac1", "seq": 3, "tx": "79B", "rx": "7BB", "data": "21 01",
+                             "timeout": 0.2})
+    assert ack["error"] == "timeout" and "reply" not in ack
+    assert ack["bus_ms"] >= 150 and (ack["src"], ack["seq"], ack["request"]) == ("mac1", 3, "21 01")
+
+
+def test_status_says_what_the_acks_carry(live):
+    bridge, car = live
+    st = json.loads(bridge.status_payload())
+    assert st["caps"] == ["ack-reply", "supersede"] == hb.CAPS
+    assert st["superseded"] == 0 and st["duplicates"] == 0 and st["v"] == 1     # added keys, same protocol version
+
+
+# ── requests nobody is waiting for ───────────────────────────────────────
+
+def _queue(bridge, **req):
+    bridge._on_message(bridge.client, None, _msg(dict({"tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 5.0}, **req)))
+
+
+def test_a_request_overtaken_by_a_newer_one_from_the_same_requester_is_not_run():
+    """A requester asks one thing at a time. When its request N+1 is already
+    waiting as N comes off the queue, N was given up on: a stalled link
+    delivered both at once. Running N would put a reply on the bus that nobody
+    waits for, which is how a stale reply ends up in the next window."""
+    bridge, car = make_bridge()
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload, b"\x21\x05": b"\x61\x05\x01"})
+    ecu.start()
+    try:
+        _queue(bridge, req="mac1-000001", src="mac1", seq=1, data="21 05")      # abandoned by its reader
+        _queue(bridge, req="mac1-000002", src="mac1", seq=2)                   # what the reader asked next
+        _queue(bridge, req="veh-000001", src="veh", seq=1)                     # someone else: not affected
+        bridge.start()
+        old = bridge.client.wait_for(f"{ROOT_T}/tx/uds/mac1-000001", timeout=3.0)
+        new = bridge.client.wait_for(f"{ROOT_T}/tx/uds/mac1-000002", timeout=3.0)
+        other = bridge.client.wait_for(f"{ROOT_T}/tx/uds/veh-000001", timeout=3.0)
+    finally:
+        bridge.stop()
+        ecu.stop()
+        car.shutdown()
+        bridge.bus.shutdown()
+    assert old[0]["ok"] is False and old[0]["error"] == "superseded" and old[0]["request"] == "21 05"
+    assert new[0]["ok"] is True and other[0]["ok"] is True
+    assert ecu.seen == [b"\x21\x01", b"\x21\x01"]                             # the abandoned one never reached the car
+    assert bridge.stats.superseded == 1
+
+
+def test_requests_in_order_from_one_requester_all_run_when_nothing_overtakes(live):
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        for n in (1, 2, 3):
+            _queue(bridge, req=f"mac1-{n}", src="mac1", seq=n)
+            got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/mac1-{n}", timeout=3.0)
+            assert got and got[0]["ok"] is True and got[0]["seq"] == n and got[0]["queue_ms"] < 1000
+    finally:
+        ecu.stop()
+    assert len(ecu.seen) == 3 and bridge.stats.superseded == 0
+
+
+def test_a_redelivered_request_reaches_the_car_once(live):
+    """QoS 1 is at-least-once: after a reconnect the same request can arrive twice."""
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        _queue(bridge, req="mac1-000009", src="mac1", seq=9)
+        first = bridge.client.wait_for(f"{ROOT_T}/tx/uds/mac1-000009", n=1, timeout=3.0)
+        _queue(bridge, req="mac1-000009", src="mac1", seq=9)
+        both = bridge.client.wait_for(f"{ROOT_T}/tx/uds/mac1-000009", n=2, timeout=3.0)
+    finally:
+        ecu.stop()
+    assert first[0]["ok"] is True
+    assert len(both) == 2 and both[1]["ok"] is False and both[1]["error"] == "duplicate"
+    assert ecu.seen == [b"\x21\x01"] and bridge.stats.duplicates == 1
+
+
+def test_an_id_used_again_later_is_a_new_request(live, monkeypatch):
+    monkeypatch.setattr(hb, "DUP_WINDOW", 0.0)                    # "later": outside the redelivery window
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload})
+    ecu.start()
+    try:
+        for n in (1, 2):
+            _queue(bridge, req="demo1")
+            got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/demo1", n=n, timeout=3.0)
+            assert len(got) == n and got[-1]["ok"] is True
+    finally:
+        ecu.stop()
+    assert len(ecu.seen) == 2 and bridge.stats.duplicates == 0
+
+
+def test_the_same_id_with_a_different_request_is_not_a_redelivery(live):
+    bridge, car = live
+    lines, payload = _group01_payload()
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers={b"\x21\x01": payload, b"\x21\x05": b"\x61\x05\x01"})
+    ecu.start()
+    try:
+        _queue(bridge, req="x1")
+        bridge.client.wait_for(f"{ROOT_T}/tx/uds/x1", n=1, timeout=3.0)
+        _queue(bridge, req="x1", data="21 05")
+        got = bridge.client.wait_for(f"{ROOT_T}/tx/uds/x1", n=2, timeout=3.0)
+    finally:
+        ecu.stop()
+    assert len(got) == 2 and got[1]["ok"] is True and got[1]["reply"] == "61 05 01"
+
+
+# ── the padding, so a reader can rebuild the frames exactly ──────────────
+
+@pytest.mark.parametrize("length, last, want", [
+    (3, "03 7F 21 12 FF FF FF FF", "FF FF FF FF"),          # a single frame
+    (7, "07 61 01 02 03 04 05 06", ""),                     # a full single frame: nothing to pad
+    (41, "25 00 03 88 90 80 00 05", ""),                    # 6 + 5 x 7 = 41: the last frame is full
+    (71, "2A 01 02 AA AA AA AA AA", "AA AA AA AA AA"),       # 6 + 9 x 7 = 69, two more in the tenth
+    (13, "21 01 02 03 04 05 06 07", ""),                    # 6 + 7
+    (14, "22 09", ""),                                      # an unpadded short last frame
+    (14, "22 09 55 55 55 55 55 55", "55 55 55 55 55 55"),
+])
+def test_padding_is_what_the_last_frame_holds_beyond_the_reply(length, last, want):
+    assert hb.fmt_data(hb.reply_padding(length, hb.parse_hex(last))) == want
+
+
+def test_padding_is_not_guessed_from_a_frame_that_is_not_the_last_one():
+    assert hb.reply_padding(41, hb.parse_hex("10 29 61 01 FF FF F1 18")) == b""     # a first frame
+    assert hb.reply_padding(3, hb.parse_hex("21 01 02 03")) == b""                 # consecutive, for a single-frame reply
+    assert hb.reply_padding(41, None) == b"" and hb.reply_padding(0, b"\x00") == b"" and hb.reply_padding(41, b"\x25") == b""
+
+
+def test_the_ack_says_what_the_ecu_padded_with_and_the_frames_can_be_rebuilt(live):
+    import replyproof
+    bridge, car = live
+    lines, payload = _group01_payload()
+    answers = {b"\x21\x01": payload, b"\x21\x05": b"\x61\x05" + bytes(range(69))}
+    ecu = FakeEcu(car, txid=0x7BB, rxid=0x79B, answers=answers, padding=0xFF)
+    ecu.start()
+    try:
+        full = bridge.handle_uds({"req": "p1", "tx": "79B", "rx": "7BB", "data": "21 01", "timeout": 2.0})
+        n_full = len(bridge.client.topics(f"{ROOT_T}/rx/7BB"))
+        part = bridge.handle_uds({"req": "p2", "tx": "79B", "rx": "7BB", "data": "21 05", "timeout": 2.0})
+    finally:
+        ecu.stop()
+    assert "pad" not in full                                    # 41 bytes fill the last frame exactly
+    assert part["pad"] == "FF FF FF FF FF"                      # 71 bytes leave five to fill
+    mirrored = [f"{f['id']} {f['d']}" for _, f in bridge.client.topics(f"{ROOT_T}/rx/7BB")][n_full:]
+    rebuilt = replyproof.lines_from_payload("7BB", replyproof.parse_hex(part["reply"]), replyproof.parse_hex(part["pad"]))
+    assert rebuilt == mirrored and len(mirrored) == part["frames"]
