@@ -142,7 +142,8 @@ def test_free_ports_are_loopback_ports_and_differ():
 
 @pytest.mark.skipif(os.environ.get("HAKAKE_DESK_RIG") != "1" or not dr.find_mosquitto(),
                     reason="opt-in: HAKAKE_DESK_RIG=1 and mosquitto installed (about 30 s)")
-@pytest.mark.xfail(strict=True, reason="a held request still puts an impossible value on the page: "
-                                       "reader guard, plan phase 1")
 def test_no_impossible_value_survives_a_held_request(tmp_path):
+    """The whole chain. Before the reply proof this put SOC 589.83 % on the page."""
     assert dr.main(["--scenario", "stale-reply", "--expect", "clean", "--scratch", str(tmp_path)]) == 0
+    late = [e for e in dr.ledger_entries(str(tmp_path / "data" / dr.LEDGER_FILE)) if e.get("class") == "late"]
+    assert late and "credited to" in late[0]["action"]            # and the held reply was not lost either

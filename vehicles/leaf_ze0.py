@@ -45,6 +45,23 @@ ITEMS = {
 
 FAST_ONLY = {"lbc01"}
 
+# Physical bounds for the values that have them. A value outside is still
+# stored and still shown, with a mark (`quality[key] = "out-of-limits"`) and
+# its bytes kept in the reply ledger: accounted for, never dropped
+# (reader.judge, linkaccount.py). These are bounds no healthy or unhealthy
+# pack can cross, not expectations: a pack voltage near zero with every other
+# value sane has been seen as the car slept or woke, and it gets its mark so
+# it can be understood, not hidden.
+LIMITS = {
+    "soc":        (0.0, 100.0),      # %
+    "lv_volts":   (6.0, 18.0),       # the 12 V battery
+    "pack_v":     (200.0, 450.0),    # 96 pairs at 2.1 V to 4.7 V
+    "cell_min":   (2500, 4300),      # mV
+    "cell_max":   (2500, 4300),
+    "current_a":  (-500.0, 500.0),   # the pack fuse is 225 A
+    "temp_avg_c": (-40.0, 80.0),
+}
+
 TILES = [
     # `signals`: the registry keys each tile actually shows — what its ⋯ menu
     # offers for audible alerts (vehicles/__init__.py validates them).

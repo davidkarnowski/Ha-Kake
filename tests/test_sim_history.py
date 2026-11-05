@@ -74,12 +74,25 @@ def test_the_columns_the_charts_query_are_populated(generated):
     assert not empty, f"never populated: {empty}"
 
 
-def test_history_and_health_routes_have_something_to_draw(generated):
+def test_history_and_health_routes_have_something_to_draw(generated, monkeypatch):
     _, store = generated
-    # NB: Store.history() buckets from the first row to *wall-clock now*, and
-    # this fixture's END is deliberately in the past, so the bucket count is
-    # smaller than it would be for a database generated with the default
-    # end-of-period (now). What matters here is that every bucket is drawable.
+    # Store.history() buckets from the first row to *wall-clock now*, and this
+    # fixture's END is fixed in the past. Left to the real clock, the six
+    # generated days shrink into fewer and fewer of the 800 buckets as the
+    # calendar moves on: on 2026-11-05 they reached exactly 30 and this test
+    # failed with no change to the code. So the clock is pinned to the day
+    # after the generated period ends, which is the case the test is about.
+    import types
+    import store as store_mod
+
+    class Pinned(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (END + dt.timedelta(days=1)).replace(tzinfo=tz)
+
+    shim = types.SimpleNamespace(**{k: getattr(dt, k) for k in dir(dt) if not k.startswith("__")})
+    shim.datetime = Pinned
+    monkeypatch.setattr(store_mod, "dt", shim)
     hist = store.history(minutes=None, max_points=800)
     assert len(hist) > 30
     assert all("t" in h and h.get("soc") is not None for h in hist)

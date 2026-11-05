@@ -61,6 +61,7 @@ from vehicles import (get_vehicle, peak_keys, buses, item_bus, primary_bus, sour
                       tiles as vehicle_tiles, default_span, default_tiles)
 import signals                                                      # noqa: E402
 import console as consolelog        # the raw output console's ring and file (docs/CONSOLE.md)  # noqa: E402
+import linkaccount                  # what every request came to; the reply ledger  # noqa: E402
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = datadir.path("battery_state.json")
@@ -68,6 +69,9 @@ PAUSE_FILE = datadir.path("reader.pause")
 TILES_FILE = datadir.path("tiles.json")
 CALIB_FILE = datadir.path("calibration.json")   # per-car offsets (gitignored)
 CONSOLE_FILE = datadir.path("console.jsonl")    # the raw output console's window (gitignored)
+# Every reply that was not a plain, in-time answer, with its bytes: late,
+# foreign, a fragment, refused, out of limits (linkaccount.py). Size-capped.
+LEDGER_FILE = datadir.path("reply_ledger.jsonl")
 # Replay writes to its own files, per profile: it must never touch the real
 # database (years of irreplaceable readings) or the last real state, and two
 # profiles have different `readings` columns, so they get different files.
@@ -913,6 +917,11 @@ class Reader:
         self.policy_state = {}            # vehicle-owned state for apply_policy (e.g. Leaf sensor fusion)
         self.speed = 1.0                  # transport cost multiplier; see estimate()
         self.passive_instant = False      # PASSIVE_INSTANT on the transport: ATMA has no dwell
+        # ── link accounting (linkaccount.py, docs/ARCHITECTURE.md "Link accounting") ──
+        self.link = None                  # LinkAccount, made on first use
+        self.quality = {}                 # key → "late" | "out-of-limits"; kept until that key is read again in time
+        self._ok_mono = {}                # item → monotonic time of its last in-time answer
+        self._raw = {}                    # item → the lines it answered with this cycle (the ledger keeps them)
 
     # ── config ───────────────────────────────────────────────────────────
 
@@ -1251,8 +1260,16 @@ class Reader:
             if prev is not None:
                 self.item_gap[i] = round(done - prev, 3)
             self.item_last[i] = done
-            self.stamp(elm, i, it)
-            if any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines):
+            answered = any(l and not l.upper().startswith("NO DATA") and l.strip() != "?" for l in lines)
+            is_request = TARGETS[it["kind"]] is not None
+            # A request that got no answer acquired nothing: its acquisition time
+            # stays where the last real answer left it. (item_last moved above:
+            # that one is for scheduling, and an attempt is an attempt.)
+            if answered or not is_request:
+                self.stamp(elm, i, it)
+            if is_request:
+                self.account(bus, elm, i, it)
+            if answered:
                 got_data = True
         if polled:
             self.bus_alive[bus] = got_data
@@ -1265,6 +1282,8 @@ class Reader:
         loop = asyncio.get_event_loop()
         timing = {}
         responses = {}
+        if self.link is not None:
+            self.link.begin_cycle()
         transports = self.transports or ({PRIMARY_BUS: elm} if elm is not None else {})
         self.attach_console(transports)
         by_bus = {}
@@ -1287,16 +1306,19 @@ class Reader:
                     self.bus_failed(bus, res)      # a secondary bus reconnects on its own
 
         alive = True
+        self._raw = responses
         if responses:
             rec, a = VEHICLE.decode(responses)
+            flagged = self.judge(rec)          # fresh values clear old marks; impossible ones get one
             self.cache.update(rec)
             self._decoded.update(rec)
-            self.track_peaks(rec)
+            self.track_peaks({k: v for k, v in rec.items() if k not in flagged} if flagged else rec)
             if "cells" in rec:
                 self.cells_seq += 1           # a real cell read, as opposed to the sticky cache
             if a is not None:
                 alive = a
                 self.bus_alive[PRIMARY_BUS] = a
+        self.credit_late()                     # replies that came late, each to its own item
         prim = transports.get(PRIMARY_BUS)
         if getattr(prim, "listen_only", False) and any(i in responses for i in by_bus.get(PRIMARY_BUS, ())):
             # A listen-only primary never asks the primary ECU, so decode()
@@ -1327,11 +1349,107 @@ class Reader:
         merged["cells_seq"] = self.cells_seq
         merged["celllog"] = self._periods.get(CELLLOG_ITEM) == 0
         merged["bus_alive"] = dict(self.bus_alive)
+        if self.quality:
+            merged["quality"] = dict(self.quality)
+        if self.link is not None and self.link.totals.get("sent"):
+            merged["link"] = self.link.block()
         self.console_text()
         merged["console"] = self.console.stats() if self.console is not None else {"on": False}
         if self.console is not None:
             self.console.flush()           # the file is a cycle behind at worst
         return merged, alive
+
+    # ── link accounting (linkaccount.py) ─────────────────────────────────
+    # A transport that pairs requests and replies itself (an ELM327) has
+    # nothing to account for. One that does not (a CAN bus, a broker) keeps a
+    # record of every request; this is where those records are read. Nothing
+    # that arrives is thrown away: a reply that came late is credited to its
+    # own item and marked, one nobody here asked for is recorded as foreign,
+    # and a value outside its physical limits is stored with a mark. The
+    # marks ride in the record as `quality`; the request-by-request account
+    # as `link`; the bytes go to the reply ledger (LEDGER_FILE).
+
+    def find_item(self, bus, rx, request):
+        """The item on `bus` that asks `request` (bytes) and is answered on `rx`, if the profile has one."""
+        cmd = bytes(request or b"").hex().upper()
+        rx = str(rx).upper()
+        for i, it in ITEMS.items():
+            tgt = TARGETS.get(it["kind"])
+            if tgt and str(tgt[1]).upper() == rx and item_bus(VEHICLE, i) == bus \
+                    and str(it.get("cmd", "")).replace(" ", "").upper() == cmd:
+                return i
+        return None
+
+    def link_account(self):
+        if self.link is None:
+            self.link = linkaccount.LinkAccount(self.find_item, linkaccount.Ledger(LEDGER_FILE))
+        return self.link
+
+    def account(self, bus, elm, i, it):
+        """Read the transport's own record of the request item `i` just made."""
+        take = getattr(elm, "take_exchanges", None)
+        if take is None:
+            return
+        link = self.link_account()
+        cmd = str(it.get("cmd", "")).replace(" ", "").upper()
+        mine = next((r for r in reversed(take()) if str(r.get("cmd", "")).replace(" ", "").upper() == cmd), None)
+        if mine is not None:
+            entry = link.exchange(bus, i, mine, getattr(elm, "caps", None) or [])
+            if entry.get("state") == "ok":
+                self._ok_mono[i] = time.monotonic()
+            if entry.get("t_bus"):
+                self.frame_ts[i] = float(entry["t_bus"])    # the source's clock: when the car answered
+        late = getattr(elm, "take_late", None)
+        for rec in (late() if late else ()):
+            link.late_ack(bus, rec)
+
+    def judge(self, rec):
+        """Mark the values of `rec` (fresh from decode) that are outside the
+        profile's physical limits, and clear the mark of every key that is
+        inside them again. Returns the keys marked. A marked value is still
+        stored and still shown: it is accounted for, not dropped."""
+        limits = getattr(VEHICLE, "LIMITS", None) or {}
+        marked = set()
+        for k, v in rec.items():
+            lim = limits.get(k)
+            if lim is not None and isinstance(v, (int, float)) and not isinstance(v, bool) and not lim[0] <= v <= lim[1]:
+                if self.quality.get(k) != "out-of-limits":
+                    item = signals.signal_item(k)
+                    self.link_account().flagged(item_bus(VEHICLE, item) if item else PRIMARY_BUS, k, v, lim,
+                                                item=item, lines=self._raw.get(item))
+                self.quality[k] = "out-of-limits"
+                marked.add(k)
+            else:
+                self.quality.pop(k, None)
+        return marked
+
+    def credit_late(self):
+        """Decode each late reply for the item that asked for it. Its values go
+        into the record, marked `late`, unless that item has been read in time
+        since it was given up on: an old value never replaces a newer one, and
+        then the reply is kept in the ledger only."""
+        if self.link is None:
+            return
+        for c in self.link.take_credits():
+            i = c["item"]
+            newer = self._ok_mono.get(i)
+            applied = False
+            if newer is None or c.get("given_up") is None or newer < c["given_up"]:
+                try:
+                    rec, _ = VEHICLE.decode({i: c["lines"]})
+                except Exception:
+                    rec = {}
+                if rec:
+                    marked = self.judge(rec)
+                    self.cache.update(rec)
+                    self._decoded.update(rec)
+                    for k in rec:
+                        if k not in marked:
+                            self.quality[k] = "late"
+                    if "cells" in rec:
+                        self.cells_seq += 1
+                    applied = True
+            self.link.credited(c, applied, time.time())
 
     # ── provenance ───────────────────────────────────────────────────────
 
@@ -1717,6 +1835,7 @@ if __name__ == "__main__":
         # would be indistinguishable noise in it. Replay gets its own file.
         db = db or replay_db()
         STATE_FILE = replay_state()        # keep the last real reading intact
+        LEDGER_FILE = STATE_FILE[:-len("state.json")] + "ledger.jsonl"    # and the real car's reply ledger
         if args.fixture:
             os.environ["HAKAKE_REPLAY_FIXTURE"] = os.path.abspath(args.fixture)
         if args.speed:
@@ -1726,6 +1845,7 @@ if __name__ == "__main__":
         # own state file. The real ones are never opened in this mode.
         db = db or sim_db()
         STATE_FILE = sim_state()
+        LEDGER_FILE = STATE_FILE[:-len("state.json")] + "ledger.jsonl"
         if args.scenario:
             os.environ["HAKAKE_SIM_SCENARIO"] = args.scenario
         if args.seed is not None:

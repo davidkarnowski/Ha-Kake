@@ -53,7 +53,7 @@ for _p in (ROOT, os.path.join(ROOT, "bridge"), os.path.join(ROOT, "tools")):
         sys.path.insert(0, _p)
 
 DESK_PREFIX = "hakake/desk"
-DB_FILE = "leaf_battery.db"
+DB_FILE, LEDGER_FILE = "leaf_battery.db", "reply_ledger.jsonl"
 
 # Values no car can produce, by the registry's own keys: (low, high), inclusive.
 LIMITS = {"soc": (0.0, 100.0), "lv_volts": (6.0, 18.0), "pack_v": (200.0, 450.0),
@@ -165,6 +165,23 @@ def check_prefix(prefix):
         raise SystemExit(f"the rig will not use the prefix {prefix!r}: that is where a real car publishes. "
                          f"Use {DESK_PREFIX!r} or another prefix of your own.")
     return p
+
+
+def ledger_entries(path):
+    """The run's reply ledger (linkaccount.py), oldest first; [] when the reader wrote none."""
+    out = []
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict):
+                    out.append(entry)
+    except OSError:
+        pass
+    return out
 
 
 def stored_rows(db_path):
@@ -438,6 +455,17 @@ def run_stale_reply(args, mod, scratch, data_dir):
         say(f"  on the page {t - fired_at:+.1f} s after the hold began: {wrong}")
     for r, wrong in bad_rows[:5]:
         say(f"  stored row {r['id']} {r['ts_epoch'] - fired_at:+.1f} s after the hold began: {wrong}")
+    entries = ledger_entries(os.path.join(data_dir, LEDGER_FILE))
+    if entries:
+        kinds = {}
+        for e in entries:
+            kinds[e.get("class")] = kinds.get(e.get("class"), 0) + 1
+        say("reply ledger: " + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())))
+        for e in entries[:5]:
+            say(f"  {e.get('class')}: {e.get('item') or e.get('rx') or ''} {str(e.get('reply') or '')[:23]}… "
+                f"-> {e.get('action')}")
+    else:
+        say("reply ledger: nothing recorded")
     fault = bool(drawn or bad_rows)
     verdict = "fault" if fault else "clean"
     say("FAULT REPRODUCED: a reply was decoded as the answer to a request it did not belong to" if fault

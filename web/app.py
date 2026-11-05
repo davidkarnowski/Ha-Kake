@@ -67,6 +67,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import datadir                           # noqa: E402  (where the data lives, docs/DATA.md)
 from store import Store                 # noqa: E402
 import console as consolelog           # the raw output console's file reader  # noqa: E402
+import linkaccount                     # the reply ledger's file reader  # noqa: E402
 import dtc                               # noqa: E402  (trouble-code dictionary; absent is normal)
 import reader                            # noqa: E402  (vehicle-bound globals: reader.ITEMS etc.)
 import signals                           # noqa: E402
@@ -531,6 +532,30 @@ def api_console():
     cursor = str(entries[-1]["seq"]) if entries else str(since)
     return jsonify({"entries": entries, "cursor": cursor, "stats": stats,
                     "kinds": list(consolelog.KINDS)})
+
+
+# ── the reply ledger (linkaccount.py, docs/ARCHITECTURE.md "Link accounting") ──
+
+@app.route("/api/ledger")
+def api_ledger():
+    """The newest entries of the reply ledger, oldest first.
+
+    One entry for every reply that was not a plain, in-time answer: one that
+    came late (and which item it was credited to), one nobody here asked for,
+    a fragment, a refusal by the ECU, a value outside its physical limits.
+    Each carries the raw bytes. `n` caps the answer (default 100, at most
+    1000); `class` is a comma-separated filter. The reader writes the file
+    (<data>/reply_ledger.jsonl, size-capped); when there is none this answers
+    an empty list, which is the honest thing rather than a 404.
+    """
+    if DEMO:
+        return jsonify({"entries": [], "demo": True})
+    n = min(max(request.args.get("n", 100, type=int) or 100, 1), 1000)
+    kinds = {k.strip() for k in (request.args.get("class") or "").split(",") if k.strip()}
+    entries = linkaccount.tail(reader.LEDGER_FILE, 1000 if kinds else n)
+    if kinds:
+        entries = [e for e in entries if e.get("class") in kinds][-n:]
+    return jsonify({"entries": entries})
 
 
 @app.route("/api/cells")

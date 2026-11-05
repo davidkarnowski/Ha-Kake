@@ -38,6 +38,9 @@ A profile is a module in this package exporting:
   ITEM_KEYS        dict item -> keys to drop from the cache when disabled
   WATCH            tuple of record keys logged to the events table on change
   FAST_ONLY        set of item ids for --fast mode
+  LIMITS           optional dict key -> (low, high): physical bounds. A value
+                   outside is stored and marked `out-of-limits` with its bytes
+                   in the reply ledger; it is never dropped (reader.judge).
   SIGNALS          dict key -> registry entry (label, unit, min/max, dec,
                    item, color, hist, alt/alt_unit, kind) — what the UI offers.
                    An entry reachable two ways adds `sources`: a list of
