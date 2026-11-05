@@ -124,7 +124,7 @@ def test_reader_set_vehicle_rebinds(tmp_path, monkeypatch):
         # no built-in tile of its own; the framework's console rides along for
         # every profile (vehicles/__init__.py FRAMEWORK_TILES)
         assert rd.VEHICLE.TILES == []
-        assert [t["id"] for t in rd.TILES] == ["console"]
+        assert [t["id"] for t in rd.TILES] == ["console", "link"]
         assert "coolant_temp_f" in signals.SIGNALS and "soc" not in signals.SIGNALS
         assert rd.enabled_items(rd.load_tiles(), fast_only=True) == {"pid_rpm"}
         # default layout is signal tiles; they resolve to real items

@@ -64,6 +64,24 @@ ENGINE_HARNESS = """
 
 
 @needs_node
+def test_a_value_marked_out_of_its_limits_raises_no_alert_and_a_late_one_still_can():
+    """The reader marks an impossible value and still shows it; the alert engine does not act on it.
+    A late value is a real reading that arrived late, so it is still judged."""
+    out = run_node(ENGINE_HARNESS + """
+      const rule = [{id: 'r', signal: 'soc', max: 90}];
+      const temps = [{id: 't', signal: 'temps_f.2', max: 100}];
+      const fired = (rules, d) => A.createEngine().evaluate(rules, d, 0, ctx).fired.length;   // a fresh engine each time
+      console.log(JSON.stringify([
+        fired(rule, {status: 'ok', soc: 419.44, quality: {soc: 'out-of-limits'}}),
+        fired(rule, {status: 'ok', soc: 95, quality: {soc: 'late'}}),
+        fired(temps, {status: 'ok', temps_f: [70, 70, 500], quality: {temps_f: 'out-of-limits'}}),
+        fired(temps, {status: 'ok', temps_f: [70, 70, 120]}),
+      ]));
+    """)
+    assert out == [0, 1, 0, 1]
+
+
+@needs_node
 def test_engine_fires_on_crossing_repeats_and_rearms_with_hysteresis():
     out = run_node(ENGINE_HARNESS + """
       const rules = [{id: 'soc:soc', signal: 'soc', min: 20, repeat: 10}];
@@ -220,9 +238,9 @@ def test_api_signals_serves_tile_signals(api):
     assert body["tile_signals"]["soc"] == ["soc", "pack_v"]
     rd.set_vehicle("lancer_2009")
     try:
-        # the framework's console tile is there for every profile and offers no
-        # alertable signal of its own
-        assert api.get("/api/signals").get_json()["tile_signals"] == {"console": []}
+        # the framework's tiles are there for every profile and offer no
+        # alertable signal of their own
+        assert api.get("/api/signals").get_json()["tile_signals"] == {"console": [], "link": []}
     finally:
         rd.set_vehicle("leaf_ze0")
 

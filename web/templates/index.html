@@ -619,7 +619,7 @@
                 transform="rotate(-90 100 100)"/>
       </svg>
       <div class="gauge-center">
-        <div class="gauge-pct" id="soc-num">--</div>
+        <div class="gauge-pct" id="soc-num" data-key="soc">--</div>
         <div class="gauge-unit">% SOC</div>
       </div>
     </div>
@@ -627,7 +627,7 @@
       <svg viewBox="0 0 24 24"><path id="trend-arrow" d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
       <span id="trend-text">Waiting...</span>
     </div>
-    <div class="pack-voltage">Pack <strong id="pack-v">--</strong> V</div>
+    <div class="pack-voltage">Pack <strong id="pack-v" data-key="pack_v">--</strong> V</div>
   </div>
 
   <!-- Stats -->
@@ -651,7 +651,7 @@
       </div>
       <div class="stat-box">
         <div class="stat-label">12V Battery</div>
-        <div class="stat-value" id="lv-val">--</div>
+        <div class="stat-value" id="lv-val" data-key="lv_volts">--</div>
         <div class="stat-sub">auxiliary</div>
       </div>
       <div class="stat-box">
@@ -706,6 +706,8 @@
 
 {% include "tiles/console.html" %}
 
+{% include "tiles/link.html" %}
+
 <div class="card power-card" data-tile="power" data-span="12">
   <div class="history-header">
     <div class="card-title" style="margin-bottom:0">Power Monitor</div>
@@ -735,7 +737,7 @@
                   transform="rotate(-90 100 100)"/>
         </svg>
         <div class="power-gauge-center">
-          <div class="power-value" id="power-val">--</div>
+          <div class="power-value" id="power-val" data-key="power_kw">--</div>
           <div class="power-unit" id="power-unit">kW</div>
         </div>
       </div>
@@ -744,7 +746,7 @@
     <div class="power-details">
       <div class="power-detail-row">
         <span class="power-detail-label">Current</span>
-        <span class="power-detail-value" id="current-val">--<span style="font-size:0.6em; color:var(--dim); margin-left:4px">A</span></span>
+        <span class="power-detail-value" id="current-val" data-key="current_a">--<span style="font-size:0.6em; color:var(--dim); margin-left:4px">A</span></span>
       </div>
       <div class="power-detail-row">
         <span class="power-detail-label">Pack Voltage</span>
@@ -878,6 +880,7 @@
 <script type="module" src="/static/pack3d.js"></script>
 <script src="/static/tiles.js"></script>
 <script src="/static/console.js"></script>
+<script src="/static/link.js"></script>
 <script src="/static/playback.js"></script>
 <script>
 // Build module tree: 48 modules × 2 cells. Pairs are numbered 1–96 on screen (the service
@@ -1160,6 +1163,8 @@ function updateDash(data) {
   Tiles.renderTires(document, data);
   Tiles.renderBody(document, data);
   Tiles.renderClimate(document, data);
+  // Link health, and the marks on values that came late or are outside their limits (web/static/link.js)
+  if (window.LinkTile) LinkTile.render(document, data);
   // 3D pack (web/static/pack3d.js, an ES module that may still be loading on the first poll)
   if (window.Pack3D) Pack3D.render(document, data); else window.__pack3dPending = data;
 
@@ -1169,8 +1174,14 @@ function updateDash(data) {
     // then the display-only EMA (alpha 1 = off)
     const rawPower = data.power_adj_kw ?? data.power_kw;
     const rawCurrent = (data.current_adj_a ?? data.current_a) || 0;
-    smoothedPower = smoothedPower === null ? rawPower : smoothedPower * (1 - emaAlpha) + rawPower * emaAlpha;
-    smoothedCurrent = smoothedCurrent === null ? rawCurrent : smoothedCurrent * (1 - emaAlpha) + rawCurrent * emaAlpha;
+    // A value marked out of its physical limits is shown and marked, but it does not
+    // enter the average: one impossible sample would otherwise drag it for seconds.
+    const q = data.quality || {};
+    const impossible = ['power_kw', 'current_a', 'pack_v'].some(k => q[k] === 'out-of-limits');
+    if (!impossible || smoothedPower === null) {
+      smoothedPower = smoothedPower === null ? rawPower : smoothedPower * (1 - emaAlpha) + rawPower * emaAlpha;
+      smoothedCurrent = smoothedCurrent === null ? rawCurrent : smoothedCurrent * (1 - emaAlpha) + rawCurrent * emaAlpha;
+    }
 
     const pw = smoothedPower;
     const cur = smoothedCurrent;

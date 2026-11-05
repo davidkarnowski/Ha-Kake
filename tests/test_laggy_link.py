@@ -175,6 +175,20 @@ def test_a_pattern_split_across_two_chunks_still_fires():
     assert got == b"xxABCDEFyy" and fired == 1 and took >= 0.2
 
 
+def test_stopping_does_not_wait_for_a_client_that_is_still_connected():
+    async def go():
+        server, link, reader, writer = await rig()
+        writer.write(b"x")
+        await writer.drain()
+        assert await asyncio.wait_for(reader.readexactly(1), 2.0) == b"x"
+        await asyncio.wait_for(link.stop(), 2.0)                       # the client never closed its end
+        writer.close()
+        server.close()
+        await server.wait_closed()
+
+    run(go())
+
+
 def test_it_listens_on_the_loopback_address_only():
     with pytest.raises(ValueError):
         ll.LaggyLink(0, 1883, listen_host="0.0.0.0")
@@ -222,10 +236,14 @@ def test_the_thread_wrapper_serves_and_takes_controls_from_another_thread():
         s.sendall(b"hello")
         got = b""
         while len(got) < 5:
-            got += s.recv(16)
+            chunk = s.recv(16)                  # times out after 2 s; an empty read is the far end closing
+            if not chunk:
+                break
+            got += chunk
         took = time.monotonic() - t0
         s.close()
-        assert got == b"hello" and took >= 0.2
+        assert got == b"hello", f"the link closed early: {link.stats} {link.events}"
+        assert took >= 0.2
         assert link.stats["stalls"] == 1 and any("stall" in text for _, text in link.events)
     finally:
         link.stop()

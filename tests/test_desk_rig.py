@@ -138,6 +138,22 @@ def test_free_ports_are_loopback_ports_and_differ():
     assert 1024 < a < 65536 and 1024 < b < 65536
 
 
+# ── timing ───────────────────────────────────────────────────────────────
+
+def test_percentiles_are_nearest_rank_and_none_when_there_is_nothing():
+    v = [5, 1, 4, 2, 3]
+    assert (dr.percentile(v, 50), dr.percentile(v, 95), dr.percentile(v, 0), dr.percentile(v, 100)) == (3, 5, 1, 5)
+    assert dr.percentile([7], 50) == 7 and dr.percentile([], 50) is None and dr.percentile(None, 50) is None
+
+
+def test_the_timing_table_reads_what_the_reader_published():
+    watch = types.SimpleNamespace(timing={"lbc01": [0.050, 0.060, 0.070], "lbc05": [0.080]},
+                                  split={"lbc01": {"net_ms": [10, 12, 14], "queue_ms": [1, 1, 2], "bus_ms": [38, 40, 44]}})
+    rows = dr.timing_table(watch)
+    assert rows[0] == ("lbc01", 3, 60.0, 70.0, 12, 1, 40)
+    assert rows[1][:4] == ("lbc05", 1, 80.0, 80.0) and rows[1][4:] == (None, None, None)   # an older bridge reports no split
+
+
 # ── the whole chain (opt-in) ─────────────────────────────────────────────
 
 @pytest.mark.skipif(os.environ.get("HAKAKE_DESK_RIG") != "1" or not dr.find_mosquitto(),

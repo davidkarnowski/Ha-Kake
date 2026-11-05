@@ -37,9 +37,11 @@ the MQTT `state` topic) carries, per item polled:
 | `item_age[item]` | s (ms precision) | seconds since the item last ran, at emission (monotonic) | `extra` |
 | `item_dur[item]` | s (ms precision) | how long the item's **last** read took, whichever cycle it was in — `timing` only holds this cycle's items | **never** (live only) |
 | `item_gap[item]` | s (ms precision) | the time between the item's last two reads, end to end: its real refresh period, padding, slow lane and storage included (monotonic) | **never** (live only) |
-| `item_ts[item]` | ISO ms `Z` | **when the item's value was acquired** (wall clock) | rebuilt from the epoch |
+| `item_ts[item]` | ISO ms `Z` | **when the item's value was acquired** (wall clock). A request that got no answer acquired nothing, so this stays at the last real answer (it used to move on every attempt, which made a timed-out item look fresh). `item_age` and `item_gap` still count attempts: they are for scheduling | rebuilt from the epoch |
 | `item_ts_epoch[item]` | epoch s | the same, as a number | `extra` |
-| `frame_ts[item]` | epoch s | the *source's* timestamp of the newest frame behind a passive item; only on a transport with a source clock | `extra` |
+| `frame_ts[item]` | epoch s | the *source's* timestamp behind the item: the newest frame of a passive item, and for a request item the bridge's `t_done` (when the car's reply was complete) when the bridge reports it in its ack (`docs/MQTT.md` §3.4); only on a transport with a source clock | `extra` |
+| `quality[key]` | text | `late` or `out-of-limits`: a mark on a value, kept until that key is read again in time. A late value's own time is in the reply ledger (`t_src`, `late_s`); see `docs/ARCHITECTURE.md` "Link accounting" | `extra` |
+| `link.items[item]` | object | this cycle's request for the item: `req`, `via` (`ack` or `frames`), `rtt_ms` (monotonic, this machine), `queue_ms` and `bus_ms` (durations the bridge measured), `net_ms` (the remainder), `t_bus` (the bridge's `t_done`) | `extra` |
 | `ts_source` | text | whose clock stamps the rows: `laptop` (ELM, replay, sim), `driver` (python-can), `bridge` (a Pi over MQTT) | its own column |
 | `clock_offset_s` | s | `median(t_rx − t_src)` over the last ≤ 200 frames; absent on an ELM | `sessions.clock_offset_s`, and each row's `extra` |
 | `cycle_s` | s (ms precision) | the whole cycle | `extra` |

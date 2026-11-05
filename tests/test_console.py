@@ -24,7 +24,7 @@ from vehicles import get_vehicle, validate_profile  # noqa: E402
 # ── the vehicle-independent built-in tile ──
 
 def test_the_console_is_a_framework_tile_every_profile_gets():
-    assert [t["id"] for t in vehicles.FRAMEWORK_TILES] == ["console"]
+    assert [t["id"] for t in vehicles.FRAMEWORK_TILES] == ["console", "link"]
     tile = vehicles.FRAMEWORK_TILES[0]
     assert tile["name"] == "Raw output"
     assert tile["items"] == [], "the console polls nothing — it taps what the reader already does"
@@ -44,7 +44,8 @@ def test_the_reader_binds_the_merged_tile_views(use_vehicle):
         use_vehicle(name)
         assert "console" in {t["id"] for t in rd.TILES}
         assert rd.DEFAULT_SPAN["console"] == 12
-        assert rd.DEFAULT_TILES["tiles"][-1]["id"] == "console"
+        assert [t["id"] for t in rd.DEFAULT_TILES["tiles"][-2:]] == ["console", "link"]   # the framework's, last
+        assert "link" in {t["id"] for t in rd.TILES} and rd.DEFAULT_SPAN["link"] == 6
 
 
 def test_enabling_the_console_polls_nothing_extra(use_vehicle):

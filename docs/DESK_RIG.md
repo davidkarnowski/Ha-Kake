@@ -22,25 +22,39 @@ The simulator is a fixture, not a verifier.
 Needs `mosquitto` installed (`brew install mosquitto`, `apt install mosquitto`). Nothing else beyond
 `requirements.txt`.
 
-## Reproduce the stale-reply fault
+## The stale-reply scenario
 
 ```bash
-./venv/bin/python tools/desk_rig.py --scenario stale-reply
+./venv/bin/python tools/desk_rig.py --scenario stale-reply --expect clean
 ```
 
 The scenario holds one request back for longer than the reader waits for it. The reader gives up and asks for
 something else; the bridge then runs both; the first reply lands inside the second request's window. The rig listens
-to the reader's own `state` topic, one record per cycle, and checks the stored rows, for values no car can produce:
+to the reader's own `state` topic, one record per cycle, checks the stored rows for values no car can produce, and
+reads the reply ledger to see what became of the held reply:
 
 ```
-[12:34:10] holding the lbc05 request; the reader will give up on it
-[12:34:29] cycles published by the reader: 252 (251 good, 1 bad); stored rows: 4 (0 bad)
+[13:41:43] holding the lbc05 request; the reader will give up on it
+[13:42:02] cycles published by the reader: 240 (240 good, 0 bad); stored rows: 4 (0 bad)
+[13:42:02] reply ledger: 1 late
+[13:42:02]   late: lbc05 61 05 02 D0 02 00 01 99… -> credited to lbc05, 12.6 s late, and marked late
+[13:42:02] CLEAN: no impossible value reached the page or the database
+```
+
+Clean is two things: nothing impossible was shown or stored, and the held reply was not lost either. It was credited
+to the request that asked for it, with a mark (`docs/ARCHITECTURE.md`, "Link accounting"). It takes about half a
+minute, most of it the reader's own timeout.
+
+This is the fault recorded from a real car on 2026-11-05. Before the reply proof existed (commit `2fc0b6a`) the same
+run read:
+
+```
 [12:34:29]   on the page +12.6 s after the hold began: {'soc': 589.83, 'lv_volts': 63.999, 'pack_v': 6.46}
 [12:34:29] FAULT REPRODUCED: a reply was decoded as the answer to a request it did not belong to
 ```
 
-That is a group-05 reply read with group-01 offsets, the fault recorded from a real car on 2026-11-05. It takes about
-half a minute, most of it the reader's own timeout.
+a group-05 reply read with group-01 offsets. With the cell log armed and the cell-voltage request held it read
+`{'soc': 1147.28, 'lv_volts': 3.927, 'pack_v': 40.2}` and stored that as a row.
 
 | Option | What it does |
 |---|---|
@@ -52,15 +66,41 @@ half a minute, most of it the reader's own timeout.
 | `--delay-ms N` | a steady delay on the link as well, each way |
 | `--scratch DIR` | where the run's files go (default: a new temporary folder, left for inspection) |
 
-The cell-voltage form of the fault, with the cell log armed the way a long recording session has it:
+The cell-voltage form, with the cell log armed the way a long recording session has it:
 
 ```bash
-./venv/bin/python tools/desk_rig.py --scenario stale-reply --hold-item lbc02 --enable cells --celllog cells
-# on the page: {'soc': 1147.28, 'lv_volts': 3.927, 'pack_v': 40.2}, and one stored row with the same values
+./venv/bin/python tools/desk_rig.py --scenario stale-reply --hold-item lbc02 --enable cells --celllog cells --expect clean
 ```
 
 What it holds and which tiles it enables come from the vehicle profile (`FAST_ONLY`, `ITEMS`, `TILES`), not from a
 list in the tool. A profile with a single request item has no such scenario and the rig says so.
+
+## How long a request takes, and where the time goes
+
+```bash
+./venv/bin/python tools/desk_rig.py --scenario timing --delay-ms 50 --seconds 20
+```
+
+```
+timing: link delay 50 ms each way on the reader's leg, 15 s, 100 cycles (6.6 a second), 0 bad
+  item         n   p50 ms   p95 ms     net   queue     bus
+  lbc01      100    143.0    146.0     106       0      37
+  lbc05        3    173.0    177.0     106       0      67
+```
+
+Every number is the reader's own: `timing` is how long it waited for each item, and `net`, `queue` and `bus` are the
+split it keeps for every request (`link.items`), from durations the bridge reports in its ack. The split needs no
+clock compared with another, and it finds the delay that was put on the link: 50 ms each way shows as about 100 ms of
+network, with the bus unchanged. `--json` prints the result as one line.
+
+The reply proof and the accounting cost nothing measurable. On this laptop, loopback only, MEASURED ON THE DESK and
+nothing else (the simulated ECU answers in a few milliseconds):
+
+| Link delay, each way | `lbc01` p50 before (`2fc0b6a`) | `lbc01` p50 after | Cycles a second before | after |
+|---|---|---|---|---|
+| 0 ms | 42 ms | 41 ms | 22.4 | 22.8 |
+| 50 ms | 143 ms | 143 ms | 6.6 | 6.6 |
+| 200 ms | 442 ms | 443 ms | 2.1 | 2.1 |
 
 ## Bring the chain up and drive it by hand
 
@@ -95,8 +135,10 @@ link, not a lossy one. `tools/laggy_link.py` also runs alone, in front of any TC
 
 `tests/test_laggy_link.py` holds the proxy to its promises on loopback sockets. `tests/test_desk_rig.py` covers what
 the rig decides without starting it; the one test that runs the whole chain is opt-in
-(`HAKAKE_DESK_RIG=1 pytest tests/test_desk_rig.py`). `tests/test_mqtt_reply_integrity.py` reproduces the same fault
-with a fake broker client and frames captured from the car, in under a second.
+(`HAKAKE_DESK_RIG=1 pytest tests/test_desk_rig.py`). `tests/test_mqtt_reply_integrity.py` rebuilds the same fault with
+a fake broker client and frames captured from the car, in under a second, and `tests/test_reader_link.py` drives a
+whole reader through it: the late reply credited to its own item, a newer reading never replaced, a foreign reply
+recorded.
 
 ## Limits
 

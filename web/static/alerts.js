@@ -118,7 +118,11 @@
           const st = state.get(r.id) || { breached: false, lastFired: 0 };
           const s = sigs[r.signal];
           const v = getVal(data, r.signal);
-          let skip = frozen || v == null || isStale(data, s, ctx);
+          // A value the reader marked as outside its physical limits is on the page, marked,
+          // but it is not a reading to raise an alarm on (docs/ARCHITECTURE.md "Link accounting").
+          const q = data && data.quality;
+          const impossible = !!q && (q[r.signal] === 'out-of-limits' || q[String(r.signal).split('.')[0]] === 'out-of-limits');
+          let skip = frozen || v == null || impossible || isStale(data, s, ctx);
           const isBool = !!(s && s.kind === 'bool');
           if (!skip && !isBool && !isFinite(+v)) skip = true;
           if (!skip) {

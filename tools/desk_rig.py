@@ -18,6 +18,7 @@ can be produced here on demand.
     python tools/desk_rig.py                          # bring the chain up; start the dashboard yourself
     python tools/desk_rig.py --scenario stale-reply   # reproduce the stale-reply fault, report, exit
     python tools/desk_rig.py --scenario stale-reply --expect clean    # the same, as a check (exit 1 if not)
+    python tools/desk_rig.py --scenario timing --delay-ms 50          # how long each request takes, and where it goes
 
 The stale-reply scenario holds one request back for longer than the reader
 waits for it. The reader gives up and asks for something else; the bridge then
@@ -364,6 +365,9 @@ class StateWatch:
         self.samples = 0
         self.good = 0
         self.bad = []                       # (wall time, {key: value})
+        self.timing = {}                    # item → [seconds each request took, as the reader measured it]
+        self.split = {}                     # item → {"net_ms": [...], "queue_ms": [...], "bus_ms": [...]}
+        self.first = self.last = None       # arrival times of the first and last cycle
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"hakake-desk-watch-{os.getpid()}")
         self.client.on_connect = lambda c, u, flags, rc, props=None: c.subscribe(self.topic, qos=0)
         self.client.on_message = self._message
@@ -383,6 +387,15 @@ class StateWatch:
         if not isinstance(rec, dict):
             return
         self.samples += 1
+        self.last = time.time()
+        self.first = self.first or self.last
+        for item, secs in (rec.get("timing") or {}).items():
+            if isinstance(secs, (int, float)):
+                self.timing.setdefault(item, []).append(float(secs))
+        for item, e in ((rec.get("link") or {}).get("items") or {}).items():
+            for key in ("net_ms", "queue_ms", "bus_ms"):
+                if isinstance(e, dict) and isinstance(e.get(key), (int, float)):
+                    self.split.setdefault(item, {}).setdefault(key, []).append(float(e[key]))
         wrong = implausible(rec)
         if wrong:
             self.bad.append((time.time(), wrong))
@@ -479,6 +492,72 @@ def run_stale_reply(args, mod, scratch, data_dir):
     return 0
 
 
+def percentile(values, p):
+    """The p-th percentile (0 to 100) of `values` by nearest rank; None when there are none."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, max(0, int(round(p / 100.0 * len(ordered) + 0.5)) - 1))]
+
+
+def timing_table(watch):
+    """Rows of (item, n, p50 ms, p95 ms, net p50, queue p50, bus p50) from what the reader published."""
+    rows = []
+    for item in sorted(watch.timing):
+        secs = watch.timing[item]
+        split = watch.split.get(item, {})
+        rows.append((item, len(secs), percentile(secs, 50) * 1000.0, percentile(secs, 95) * 1000.0,
+                     percentile(split.get("net_ms"), 50), percentile(split.get("queue_ms"), 50),
+                     percentile(split.get("bus_ms"), 50)))
+    return rows
+
+
+def run_timing(args, mod, scratch, data_dir):
+    """How long each request takes through the whole chain, as the reader itself measures it, and (with a bridge
+    that reports it) where the time goes. The simulated ECU answers in a few milliseconds, so this measures the
+    software and the link you asked for, not a car."""
+    plan = scenario_plan(mod, args.hold_item)
+    enabled = set(plan["tiles"]) | set(args.enable)
+    with open(os.path.join(data_dir, "tiles.json"), "w") as f:
+        json.dump(tiles_config(mod, enabled, set(args.celllog)), f)
+    chain = Chain(scratch, args.prefix, args.vehicle, args.leg, args.sim_scenario, args.seed,
+                  args.bus_load, args.delay_ms)
+    dash = watch = None
+    try:
+        chain.start()
+        watch = StateWatch(chain.broker_port, chain.prefix).start()
+        dash = Dashboard(data_dir, chain.reader_port, chain.prefix, args.vehicle, args.web_port or free_port()).start()
+        deadline = time.time() + args.warmup_timeout
+        while watch.good < args.warmup and time.time() < deadline:
+            if dash.proc.poll() is not None:
+                raise SystemExit(f"the dashboard exited during warm-up; see {dash.log_path}")
+            time.sleep(0.2)
+        if watch.good < args.warmup:
+            raise SystemExit(f"no steady readings after {args.warmup_timeout:.0f} s; see {dash.log_path}")
+        watch.timing, watch.split, watch.samples, watch.first = {}, {}, 0, None     # measure from here
+        time.sleep(args.seconds)
+    finally:
+        if watch is not None:
+            watch.stop()
+        if dash is not None:
+            dash.stop()
+        chain.stop()
+    span = (watch.last - watch.first) if watch.first and watch.last and watch.last > watch.first else None
+    rate = (watch.samples - 1) / span if span and watch.samples > 1 else 0.0
+    say(f"timing: link delay {args.delay_ms:.0f} ms each way on the {args.leg}'s leg, {args.seconds:.0f} s, "
+        f"{watch.samples} cycles ({rate:.1f} a second), {len(watch.bad)} bad")
+    say(f"  {'item':<8}{'n':>6}{'p50 ms':>9}{'p95 ms':>9}{'net':>8}{'queue':>8}{'bus':>8}")
+    fmt = lambda v: f"{v:>8.0f}" if v is not None else f"{'':>8}"
+    for item, n, p50, p95, net, queue_ms, bus in timing_table(watch):
+        say(f"  {item:<8}{n:>6}{p50:>9.1f}{p95:>9.1f}{fmt(net)}{fmt(queue_ms)}{fmt(bus)}")
+    if args.json:
+        print(json.dumps({"delay_ms": args.delay_ms, "leg": args.leg, "seconds": args.seconds, "cycles": watch.samples,
+                          "cycles_per_s": round(rate, 2), "bad": len(watch.bad),
+                          "items": {i: {"n": n, "p50_ms": round(p50, 1), "p95_ms": round(p95, 1), "net_ms": net,
+                                        "queue_ms": q, "bus_ms": b} for i, n, p50, p95, net, q, b in timing_table(watch)}}))
+    return 0
+
+
 def run_serve(args, mod, scratch, data_dir):
     from laggy_link import run_command
     chain = Chain(scratch, args.prefix, args.vehicle, args.leg, args.sim_scenario, args.seed,
@@ -508,8 +587,10 @@ def run_serve(args, mod, scratch, data_dir):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
-    ap.add_argument("--scenario", choices=["stale-reply"], default=None,
-                    help="run a fault scenario and report (default: bring the chain up and wait)")
+    ap.add_argument("--scenario", choices=["stale-reply", "timing"], default=None,
+                    help="run a scenario and report (default: bring the chain up and wait)")
+    ap.add_argument("--seconds", type=float, default=20.0, help="timing: how long to measure (default 20)")
+    ap.add_argument("--json", action="store_true", help="timing: also print the result as one JSON line")
     ap.add_argument("--expect", choices=["fault", "clean"], default=None,
                     help="make the scenario a check: exit 1 unless this is the verdict")
     ap.add_argument("--vehicle", default="leaf_ze0")
@@ -543,6 +624,8 @@ def main(argv=None):
     os.makedirs(data_dir, exist_ok=True)
     if args.scenario == "stale-reply":
         return run_stale_reply(args, mod, scratch, data_dir)
+    if args.scenario == "timing":
+        return run_timing(args, mod, scratch, data_dir)
     return run_serve(args, mod, scratch, data_dir)
 
 

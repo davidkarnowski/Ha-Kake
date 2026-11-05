@@ -1,0 +1,20 @@
+  <div class="card link-card" data-tile="link" data-span="6">
+    <div class="card-title">Link health <span class="link-proof" id="link-proof"></span></div>
+    <div class="link-empty" id="link-empty">this adapter pairs each request with its reply itself: there is nothing to account for</div>
+    <table class="link-items" id="link-items" hidden>
+      <thead><tr>
+        <th>item</th><th>last request</th>
+        <th title="from asking to the answer, as this machine saw it">round trip</th>
+        <th title="the broker and the network, both ways: the round trip less the two the bridge reports">network</th>
+        <th title="waiting on the bridge before it reached the bus">queue</th>
+        <th title="on the CAN bus, request to complete reply">bus</th>
+      </tr></thead>
+      <tbody id="link-rows"></tbody>
+    </table>
+    <div class="link-totals" id="link-totals"></div>
+    <div class="link-marks" id="link-marks" hidden></div>
+    <div class="link-foot">
+      <a href="/api/ledger" target="_blank" rel="noopener" title="every reply that was not a plain, in-time answer, with its bytes">reply ledger</a>
+      <span id="link-stall"></span>
+    </div>
+  </div>

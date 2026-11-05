@@ -154,6 +154,21 @@ never in code.
   it decimates in the reader and counts every drop per id, and it is a window,
   not a capture: `record_session.py` and the bridge are the capture tools.
   `docs/CONSOLE.md`.
+- A reply is only ever the answer to the request that asked for it, and
+  nothing that arrives is thrown away (owner's rule, 2026-11-05: bad data is
+  accounted for, not rejected). `replyproof.py` is the one place that decides
+  which bytes are the answer: the bridge's ack when it carries the reply
+  (`caps: ack-reply`), else the last complete ISO-TP message in the window
+  whose echo matches. Never go back to "the frames that arrived while we
+  waited". A late reply is credited to its own item and marked `late`, unless
+  a newer reading is already in; a foreign one is recorded; a value outside
+  the profile's `LIMITS` is stored and marked `out-of-limits`. The marks are
+  `quality`, the per-request account is `link`, the bytes are in
+  `<data>/reply_ledger.jsonl` (`linkaccount.py`). A fix that drops or filters
+  data instead of attributing it is the wrong fix here.
+- `item_ts` moves only on a real answer; `item_last` moves on every attempt
+  (it schedules). They were the same thing until 2026-11-05 and a timed-out
+  item looked fresh.
 - The simulator is a fixture, not a verifier: `--adapter sim` is never
   auto-detected, its rows never reach `<data>/leaf_battery.db`, every load in
   `simulator/model.py` `LOADS_W` carries a MEASURED / OWNER REPORT / ASSERTED
@@ -193,4 +208,5 @@ never in code.
 | Test the app at native-CAN frame rates with no board | `docs/SIMULATOR.md` "The simulated bus": `python web/app.py --adapter sim --sim-can [ev]`, `python tools/bench_canrate.py`; the ECUs are `simulator/canbus.py` |
 | Generate the expected pull / compare it with the real one | `python hakake_sim.py --pull` (sim DB with the cell log, both channels' frames as JSONL, a synthetic fixture); `python tools/compare_sessions.py expected observed` |
 | Ingest a remote car over MQTT / build a gauge on the stream | `docs/MQTT.md` (the public wire protocol: topics, JSON schemas, `mosquitto_sub` examples, a Python and a browser gauge), `bridge/README.md` (the Raspberry Pi side); `--adapter mqtt`, `mqttsource.py`, the `mqtt` block in `config.local.json` |
-| Reproduce a slow or stalled MQTT link on the desk (stale replies, late data) | `docs/DESK_RIG.md`: `python tools/desk_rig.py --scenario stale-reply` (simulated ECUs, the real bridge, a loopback mosquitto, the real app behind `tools/laggy_link.py`); the same fault in under a second, from captured frames: `tests/test_mqtt_reply_integrity.py` |
+| Which reply was taken as the answer / why a value is marked late or out of limits / where a round trip went | `docs/ARCHITECTURE.md` "Link accounting": `replyproof.py`, `linkaccount.py`, `quality` and `link` in the record, `GET /api/ledger`, the **Link health** tile (framework tile, off by default); the wire side is `docs/MQTT.md` §3.4 |
+| Reproduce a slow or stalled MQTT link on the desk (stale replies, late data) | `docs/DESK_RIG.md`: `python tools/desk_rig.py --scenario stale-reply --expect clean` (simulated ECUs, the real bridge, a loopback mosquitto, the real app behind `tools/laggy_link.py`); `--scenario timing` times each request and splits it into network, queue and bus; the same fault in under a second, from captured frames: `tests/test_mqtt_reply_integrity.py` |

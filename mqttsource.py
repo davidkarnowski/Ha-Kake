@@ -436,12 +436,13 @@ class MqttSource:
             baseline = self._rx_counts.get(rx_id, 0)
         envelope = {"req": req, "src": self.src, "seq": self._seq, "tx": tx_id, "rx": rx_id,
                     "data": hex_bytes(data), "bs": int(bs), "stmin": int(stmin), "timeout": float(timeout)}
+        asked = time.time()
         self.client.publish(self.topics.uds, json.dumps(envelope, separators=(",", ":")), qos=1)
         try:
             ack = await asyncio.wait_for(fut, float(timeout) + ACK_GRACE)
         except asyncio.TimeoutError:
             ack = {"req": req, "ok": False, "error": "timeout"}
-            self._abandon(req, tx_id, rx_id, data)
+            self._abandon(req, tx_id, rx_id, data, asked)
         except asyncio.CancelledError:
             if fut not in self._stopped:
                 raise                          # the caller is being cancelled: let it stop
@@ -473,10 +474,11 @@ class MqttSource:
         caps = self.status.get("caps")
         return [str(c) for c in caps] if isinstance(caps, list) else []
 
-    def _abandon(self, req, tx_id, rx_id, data):
+    def _abandon(self, req, tx_id, rx_id, data, asked):
+        """Remember a request this side stopped waiting for: `asked` is when it was sent (epoch)."""
         now = time.monotonic()
         with self._lock:
-            self._abandoned[req] = {"tx": tx_id, "rx": rx_id, "request": bytes(data), "t": time.time(), "mono": now}
+            self._abandoned[req] = {"tx": tx_id, "rx": rx_id, "request": bytes(data), "t": asked, "mono": now}
             while len(self._abandoned) > ABANDONED_KEPT:
                 self._abandoned.popitem(last=False)
             for old in [r for r, a in self._abandoned.items() if now - a["mono"] > ABANDONED_FOR]:
@@ -484,9 +486,10 @@ class MqttSource:
 
     def take_late(self):
         """Acks that arrived for requests already given up on, oldest first, and
-        forget them: ``{req, tx, rx, request, ack, t_asked, t, waited_s}``. The
-        reply in such an ack is late, not wrong: it answers exactly the request
-        it names."""
+        forget them: ``{req, tx, rx, request, ack, t_asked, t, waited_s}``:
+        when the request was sent, when its ack arrived, and how long after it
+        was given up on that was. The reply in such an ack is late, not wrong:
+        it answers exactly the request it names."""
         with self._lock:
             late, self._late = self._late, []
         return late

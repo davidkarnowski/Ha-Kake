@@ -949,7 +949,8 @@ def test_an_ack_that_comes_after_its_request_was_given_up_on_is_kept_as_late(mon
     src, req, late = run(go())
     (rec,) = src.take_late()
     assert rec["req"] == req and rec["ack"] == late and rec["request"] == b"\x21\x05"
-    assert (rec["tx"], rec["rx"]) == ("79B", "7BB") and rec["waited_s"] >= 0 and rec["t"] >= rec["t_asked"]
+    assert (rec["tx"], rec["rx"]) == ("79B", "7BB") and rec["waited_s"] >= 0
+    assert rec["t"] - rec["t_asked"] >= 0.02 > rec["waited_s"]        # asked 20 ms before it was given up on
     assert src.take_late() == [] and src._abandoned == {}
 
 

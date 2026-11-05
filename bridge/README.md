@@ -31,7 +31,15 @@ a step-by-step set-up for monitoring a car from your house, see `docs/REMOTE_MQT
   filter, listen-only) with a Last Will that flips it to `online: false`.
 - Consumes `tx/uds` requests, runs them through `can-isotp` (userspace, so the
   answer's raw frames are mirrored like every other frame) and acks on
-  `tx/uds/<req>`.
+  `tx/uds/<req>`. **The ack carries the reassembled reply** (`reply`), says
+  the request back (`request`, `tx`, `rx`, and `src` / `seq` when the request
+  named them) and reports where the time went (`queue_ms`, `bus_ms`): the one
+  message addressed to a request is the one that holds its answer. `status`
+  advertises this as `caps: ["ack-reply", "supersede"]`.
+- **Does not run requests nobody is waiting for.** A request overtaken by a
+  newer one from the same requester (same `src`, higher `seq`) is acked
+  `"superseded"`; the same `req` with the same request seen again within 30 s,
+  a QoS 1 redelivery, is acked `"duplicate"`. Neither reaches the car.
 - **Refuses anything that is not a read.** The service byte must be one of
   `0x21`, `0x01`, `0x03`, `0x07` — `SECURITY.md`'s whole allowed set. Mode
   `0x04` (clear codes), `0x2E`, `0x27`, `0x31`, `0x10` and everything else are

@@ -132,13 +132,20 @@ only when a flag is set.
 One ISO-TP request. The reader publishes it; the bridge sends it on the bus,
 handles flow control locally (the flow-control frame has to go out within
 about a second of the first response frame — a WAN round trip must not be in
-that path), and acks. **The response frames are not in the ack**: they arrive
-on `rx/<rx>` like any other frame, and the reader captures them during the
-request window.
+that path), and acks. **The reply comes back in the ack** (§3.4), on a topic
+that belongs to this request alone. The response frames are also mirrored on
+`rx/<rx>` like any other frame, but that topic is shared by every requester
+and every request: it is a view of the bus, not an answer to anyone.
 
 ```json
-{"req": "a1b2", "tx": "79B", "rx": "7BB", "data": "21 01", "bs": 0, "stmin": 0, "timeout": 2.0}
+{"req": "hk-3fa9-000042", "src": "hk-3fa9", "seq": 42,
+ "tx": "79B", "rx": "7BB", "data": "21 01", "bs": 0, "stmin": 0, "timeout": 2.0}
 ```
+
+`src` names the requester and `seq` counts its requests. Both are optional: a
+request that names nobody is run as before. With them the bridge can tell
+that a request has been overtaken (§3.4, `superseded`), and every ack says
+back who it is for.
 
 The bridge sends a request only on a `tx`/`rx` pair listed in its own
 `uds_targets` (`bridge/README.md`); any other pair is acked `refused` before a
@@ -152,6 +159,8 @@ frame is built.
   "required": ["req", "tx", "rx", "data"],
   "properties": {
     "req":     {"type": "string", "pattern": "^[0-9a-zA-Z_-]{1,32}$", "description": "request id chosen by the sender; the ack comes on tx/uds/<req>"},
+    "src":     {"type": "string", "pattern": "^[0-9a-zA-Z_-]{1,32}$", "description": "optional: who is asking. Pick one that is new each time the requester starts, so two sessions never share a request id"},
+    "seq":     {"type": "integer", "minimum": 0, "description": "optional: this requester's running count. A requester asks one thing at a time, so a higher seq from the same src means the lower one was given up on"},
     "tx":      {"type": "string", "pattern": "^[0-9A-Fa-f]{3}$|^[0-9A-Fa-f]{8}$", "description": "id the request is sent on (the ECU's request id)"},
     "rx":      {"type": "string", "pattern": "^[0-9A-Fa-f]{3}$|^[0-9A-Fa-f]{8}$", "description": "id the answer comes back on"},
     "data":    {"type": "string", "pattern": "^[0-9A-Fa-f]{2}( [0-9A-Fa-f]{2})*$", "description": "the service byte and its parameters; the first byte MUST be 21, 01, 03 or 07"},
@@ -162,20 +171,55 @@ frame is built.
 }
 ```
 
-`req` is chosen by the sender — Ha-Kake uses four random hex digits — and only
-has to be unique among that sender's in-flight requests. It is part of a
-topic, so it must not contain `/`, `+` or `#`. The pattern above is a rule for
-producers: the bridge enforces only that `req` is non-empty and free of those
-three characters, and echoes anything else back on the ack topic unchanged.
+`req` is chosen by the sender — Ha-Kake uses `<src>-<seq>`, where `src` is a
+short name plus four random hex digits drawn at start — and has to be unique
+among the requests that sender has made recently: the bridge treats the same
+`req` with the same request, seen again within 30 s, as a redelivery (§3.4,
+`duplicate`). It is part of a topic, so it must not contain `/`, `+` or `#`.
+The pattern above is a rule for producers: the bridge enforces only that
+`req` is non-empty and free of those three characters, and echoes anything
+else back on the ack topic unchanged.
 
 ### 3.4 uds ack — `tx/uds/<req>`
 
 ```json
-{"req": "a1b2", "ok": true, "frames": 29, "bytes": 194}
-{"req": "a1b2", "ok": false, "error": "timeout", "frames": 0}
+{"req": "hk-3fa9-000042", "ok": true, "frames": 6, "bytes": 41,
+ "reply": "61 01 FF FF F1 18 02 87 FF FF F9 E4 FF FF FF FF 03 60 2A F8 95 F3 32 B5 03 75 00 F2 07 04 00 0B BA A3 00 03 88 90 80 00 05",
+ "request": "21 01", "tx": "79B", "rx": "7BB", "src": "hk-3fa9", "seq": 42,
+ "t_in": 1757440000.101, "t_done": 1757440000.398, "queue_ms": 3, "bus_ms": 294}
+{"req": "hk-3fa9-000043", "ok": false, "error": "timeout", "frames": 0, "bus_ms": 2001, "request": "21 05", "tx": "79B", "rx": "7BB"}
+{"req": "hk-3fa9-000044", "ok": false, "error": "superseded", "reason": "a newer request from the same requester is waiting", "queue_ms": 11840}
 {"req": "a1b2", "ok": false, "error": "refused", "reason": "service not in the read-only set"}
 {"req": "a1b2", "ok": false, "error": "busy", "reason": "request queue full"}
 ```
+
+**`reply` is the answer.** It is the whole reassembled ISO-TP reply, service
+echo included (`61 01 …` for `21 01`; `7F 21 12` when the ECU itself refuses),
+and it is in the one message that is addressed to this request. A consumer
+needs nothing else: no frame has to arrive, nothing has to be reassembled,
+and nothing in a window has to be guessed at. `request`, `tx`, `rx`, `src` and
+`seq` say back what the bridge understood it was asked, so the consumer can
+check the ack is about its own request. `pad` (present when the ECU filled out
+its last frame, e.g. `"pad": "FF FF FF FF FF"`) is those filler bytes: with
+`reply` and `pad` the frames can be rebuilt exactly as the bus carried them,
+which matters only to code that keeps raw frames.
+
+`queue_ms` and `bus_ms` are durations measured on the bridge: how long the
+request waited before it reached the bus, and how long the bus took from
+request to complete reply. A consumer that times its own round trip has the
+rest by subtraction, the broker and the network both ways, without comparing
+any clock with another. `t_in` and `t_done` are the bridge's clock at arrival
+and at the complete reply.
+
+**Do not take the frames on `rx/<rx>` in a time window as the answer.** That
+is how a late reply to an earlier request, or another requester's reply, gets
+decoded as yours: on 2026-11-05 a reader that did exactly this stored a state
+of charge of 419 %, a group-05 reply read as group 01, after a link stall. A
+consumer that must work with a bridge that does not send `reply` (one that
+does not list `ack-reply` in `status.caps`, §3.5) should reassemble the
+window strictly (first frame, sequence numbers, declared length) and take
+the last complete message whose service echo matches its request, never
+simply the first bytes that arrived. Ha-Kake does both in `replyproof.py`.
 
 ```json
 {
@@ -186,18 +230,36 @@ three characters, and echoes anything else back on the ack topic unchanged.
   "properties": {
     "req":    {"type": "string"},
     "ok":     {"type": "boolean"},
-    "frames": {"type": "integer", "minimum": 0, "description": "how many rx frames the bridge saw for this request; a consumer can wait until it has received that many on rx/<rx>"},
+    "frames": {"type": "integer", "minimum": 0, "description": "how many rx frames the bridge saw for this request"},
     "bytes":  {"type": "integer", "minimum": 0, "description": "length of the reassembled ISO-TP payload, when ok"},
-    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "busy", "expired", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5), a tx/rx pair not in the bridge's uds_targets, or listen-only; error: malformed request or ISO-TP protocol error (see reason); busy: the bridge's request queue (32) is full; expired: the request waited longer than its own timeout and was not sent; offline: produced by the reader itself when it has no broker"},
+    "reply":  {"type": "string", "pattern": "^[0-9A-F]{2}( [0-9A-F]{2})*$", "description": "when ok: the reassembled reply, service echo included. Sent by a bridge that lists ack-reply in status.caps"},
+    "pad":    {"type": "string", "pattern": "^[0-9A-F]{2}( [0-9A-F]{2})*$", "description": "the bytes the ECU filled its last frame with, beyond the reply; absent when there were none"},
+    "request": {"type": "string", "description": "the request's data, said back, normalised to upper-case spaced hex"},
+    "tx":     {"type": "string", "description": "the request's tx id, said back"},
+    "rx":     {"type": "string", "description": "the request's rx id, said back"},
+    "src":    {"type": "string", "description": "the request's src, said back, when it had a usable one"},
+    "seq":    {"type": "integer", "description": "the request's seq, said back, when it had one"},
+    "t_in":   {"type": "number", "description": "bridge clock, epoch seconds, when the request arrived"},
+    "t_done": {"type": "number", "description": "bridge clock, epoch seconds, when the reply was complete"},
+    "queue_ms": {"type": "integer", "minimum": 0, "description": "milliseconds the request waited on the bridge before it reached the bus"},
+    "bus_ms": {"type": "integer", "minimum": 0, "description": "milliseconds on the CAN bus, from sending the request to the complete reply (or to giving up)"},
+    "error":  {"type": "string", "enum": ["timeout", "bus-off", "refused", "error", "busy", "expired", "superseded", "duplicate", "offline"], "description": "timeout: no complete answer within timeout; bus-off: the CAN interface failed; refused: the read-only rule (§5), a tx/rx pair not in the bridge's uds_targets, or listen-only; error: malformed request or ISO-TP protocol error (see reason); busy: the bridge's request queue (32) is full; expired: the request waited on the bridge longer than its own timeout and was not sent; superseded: a newer request from the same src was already waiting, so this one had been given up on and was not sent; duplicate: the same req with the same request was handled within the last 30 s (a QoS 1 redelivery) and was not sent again; offline: produced by the reader itself when it has no broker"},
     "reason": {"type": "string"}
   }
 }
 ```
 
+An ack can arrive after its requester has stopped waiting: the link stalled,
+the request reached the bridge late, the bridge ran it. That reply is late,
+not wrong. It answers exactly the request it names, and a consumer that
+remembers what it gave up on can still use it for that request (Ha-Kake
+credits it to the item that asked and marks the value `late`). What it must
+never do is hand it to whatever it happens to be waiting for now.
+
 Because `rx/<ID>` is QoS 0 and the ack QoS 1, the ack can overtake the last
-response frame. A consumer should count frames of `rx` against `frames` for
-a short grace (Ha-Kake waits up to 0.25 s) before closing its capture window.
-A bridge in batch mode flushes its pending batch before publishing an ack.
+response frame. That only matters to a consumer reading frames: with `reply`
+in the ack there is nothing to wait for. A bridge in batch mode flushes its
+pending batch before publishing an ack.
 
 ### 3.5 status — `status` (retained)
 
@@ -210,6 +272,7 @@ an unplugged Pi or a lost WiFi link shows as offline within the keep-alive
 ```json
 {"v": 1, "online": true, "bus": "car", "bitrate": 500000, "listen_only": false,
  "fps": 188.5, "fps_out": 188.5, "dropped": 0, "queue": 0, "errors": 0, "refused": 0,
+ "superseded": 0, "duplicates": 0, "caps": ["ack-reply", "supersede"],
  "adapter": "socketcan can0", "bridge": "hakake-bridge 0.1",
  "filter": ["284", "292", "355", "358", "385", "421", "5A9", "5B3", "5C5", "60D", "764", "7BB"],
  "batch_ms": 0, "t": 1757440000.0}
@@ -233,6 +296,9 @@ an unplugged Pi or a lost WiFi link shows as offline within the keep-alive
     "queue":       {"type": "integer", "description": "publish queue depth right now"},
     "errors":      {"type": "integer", "description": "CAN error frames and bus errors since start"},
     "refused":     {"type": "integer", "description": "tx/uds requests refused since start (§5)"},
+    "superseded":  {"type": "integer", "description": "tx/uds requests not run since start because their requester had already sent a newer one"},
+    "duplicates":  {"type": "integer", "description": "tx/uds requests not run since start because they were a redelivery"},
+    "caps":        {"type": "array", "items": {"type": "string"}, "description": "what this bridge does beyond the minimum of protocol v1. ack-reply: an ok ack carries reply (§3.4). supersede: overtaken and redelivered requests are not run. Absent on a bridge that does neither"},
     "adapter":     {"type": "string", "description": "python-can interface and channel"},
     "bridge":      {"type": "string", "description": "software name and version, e.g. \"hakake-bridge 0.1\""},
     "filter":      {"oneOf": [{"const": "all"}, {"type": "array", "items": {"type": "string"}}], "description": "the ids the bridge mirrors"},
@@ -404,7 +470,9 @@ mosquitto_pub -h <broker> -t 'hakake/leaf/car/tx/uds' -q 1 \
 # hakake/leaf/car/rx/7BB {"t":...,"id":"7BB","d":"10 29 61 01 FF FF F9 E9"}
 # hakake/leaf/car/rx/7BB {"t":...,"id":"7BB","d":"21 02 87 FF FF FC 44 FF"}
 # ...
-# hakake/leaf/car/tx/uds/demo1 {"req":"demo1","ok":true,"frames":6,"bytes":41}
+# hakake/leaf/car/tx/uds/demo1 {"req":"demo1","ok":true,"frames":6,"bytes":41,"reply":"61 01 FF FF F9 E9 02 87 ...","request":"21 01","tx":"79B","rx":"7BB","t_done":...,"bus_ms":294}
+# The ack carries the reply: that line alone is the answer. The rx/7BB lines above are the same bytes as the
+# bus carried them, mirrored for anyone watching; do not assemble an answer from them (§3.4).
 
 # What a refusal looks like (mode 04 clears trouble codes; it never leaves the bridge):
 mosquitto_pub -h <broker> -t 'hakake/leaf/car/tx/uds' -q 1 \

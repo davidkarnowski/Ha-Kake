@@ -158,9 +158,14 @@ _SQL_TYPE = {"real": "REAL", "int": "INTEGER", "bool": "INTEGER", "text": "TEXT"
 
 FRAMEWORK_TILES = [
     {"id": "console", "name": "Raw output", "items": [], "signals": []},
+    # What every request came to: how each reply was proven, where the round
+    # trip went, and what became of replies that came late or were not ours
+    # (linkaccount.py). It polls nothing either: the account is in every record.
+    {"id": "link", "name": "Link health", "items": [], "signals": []},
 ]
-FRAMEWORK_SPAN = {"console": 12}          # full width: it is a terminal
-FRAMEWORK_DEFAULTS = [{"id": "console", "enabled": False, "span": 12, "h": 12}]
+FRAMEWORK_SPAN = {"console": 12, "link": 6}   # the console is a terminal: full width
+FRAMEWORK_DEFAULTS = [{"id": "console", "enabled": False, "span": 12, "h": 12},
+                      {"id": "link", "enabled": False, "span": 6}]
 FRAMEWORK_IDS = frozenset(t["id"] for t in FRAMEWORK_TILES)
 
 

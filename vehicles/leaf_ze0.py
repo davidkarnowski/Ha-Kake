@@ -59,6 +59,7 @@ LIMITS = {
     "cell_min":   (2500, 4300),      # mV
     "cell_max":   (2500, 4300),
     "current_a":  (-500.0, 500.0),   # the pack fuse is 225 A
+    "power_kw":   (-200.0, 200.0),   # the motor is 80 kW
     "temp_avg_c": (-40.0, 80.0),
 }
 

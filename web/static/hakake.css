@@ -114,3 +114,20 @@ body {
 .timeline.dock-top { top: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .55); }
 .timeline.dock-bottom #tl-strip, .timeline.dock-top #tl-strip { height: 52px; }
 .timeline.dock-bottom .tl-head, .timeline.dock-top .tl-head { margin-bottom: 6px; }
+
+
+/* ── Link health (web/static/link.js) ─────────────────────────────────── */
+.link-proof { font-size: 0.85em; color: var(--dim); text-transform: none; letter-spacing: 0; margin-left: 8px; }
+.link-empty { color: var(--dim); font-size: 0.9em; padding: 6px 0; }
+.link-items { width: 100%; border-collapse: collapse; font-size: 0.85em; font-variant-numeric: tabular-nums; }
+.link-items th { text-align: left; font-weight: 500; color: var(--dim); padding: 2px 8px 4px 0; border-bottom: 1px solid var(--border); }
+.link-items td { padding: 3px 8px 3px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.link-items td.link-bad { color: var(--yellow); }
+.link-totals { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 0.85em; color: var(--dim); }
+.link-total-note { color: var(--yellow); }
+.link-marks { margin-top: 6px; font-size: 0.85em; color: var(--yellow); }
+.link-foot { margin-top: 8px; font-size: 0.8em; color: var(--dim); display: flex; gap: 14px; flex-wrap: wrap; }
+.link-foot a { color: var(--accent); }
+/* A value that arrived late or is outside its physical limits is still shown: it is marked, not hidden. */
+.q-late { text-decoration: underline dotted var(--yellow); text-underline-offset: 4px; }
+.q-out-of-limits { outline: 1px dashed var(--red); outline-offset: 3px; color: var(--red); }

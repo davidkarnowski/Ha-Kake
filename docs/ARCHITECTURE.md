@@ -240,6 +240,66 @@ scheduled cycle ~4 ms, the reader's own CPU ~15 % of a core at the full rate,
 on the laptop with no wire), and the EV-CAN channel it can add is ASSERTED
 throughout — `docs/SIMULATOR.md`, "The simulated bus".
 
+## Link accounting: which reply is the answer, and what becomes of the rest
+
+An ELM327 pairs a request with its reply itself: it prints what answered
+before its prompt. A CAN bus does not, and a broker even less. The response
+id is shared by every requester and every request, a tunnel can deliver a
+reply ten seconds late, and "whatever arrived while I was waiting" is then
+the answer to something else. On 2026-11-05 that stored a state of charge of
+419 %: a group-05 reply, late after a link stall, read with group-01 offsets.
+Fourteen such rows are on record, every one over MQTT.
+
+Three modules deal with it, and the rule they share is that **nothing that
+arrives is thrown away**. The fault was a reply credited to the wrong
+request; the cure is to credit every reply to the right one, not to filter
+what looks wrong.
+
+- **`replyproof.py` decides which bytes are the answer**, for every transport
+  behind the façade. With a bridge that returns the reply in its ack
+  (`status.caps` lists `ack-reply`, `docs/MQTT.md` §3.4) that is identity: the
+  ack topic belongs to one request, and the ack says the request back. Without
+  it, the frames in the window are reassembled into ISO-TP messages, strictly
+  (first frame, sequence numbers, declared length), and the answer is the last
+  complete message whose service echo matches the request. Every other message
+  in the window is handed back whole. `CanFacade._request` keeps one record
+  per request (`take_exchanges()`), and `MqttSource` keeps the acks that
+  arrive after their request was given up on (`take_late()`).
+- **`linkaccount.py` keeps the books.** For each request: how it was proven
+  (`ack` or `frames`), and where the round trip went. `queue_ms` and `bus_ms`
+  are durations the bridge measured; `net_ms` is the rest of the reader's own
+  round trip, so the split needs no clock compared with another. For every
+  other reply: **late** (the answer to a request this reader had given up on),
+  **foreign** (a complete reply nobody here asked for), or a **fragment**.
+- **`web/reader.py` acts on it.** A late reply is decoded for the item that
+  asked for it and its values are marked `late`, unless that item has been
+  read in time since: an old value never replaces a newer one, and then the
+  reply is kept in the ledger only. A foreign reply is decoded for no item. A
+  value outside the profile's physical bounds (`LIMITS`, optional) is still
+  stored and still shown, marked `out-of-limits`, and left out of the min/max
+  envelope between rows.
+
+What it leaves behind:
+
+| Where | What |
+|---|---|
+| `quality` in the record | `{key: "late" \| "out-of-limits"}`, kept until that key is read again in time |
+| `link` in the record | `via`, `caps`, this cycle's requests (`items`), this cycle's counts (`cycle`), running counts (`totals`), the newest late reply (`last_stall`) |
+| `<data>/reply_ledger.jsonl` | one line, with the raw bytes, for every reply that was not a plain in-time answer: late, foreign, fragment, a refusal by the ECU, a reply not provably ours, a value out of limits. Size-capped (4 MB, one old file kept). `GET /api/ledger?n=&class=` serves it |
+| the page | the **Link health** tile (a framework tile, off by default, `web/static/link.js`), and a mark on any value element that carries `data-key` |
+
+An out-of-limits value does not raise an alert (`alerts.js`) and does not
+enter the Power monitor's display average; a late value is a real reading and
+is treated as one. A transport that pairs requests itself (an ELM327, replay,
+the plain simulator) keeps no records, so its records carry no `link` block.
+
+The bridge does its part (`bridge/hakake_bridge.py`): a request overtaken by
+a newer one from the same requester is acked `superseded` and never reaches
+the car, and a redelivered request reaches it once. So after a stall the bus
+is not spent on requests nobody is waiting for.
+
+Reproducing all of this with no car is `docs/DESK_RIG.md`.
+
 ## Several adapters at once, and where a value comes from
 
 Car-CAN (OBD pins 6/14) and EV-CAN (13/12) are two networks, so two

@@ -96,14 +96,19 @@ class LaggyLink:
         return self
 
     async def stop(self):
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
-            self._server = None
+        # Stop listening, end the connections in hand, and only then wait for
+        # the server: since Python 3.12 wait_closed() waits for every
+        # connection to finish, so waiting first would never return while a
+        # client was still connected.
+        server, self._server = self._server, None
+        if server is not None:
+            server.close()
         for task in list(self._conns):
             task.cancel()
         if self._conns:
             await asyncio.gather(*self._conns, return_exceptions=True)
+        if server is not None:
+            await server.wait_closed()
 
     # ── controls (call on the event loop) ────────────────────────────────
 
