@@ -52,6 +52,8 @@ battery_log_*.jsonl
 # Local-only research, captures, and per-machine config
 research/
 config.local.json
+# ...and any copy of it (config.local.json.bak, config.local.json-old, ...)
+config.local.json?*
 
 # Per-car calibration offsets
 web/calibration.json

@@ -38,3 +38,8 @@ privately by the maintainer and are not part of this repository.
   MQTT session recorder was added and MQTT clients reconnect within seconds. A guide for monitoring a car from the house
   over wifi (`docs/REMOTE_MQTT.md`) was written. Ha-Kake's data (database and settings) now lives in a documented data
   folder created on first run (`docs/DATA.md`), no longer next to the source.
+
+- **2026-11-07** — Over MQTT every reply is now matched to the request that asked for it: the bridge returns the
+  reply in its acknowledgement, a late reply is credited to its own item and marked, and nothing is silently stored as
+  the wrong reading after a link stall. A Link health tile and a desk rig that reproduces a stalled link with no car
+  were added (`docs/DESK_RIG.md`, `docs/ARCHITECTURE.md` "Link accounting").

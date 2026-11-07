@@ -45,7 +45,7 @@ Clean is two things: nothing impossible was shown or stored, and the held reply 
 to the request that asked for it, with a mark (`docs/ARCHITECTURE.md`, "Link accounting"). It takes about half a
 minute, most of it the reader's own timeout.
 
-This is the fault recorded from a real car on 2026-11-05. Before the reply proof existed (commit `2fc0b6a`) the same
+This is the fault recorded from a real car on 2026-11-05. Before the reply proof existed, the same
 run read:
 
 ```
@@ -96,7 +96,7 @@ network, with the bus unchanged. `--json` prints the result as one line.
 The reply proof and the accounting cost nothing measurable. On this laptop, loopback only, MEASURED ON THE DESK and
 nothing else (the simulated ECU answers in a few milliseconds):
 
-| Link delay, each way | `lbc01` p50 before (`2fc0b6a`) | `lbc01` p50 after | Cycles a second before | after |
+| Link delay, each way | `lbc01` p50 before the reply proof | `lbc01` p50 after | Cycles a second before | after |
 |---|---|---|---|---|
 | 0 ms | 42 ms | 41 ms | 22.4 | 22.8 |
 | 50 ms | 143 ms | 143 ms | 6.6 | 6.6 |

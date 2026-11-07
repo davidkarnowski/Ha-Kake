@@ -14,8 +14,8 @@ These tests rebuild that sequence with the real façade over ``MqttSource`` and
 a fake broker client, using frames captured from the car. No broker, no
 network, no hardware.
 
-The three scenario tests failed on the code as it was (commit 2fc0b6a carried
-them as strict expected failures: SOC 465 %, 1088 % and a silent 40 % for 80 %).
+The three scenario tests failed on the code as it was (they were first
+committed as strict expected failures: SOC 465 %, 1088 % and a silent 40 % for 80 %).
 They pass since the façade proves each reply through replyproof.py.
 """
 
