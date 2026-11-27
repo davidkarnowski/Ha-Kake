@@ -167,8 +167,8 @@ over the file, the way the BLE keys do.
 | Key | Meaning | Default |
 |---|---|---|
 | `can_bus` | `"car"` or `"ev"` — which OBD pins the board is wired to. **Required; never guessed.** The board cannot tell, and normal mode on EV-CAN would be a transmit-capable node on the battery bus. | — |
-| `can_interface` | `auto` (identify the firmware from the USB id), `slcan`, `gs_usb`, `socketcan`, `virtual` (tests); `sim` is recognised and refused — the simulated bus is `--adapter sim --sim-can`, below | `auto` |
-| `can_channel` | slcan: the serial port (found by USB id or `/dev/cu.usbmodem*` when empty); gs_usb: device index; socketcan: `can0` | `""` |
+| `can_interface` | `auto` (identify the firmware from the USB id), `slcan`, `gs_usb`, `socketcan`, `cansub` (CSS Electronics CANsub, `pip install python-can-cansub`), `virtual` (tests); `sim` is recognised and refused — the simulated bus is `--adapter sim --sim-can`, below | `auto` |
+| `can_channel` | slcan: the serial port (found by USB id or `/dev/cu.usbmodem*` when empty); gs_usb: device index; socketcan: `can0`; cansub: `aabbccdd-usb.local@1` | `""` |
 | `can_bitrate` | bit/s | `500000` |
 | `can_listen_only` | open silent even on Car-CAN (then no UDS, only the broadcast ids) | `false`; forced `true` on `ev` |
 | `can_isotp_stmin` | force the ISO-TP separation time we ask an ECU for, overriding `ATFCSD`; hex or int | unset (honour `ATFCSD`) |

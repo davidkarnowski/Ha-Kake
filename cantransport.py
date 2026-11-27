@@ -754,7 +754,9 @@ class LocalSource(FrameSource):
             return self._open_slcan(None, self.channel or find_slcan_port(self.channel))
         if iface == "gs_usb":
             return self._open_gs_usb(None)
-        raise ConnectionError(f"unknown can_interface {iface!r} (auto, slcan, gs_usb, socketcan, virtual)")
+        if iface == "cansub":
+            return self._open_cansub()
+        raise ConnectionError(f"unknown can_interface {iface!r} (auto, slcan, gs_usb, socketcan, cansub, virtual)")
 
     def _open_slcan(self, dev, port=None):
         port = port or find_slcan_port(self.channel, dev)
@@ -819,6 +821,22 @@ class LocalSource(FrameSource):
         self.firmware = "socketcan"
         self.name = self.name or f"socketcan {ch} (python-can {can.__version__})"
         self.port = ch
+        return b
+
+    def _open_cansub(self):
+        # CSS Electronics CANsub (USB or Ethernet) via the python-can-cansub plugin. Listen-only is a
+        # device setting: the CANsub neither transmits nor acknowledges frames in that mode.
+        if not self.channel:
+            raise ConnectionError("cansub needs can_channel: the device hostname and CAN channel, e.g. "
+                                  "aabbccdd-usb.local@1")
+        try:
+            b = can.Bus(interface="cansub", channel=self.channel, bitrate=self.bitrate,
+                        listen_only=self.listen_only)
+        except Exception as e:
+            raise ConnectionError(f"cannot open cansub {self.channel}: {type(e).__name__}: {e}") from e
+        self.firmware = "cansub"
+        self.name = self.name or f"CANsub {self.channel}"
+        self.port = self.channel
         return b
 
     def _close(self):

@@ -804,3 +804,13 @@ def test_read_duration_and_gap_are_never_stored(tmp_store):
     extra = json.loads(extra or "{}")
     assert "item_dur" not in extra and "item_gap" not in extra
     assert "item_age" in extra                                         # unchanged: only the two new maps are live-only
+
+
+def test_cansub_is_opened_with_listen_only_and_needs_a_channel(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ct.can, "Bus", lambda **kw: seen.update(kw) or object())
+    ct.LocalSource(interface="cansub", channel="aabbccdd-usb.local@1", bus="ev", log=lambda *a: None)._open()
+    assert seen == {"interface": "cansub", "channel": "aabbccdd-usb.local@1",
+                    "bitrate": ct.DEFAULT_BITRATE, "listen_only": True}
+    with pytest.raises(ConnectionError, match="can_channel"):
+        ct.LocalSource(interface="cansub", bus="car", log=lambda *a: None)._open()
